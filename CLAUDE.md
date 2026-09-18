@@ -629,6 +629,18 @@
       (đơn hàng, payment, notification, user, session) và trả
       VNPAY_TMN_CODE/HASH_SECRET về rỗng trong .env sau khi test xong.
 
+      ĐÃ BỊ THAY THẾ HOÀN TOÀN — xem mục "Chuyển thanh toán online sang MoMo"
+      (nằm cuối file, sau phần đổi auth sang Google OAuth). Lý do: sau khi
+      user tự đăng ký được tài khoản merchant sandbox thật (có TMN_CODE/
+      HASH_SECRET thật) và deploy lên Vercel, trang VNPay sandbox liên tục
+      báo lỗi hệ thống chung chung ("Kết nối hệ thống tạm thời bị gián đoạn")
+      khi thao tác trên dashboard merchant thật — không ổn định để demo/dùng
+      tiếp, user quyết định đổi sang MoMo. Toàn bộ src/lib/vnpay.ts, 2 route
+      /api/payments/vnpay/{return,ipn}, và các biến VNPAY_* trong .env đã bị
+      XÓA HẲN. Giá trị enum `VNPAY` trong PaymentMethod (schema.prisma) được
+      GIỮ LẠI (không xóa) vì các đơn hàng test cũ (đã dọn) không còn nhưng để
+      lại không có tác hại, tránh phải chạy thêm 1 lần `prisma db push`.
+
 - [x] Giao hàng tận cửa hàng (STORE_PICKUP): KHÔNG cần đổi schema (Order đã
       có sẵn pickupStoreId + DeliveryMethod từ trước). lib/orders.ts:
       CheckoutInput thêm deliveryMethod ("HOME_DELIVERY"|"STORE_PICKUP",
@@ -1526,6 +1538,90 @@
       Google, `fullName` lấy đúng tên hiển thị Google trả về, `emailVerified`
       được set, `phone` là null (đúng dự kiến — không còn OTP nữa).
 
+- [x] Chuyển thanh toán online từ VNPay sang MoMo (thay hẳn — xem lý do bỏ
+      VNPay ở mục "Thanh toán online qua VNPay" phía trên: sandbox merchant
+      thật liên tục báo lỗi hệ thống chung chung, không ổn định để demo).
+      THÊM PaymentMethod.MOMO vào schema (giữ nguyên VNPAY cũ, không xóa —
+      chỉ thêm giá trị enum, `prisma db push` không mất dữ liệu).
+
+      ĐIỂM KHÁC BIỆT LỚN NHẤT so với VNPay: MoMo công bố sẵn 1 bộ **test
+      credentials CÔNG KHAI** trong tài liệu dev chính thức của họ
+      (partnerCode "MOMO", accessKey/secretKey cố định) — dùng thử được
+      NGAY, không cần tự đăng ký tài khoản merchant sandbox nào cả (khác hẳn
+      VNPay/ZaloPay đều bắt buộc đăng ký trước). Đã tự gọi thẳng endpoint
+      thật `https://test-payment.momo.vn/v2/gateway/api/create` bằng script
+      Node độc lập (không qua code app) với đúng bộ giá trị này TRƯỚC khi
+      viết vào app — xác nhận nhận về `resultCode: 0` + `payUrl` hợp lệ,
+      chắc chắn API hoạt động thật trước khi tích hợp (tránh lặp lại tình
+      huống VNPay: đăng ký xong mới phát hiện sandbox không ổn định).
+
+      src/lib/momo.ts (mới, thay src/lib/vnpay.ts): các hằng số
+      MOMO_PARTNER_CODE/MOMO_ACCESS_KEY/MOMO_SECRET_KEY có sẵn GIÁ TRỊ MẶC
+      ĐỊNH ngay trong code (chính là bộ test công khai nói trên) nên
+      `isMomoConfigured()` luôn trả `true` kể cả khi .env để trống — khác
+      hẳn `isVnpayConfigured()` cũ (mặc định rỗng, bắt buộc phải điền).
+      `createMomoPaymentUrl()` build request theo đúng tài liệu MoMo "AIO
+      onetime — captureWallet": raw string ký theo THỨ TỰ FIELD CỐ ĐỊNH
+      (KHÁC VNPay — VNPay sort alphabet, MoMo thì không, phải đúng thứ tự
+      tài liệu quy định), HMAC-SHA256 (VNPay dùng SHA512). `verifyMomoCallback()`
+      dùng bộ field VÀ thứ tự KHÁC với lúc tạo giao dịch (2 raw string riêng
+      biệt cho 2 chiều, đã đối chiếu đúng tài liệu).
+
+      KHÁC BIỆT CƠ CHẾ CALLBACK quan trọng so với VNPay (cả 2 đều dùng
+      chung 1 cặp return-URL/IPN nhưng truyền dữ liệu khác cách): VNPay gửi
+      CẢ return URL lẫn IPN dưới dạng GET query string; MoMo redirectUrl
+      (return, trình duyệt) vẫn là GET query string nhưng **ipnUrl (server-
+      to-server) lại là POST kèm JSON body** — route
+      `/api/payments/momo/ipn/route.ts` phải `request.json()` rồi tự đổi
+      từng field sang string trước khi đưa vào `verifyMomoCallback()` dùng
+      chung với route return (đang dùng `url.searchParams`). MoMo cũng
+      KHÔNG yêu cầu response theo format cố định như VNPay (`{RspCode,
+      Message}`) — chỉ cần trả mã 2xx (dùng 204 No Content) là coi như đã
+      nhận, trả 400 nếu verify thất bại để MoMo có thể gọi lại.
+
+      lib/orders.ts: đổi toàn bộ tên hàm/biến vnpay -> momo
+      (generatePaymentUrlForOrder bỏ tham số `ipAddr` vì MoMo không cần,
+      khác VNPay bắt buộc `vnp_IpAddr`), `handleVnpayCallback` ->
+      `handleMomoCallback`, giữ nguyên 100% logic idempotent (check
+      payment.status !== PENDING trước khi xử lý) và logic tự chuyển Order
+      PENDING -> CONFIRMED + tạo Notification khi thanh toán thành công.
+      CheckoutForm.tsx: đổi prop `vnpayAvailable` -> `momoAvailable`, nhãn
+      "Thanh toán qua ví MoMo". orders/[id] + RetryPaymentButton.tsx: đổi
+      nhãn/check method sang "MOMO". admin/orders/[id]/page.tsx: thêm nhãn
+      MOMO vào PAYMENT_METHOD_LABELS cục bộ (giữ nguyên nhãn VNPAY cũ cho
+      đơn hàng lịch sử nếu có).
+
+      .env: thay toàn bộ khối VNPAY_* bằng MOMO_PARTNER_CODE/MOMO_ACCESS_KEY/
+      MOMO_SECRET_KEY (để trống, vì đã có default công khai trong code) +
+      MOMO_REDIRECT_URL/MOMO_IPN_URL (đặt sẵn URL production Vercel, ÁP DỤNG
+      NGAY CẢ KHI TEST LOCAL — giống hệt quyết định trước đây với
+      VNPAY_RETURN_URL — vì local và Vercel dùng CHUNG 1 database Supabase
+      nên return URL trỏ production vẫn cập nhật đúng Payment/Order dù đang
+      test từ máy local).
+
+      Đã test qua dev server bằng ĐÚNG DB THẬT (không mock): tạo user +
+      cart + session test riêng bằng script, gọi thẳng POST /api/orders với
+      paymentMethod=MOMO qua curl — nhận về `paymentUrl` thật trỏ tới
+      `test-payment.momo.vn` (link thật, bấm vào được), kiểm tra lại DB xác
+      nhận Payment tạo đúng `method: "MOMO"`, `status: "PENDING"`,
+      `transactionRef` khớp txnRef đã gửi cho MoMo. `tsc --noEmit` (phải
+      chạy `prisma generate` lại trước vì thêm enum MOMO — bài học cũ ở mục
+      "Lưu ý quan trọng" về việc phải restart/generate lại sau khi đổi
+      schema), `npm run build` (đủ route, có `/api/payments/momo/{return,
+      ipn}` thay `/api/payments/vnpay/*`), `eslint` đều sạch. Đã dọn sạch
+      dữ liệu test (order, payment, address, session, user).
+
+      CHƯA TEST được: luồng thanh toán THẬT đi hết (redirect sang trang
+      MoMo, nhập thông tin ví test, quay lại return URL/nhận IPN) — vì cần
+      có ứng dụng MoMo Test (tải riêng, có hướng dẫn trong tài liệu dev
+      MoMo) để "thanh toán" trong môi trường sandbox, đây là bước user cần
+      tự làm. Cũng CHƯA verify được chính xác 100% thứ tự field trong raw
+      signature của `verifyMomoCallback()` bằng 1 callback thật từ MoMo (chỉ
+      mới xác nhận đúng chiều tạo giao dịch qua gọi API thật) — nếu lúc test
+      thật báo lỗi "invalid_signature" dù thanh toán thành công bên phía
+      MoMo, cần đối chiếu lại thứ tự field trong tài liệu MoMo mới nhất tại
+      https://developers.momo.vn.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -1544,7 +1640,16 @@
       Muốn CHO NGƯỜI KHÁC đăng nhập được (vd khi demo cho người ngoài xem)
       cần bấm "Publish app" chuyển sang "In production" (không cần Google
       duyệt vì chỉ xin scope email/profile cơ bản).
-- [ ] Thanh toán online qua Momo — chưa làm, xem ghi chú ở mục VNPay trên
+- [ ] Test luồng thanh toán MoMo THẬT đi hết bằng ứng dụng MoMo Test (tải
+      theo hướng dẫn tại developers.momo.vn) — chưa tự làm được vì cần thao
+      tác trên app thật. Đặc biệt chú ý xác nhận IPN không báo
+      "invalid_signature" — nếu có, đối chiếu lại thứ tự field ký trong
+      verifyMomoCallback() (lib/momo.ts) với tài liệu MoMo mới nhất.
+- [ ] Trên Vercel: thêm MOMO_REDIRECT_URL/MOMO_IPN_URL (dùng URL production,
+      xem hướng dẫn trong .env) vào Environment Variables — 3 biến
+      MOMO_PARTNER_CODE/ACCESS_KEY/SECRET_KEY để trống vẫn chạy được nhờ
+      default công khai, không bắt buộc điền trừ khi có tài khoản merchant
+      MoMo thật riêng.
 - [ ] Polish CẤU TRÚC (không phải màu sắc — màu đã tự động đổi theo theme
       mới) cho phần còn lại của admin (danh mục, thương hiệu, người dùng,
       cửa hàng, khuyến mãi, bảo hành, thu cũ đổi mới, hỗ trợ, trang tĩnh,

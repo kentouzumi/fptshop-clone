@@ -3,13 +3,14 @@ import { Prisma, PaymentMethod, PaymentStatus, OrderStatus, DeliveryMethod } fro
 import { validateCoupon } from "@/lib/coupons";
 import { awardPointsForOrder } from "@/lib/loyalty";
 import { createWarrantiesForOrder } from "@/lib/warranty";
-import { createVnpayPaymentUrl, verifyVnpayCallback } from "@/lib/vnpay";
+import { createMomoPaymentUrl, verifyMomoCallback } from "@/lib/momo";
 
 export const SHIPPING_FEE = 30000;
 
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   COD: "Thanh toán khi nhận hàng (COD)",
   VNPAY: "VNPay",
+  MOMO: "Ví MoMo",
 };
 
 export const DELIVERY_METHOD_LABELS: Record<string, string> = {
@@ -48,7 +49,7 @@ export interface CheckoutInput {
   newAddress?: NewAddressInput; // hoặc nhập địa chỉ mới (sẽ được lưu vào sổ địa chỉ)
   note?: string;
   couponCode?: string;
-  paymentMethod?: "COD" | "VNPAY";
+  paymentMethod?: "COD" | "MOMO";
   deliveryMethod?: "HOME_DELIVERY" | "STORE_PICKUP";
   pickupStoreId?: string; // bắt buộc nếu deliveryMethod = STORE_PICKUP
 }
@@ -101,9 +102,9 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
 
     const grandTotal = subtotal + shippingFee - discountTotal;
 
-    const isVnpay = input.paymentMethod === "VNPAY";
+    const isMomo = input.paymentMethod === "MOMO";
     const orderCode = generateOrderCode();
-    const vnpayTxnRef = isVnpay ? generateTxnRef(orderCode) : null;
+    const momoTxnRef = isMomo ? generateTxnRef(orderCode) : null;
 
     let addressId: string | null = null;
     let pickupStoreId: string | null = null;
@@ -170,10 +171,10 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
         },
         payments: {
           create: {
-            method: isVnpay ? PaymentMethod.VNPAY : PaymentMethod.COD,
+            method: isMomo ? PaymentMethod.MOMO : PaymentMethod.COD,
             status: PaymentStatus.PENDING,
             amount: grandTotal,
-            transactionRef: vnpayTxnRef,
+            transactionRef: momoTxnRef,
           },
         },
         statusHistory: {
@@ -331,18 +332,19 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderStatus,
   });
 }
 
-// Tạo URL thanh toán VNPay cho 1 đơn hàng đã tồn tại — dùng lúc đặt hàng lần đầu (paymentMethod=VNPAY)
+// Tạo URL thanh toán MoMo cho 1 đơn hàng đã tồn tại — dùng lúc đặt hàng lần đầu (paymentMethod=MOMO)
 // và cả lúc "Thanh toán lại" cho đơn đã tạo nhưng lần trước bị hủy/lỗi giữa chừng. Mỗi lần gọi tạo
-// vnp_TxnRef MỚI (VNPay không cho tái sử dụng txnRef cũ để tránh nhầm giao dịch).
-export async function generatePaymentUrlForOrder(orderId: string, userId: string, ipAddr: string) {
+// orderId MỚI gửi cho MoMo (MoMo không cho tái sử dụng orderId cũ để tránh nhầm giao dịch — khác hẳn
+// mã đơn hàng `code` của hệ thống mình, vẫn giữ nguyên xuyên suốt).
+export async function generatePaymentUrlForOrder(orderId: string, userId: string) {
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { payments: true } });
   if (!order || order.userId !== userId) {
     throw new Error("Không tìm thấy đơn hàng.");
   }
 
-  const payment = order.payments.find((p) => p.method === PaymentMethod.VNPAY);
+  const payment = order.payments.find((p) => p.method === PaymentMethod.MOMO);
   if (!payment) {
-    throw new Error("Đơn hàng này không thanh toán qua VNPay.");
+    throw new Error("Đơn hàng này không thanh toán qua MoMo.");
   }
   if (payment.status !== PaymentStatus.PENDING && payment.status !== PaymentStatus.FAILED) {
     throw new Error("Đơn hàng này đã được thanh toán hoặc không thể thanh toán lại.");
@@ -356,28 +358,28 @@ export async function generatePaymentUrlForOrder(orderId: string, userId: string
   const txnRef = generateTxnRef(order.code);
   await prisma.payment.update({ where: { id: payment.id }, data: { transactionRef: txnRef } });
 
-  return createVnpayPaymentUrl({
-    txnRef,
+  return createMomoPaymentUrl({
+    orderId: txnRef,
     amount: Number(order.grandTotal),
     orderInfo: `Thanh toan don hang ${order.code}`,
-    ipAddr,
   });
 }
 
-export type VnpayCallbackOutcome =
+export type MomoCallbackOutcome =
   | { ok: false; reason: "invalid_signature" | "not_found" | "amount_mismatch" }
   | { ok: true; alreadyProcessed: boolean; success: boolean; orderId: string };
 
-// Dùng chung cho cả return URL (trình duyệt redirect về) và IPN (VNPay gọi server-to-server) vì cùng
-// một bộ tham số vnp_* — idempotent nên gọi 2 lần (return + IPN) cho cùng 1 giao dịch không bị tính 2 lần.
-export async function handleVnpayCallback(query: Record<string, string>): Promise<VnpayCallbackOutcome> {
-  const result = verifyVnpayCallback(query);
-  if (!result.isValidSignature || !result.txnRef) {
+// Dùng chung cho cả return URL (trình duyệt redirect về, GET query string) và IPN (MoMo gọi server-to-
+// server, POST JSON body) — caller tự đưa cả 2 dạng về Record<string,string> giống nhau trước khi gọi.
+// Idempotent nên gọi 2 lần (return + IPN) cho cùng 1 giao dịch không bị tính 2 lần.
+export async function handleMomoCallback(query: Record<string, string>): Promise<MomoCallbackOutcome> {
+  const result = verifyMomoCallback(query);
+  if (!result.isValidSignature || !result.orderId) {
     return { ok: false, reason: "invalid_signature" };
   }
 
   const payment = await prisma.payment.findFirst({
-    where: { transactionRef: result.txnRef, method: PaymentMethod.VNPAY },
+    where: { transactionRef: result.orderId, method: PaymentMethod.MOMO },
     include: { order: true },
   });
   if (!payment) {
@@ -409,7 +411,7 @@ export async function handleVnpayCallback(query: Record<string, string>): Promis
         data: {
           orderId: payment.orderId,
           status: OrderStatus.CONFIRMED,
-          note: "Thanh toán VNPay thành công",
+          note: "Thanh toán MoMo thành công",
         },
       });
       await tx.notification.create({
@@ -417,7 +419,7 @@ export async function handleVnpayCallback(query: Record<string, string>): Promis
           userId: payment.order.userId,
           type: "ORDER_UPDATE",
           title: `Đơn hàng ${payment.order.code} đã ${ORDER_STATUS_LABELS.CONFIRMED}`,
-          content: "Thanh toán VNPay thành công, đơn hàng của bạn đã được xác nhận.",
+          content: "Thanh toán MoMo thành công, đơn hàng của bạn đã được xác nhận.",
         },
       });
     }

@@ -39,18 +39,18 @@ export default async function OrderDetailPage({
 
   const payment = order.payments[0];
   const canRetryPayment =
-    payment && payment.method === "VNPAY" && (payment.status === "PENDING" || payment.status === "FAILED");
+    payment && payment.method === "MOMO" && (payment.status === "PENDING" || payment.status === "FAILED");
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-10">
       {paymentQuery === "success" && (
         <div className="mb-4 rounded-xl bg-green-50 p-4 text-sm text-green-800">
-          Thanh toán VNPay thành công! Đơn hàng đã được xác nhận.
+          Thanh toán MoMo thành công! Đơn hàng đã được xác nhận.
         </div>
       )}
       {paymentQuery === "failed" && (
         <div className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">
-          Thanh toán VNPay không thành công. Bạn có thể thử thanh toán lại bên dưới.
+          Thanh toán MoMo không thành công. Bạn có thể thử thanh toán lại bên dưới.
         </div>
       )}
 

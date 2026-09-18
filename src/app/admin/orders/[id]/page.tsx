@@ -19,6 +19,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   INSTALLMENT: "Trả góp",
   BANK_TRANSFER: "Chuyển khoản",
   VNPAY: "VNPay",
+  MOMO: "Ví MoMo",
 };
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {

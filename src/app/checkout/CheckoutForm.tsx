@@ -48,13 +48,13 @@ export default function CheckoutForm({
   savedAddresses,
   subtotal,
   shippingFee,
-  vnpayAvailable,
+  momoAvailable,
   stores,
 }: {
   savedAddresses: SavedAddress[];
   subtotal: number;
   shippingFee: number;
-  vnpayAvailable: boolean;
+  momoAvailable: boolean;
   stores: StoreOption[];
 }) {
   const router = useRouter();
@@ -75,7 +75,7 @@ export default function CheckoutForm({
   const [ward, setWard] = useState("");
   const [streetDetail, setStreetDetail] = useState("");
   const [note, setNote] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"COD" | "VNPAY">("COD");
+  const [paymentMethod, setPaymentMethod] = useState<"COD" | "MOMO">("COD");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -405,18 +405,18 @@ export default function CheckoutForm({
             />
             Thanh toán khi nhận hàng (COD)
           </label>
-          <label className={radioCardClass(paymentMethod === "VNPAY", !vnpayAvailable)}>
+          <label className={radioCardClass(paymentMethod === "MOMO", !momoAvailable)}>
             <input
               type="radio"
               name="paymentMethod"
               className="mt-0.5"
-              checked={paymentMethod === "VNPAY"}
-              disabled={!vnpayAvailable}
-              onChange={() => setPaymentMethod("VNPAY")}
+              checked={paymentMethod === "MOMO"}
+              disabled={!momoAvailable}
+              onChange={() => setPaymentMethod("MOMO")}
             />
             <span>
-              Thanh toán qua VNPay (ATM/QR/thẻ quốc tế)
-              {!vnpayAvailable && <span className="ml-1 text-xs text-zinc-400">(chưa khả dụng)</span>}
+              Thanh toán qua ví MoMo
+              {!momoAvailable && <span className="ml-1 text-xs text-zinc-400">(chưa khả dụng)</span>}
             </span>
           </label>
         </div>
@@ -459,8 +459,8 @@ export default function CheckoutForm({
       <button type="submit" disabled={submitting} className="btn-primary !py-3.5">
         {submitting
           ? "Đang xử lý..."
-          : paymentMethod === "VNPAY"
-            ? "Đặt hàng & thanh toán qua VNPay"
+          : paymentMethod === "MOMO"
+            ? "Đặt hàng & thanh toán qua MoMo"
             : isStorePickup
               ? "Đặt hàng (thanh toán khi nhận tại cửa hàng)"
               : "Đặt hàng (thanh toán khi nhận hàng)"}

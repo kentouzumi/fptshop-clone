@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { createOrderFromCart, generatePaymentUrlForOrder, type CheckoutInput } from "@/lib/orders";
-import { isVnpayConfigured } from "@/lib/vnpay";
+import { isMomoConfigured } from "@/lib/momo";
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -13,14 +13,14 @@ export async function POST(request: Request) {
   const addressId = typeof body?.addressId === "string" && body.addressId ? body.addressId : undefined;
   const note = typeof body?.note === "string" ? body.note.trim() : "";
   const couponCode = typeof body?.couponCode === "string" && body.couponCode.trim() ? body.couponCode.trim() : undefined;
-  const paymentMethod = body?.paymentMethod === "VNPAY" ? "VNPAY" : "COD";
+  const paymentMethod = body?.paymentMethod === "MOMO" ? "MOMO" : "COD";
   const deliveryMethod = body?.deliveryMethod === "STORE_PICKUP" ? "STORE_PICKUP" : "HOME_DELIVERY";
   const pickupStoreId =
     typeof body?.pickupStoreId === "string" && body.pickupStoreId ? body.pickupStoreId : undefined;
 
-  if (paymentMethod === "VNPAY" && !isVnpayConfigured()) {
+  if (paymentMethod === "MOMO" && !isMomoConfigured()) {
     return NextResponse.json(
-      { error: "Thanh toán VNPay chưa được cấu hình trên hệ thống. Vui lòng chọn COD." },
+      { error: "Thanh toán MoMo chưa được cấu hình trên hệ thống. Vui lòng chọn COD." },
       { status: 400 }
     );
   }
@@ -60,9 +60,8 @@ export async function POST(request: Request) {
       pickupStoreId,
     });
 
-    if (paymentMethod === "VNPAY") {
-      const ipAddr = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
-      const paymentUrl = await generatePaymentUrlForOrder(order.id, user.id, ipAddr);
+    if (paymentMethod === "MOMO") {
+      const paymentUrl = await generatePaymentUrlForOrder(order.id, user.id);
       return NextResponse.json({ id: order.id, code: order.code, paymentUrl }, { status: 201 });
     }
 

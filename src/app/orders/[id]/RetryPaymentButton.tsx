@@ -25,7 +25,7 @@ export default function RetryPaymentButton({ orderId }: { orderId: string }) {
   return (
     <div className="mt-3">
       <button type="button" onClick={handleClick} disabled={submitting} className="btn-primary !px-4 !py-2 text-sm">
-        {submitting ? "Đang chuyển hướng..." : "Thanh toán lại qua VNPay"}
+        {submitting ? "Đang chuyển hướng..." : "Thanh toán lại qua MoMo"}
       </button>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>

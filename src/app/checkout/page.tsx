@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getCartDetail } from "@/lib/cart";
 import { getAddressesForUser } from "@/lib/addresses";
 import { SHIPPING_FEE } from "@/lib/orders";
-import { isVnpayConfigured } from "@/lib/vnpay";
+import { isMomoConfigured } from "@/lib/momo";
 import { getActiveStores } from "@/lib/stores";
 import CheckoutForm from "./CheckoutForm";
 
@@ -47,7 +47,7 @@ export default async function CheckoutPage() {
               label: a.label,
               isDefault: a.isDefault,
             }))}
-            vnpayAvailable={isVnpayConfigured()}
+            momoAvailable={isMomoConfigured()}
             stores={stores.map((s) => ({
               id: s.id,
               name: s.name,

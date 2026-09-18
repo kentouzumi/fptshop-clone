@@ -422,6 +422,7 @@ enum PaymentMethod {
   INSTALLMENT
   BANK_TRANSFER
   VNPAY
+  MOMO
 }
 
 enum PaymentStatus {
