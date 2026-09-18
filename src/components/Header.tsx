@@ -56,9 +56,16 @@ const ICON_LINK_CLASS =
 
 export default async function Header() {
   const user = await getCurrentUser();
-  const cartCount = user ? await getCartItemCount(user.id) : 0;
-  const wishlistCount = user ? await getWishlistCount(user.id) : 0;
-  const unreadCount = user ? await getUnreadNotificationCount(user.id) : 0;
+  // Header render trên MỌI trang (nhúng ở layout.tsx) nên 3 query này cộng dồn
+  // độ trễ ở MỌI lần chuyển trang nếu chạy tuần tự — độc lập với nhau (chỉ cùng
+  // cần user.id) nên chạy song song bằng Promise.all thay vì await lần lượt.
+  const [cartCount, wishlistCount, unreadCount] = user
+    ? await Promise.all([
+        getCartItemCount(user.id),
+        getWishlistCount(user.id),
+        getUnreadNotificationCount(user.id),
+      ])
+    : [0, 0, 0];
   const isAdmin = user && (user.role === "ADMIN" || user.role === "SUPER_ADMIN");
 
   return (

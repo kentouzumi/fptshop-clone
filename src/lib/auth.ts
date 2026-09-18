@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { randomBytes } from "crypto";
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 
 export const SESSION_COOKIE_NAME = "session_token";
@@ -34,7 +35,13 @@ export async function destroySession() {
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
-export async function getCurrentUser() {
+// Header.tsx (nhúng ở layout.tsx, chạy trên MỌI trang) VÀ hầu hết page.tsx cần
+// đăng nhập đều tự gọi getCurrentUser() riêng — không cache() thì mỗi trang tốn
+// ÍT NHẤT 2 lần round-trip DB chỉ để tra cùng 1 session token trong cùng 1
+// request. cache() của React dedupe các lệnh gọi giống hệt nhau (cùng tham số,
+// ở đây không có tham số nào) trong CÙNG 1 lượt render server — chỉ query DB
+// đúng 1 lần dù gọi getCurrentUser() bao nhiêu lần trong 1 request.
+export const getCurrentUser = cache(async function getCurrentUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return null;
@@ -49,7 +56,7 @@ export async function getCurrentUser() {
   }
 
   return session.user;
-}
+});
 
 export async function requireAdmin() {
   const user = await getCurrentUser();

@@ -42,24 +42,29 @@ export default async function ProductDetailPage({
     attributeGroups.set(attr.groupName, list);
   }
 
-  const { products: relatedProducts } = await getProducts({
-    categorySlug: product.category.slug,
-    limit: 4,
-  });
+  // Loạt query dưới đây trước kia chạy TUẦN TỰ (7 lượt await liên tiếp) dù phần
+  // lớn độc lập với nhau — chỉ cần đúng thứ tự phụ thuộc dữ liệu (product ->
+  // (related sản phẩm + user hiện tại) -> phần còn lại cần cả 2 cái đó), nên
+  // gom thành 2 đợt Promise.all thay vì 7 round-trip DB nối đuôi nhau.
+  const [{ products: relatedProducts }, currentUser] = await Promise.all([
+    getProducts({ categorySlug: product.category.slug, limit: 4 }),
+    getCurrentUser(),
+  ]);
   const related = relatedProducts.filter((p) => p.id !== product.id).slice(0, 4);
 
-  const currentUser = await getCurrentUser();
-  const { reviews, count: reviewCount, average: averageRating } = await getProductReviews(
-    product.id,
-    currentUser?.id
-  );
-  const userReview = currentUser
-    ? await getUserReviewForProduct(currentUser.id, product.id)
-    : null;
-  const inWishlist = currentUser ? await isInWishlist(currentUser.id, product.id) : false;
-  const relatedWishlistedIds = currentUser
-    ? await getWishlistedProductIds(currentUser.id, related.map((p) => p.id))
-    : new Set<string>();
+  const [
+    { reviews, count: reviewCount, average: averageRating },
+    userReview,
+    inWishlist,
+    relatedWishlistedIds,
+  ] = await Promise.all([
+    getProductReviews(product.id, currentUser?.id),
+    currentUser ? getUserReviewForProduct(currentUser.id, product.id) : Promise.resolve(null),
+    currentUser ? isInWishlist(currentUser.id, product.id) : Promise.resolve(false),
+    currentUser
+      ? getWishlistedProductIds(currentUser.id, related.map((p) => p.id))
+      : Promise.resolve(new Set<string>()),
+  ]);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
