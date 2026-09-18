@@ -25,7 +25,7 @@ export default async function ProfilePage() {
       <div className="card p-6">
         <ProfileForm
           initialFullName={user.fullName}
-          initialEmail={user.email ?? ""}
+          email={user.email ?? ""}
           phone={user.phone}
         />
       </div>

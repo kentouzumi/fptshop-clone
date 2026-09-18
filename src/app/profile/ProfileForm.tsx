@@ -5,16 +5,15 @@ import { useRouter } from "next/navigation";
 
 export default function ProfileForm({
   initialFullName,
-  initialEmail,
+  email,
   phone,
 }: {
   initialFullName: string;
-  initialEmail: string;
+  email: string;
   phone: string | null;
 }) {
   const router = useRouter();
   const [fullName, setFullName] = useState(initialFullName);
-  const [email, setEmail] = useState(initialEmail);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -28,7 +27,7 @@ export default function ProfileForm({
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, email }),
+        body: JSON.stringify({ fullName }),
       });
       const data = await res.json();
 
@@ -46,6 +45,11 @@ export default function ProfileForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <div>
+        <label className="mb-1 block text-sm font-medium text-zinc-500">Email</label>
+        <input className="input bg-zinc-50 text-zinc-500" value={email} disabled />
+      </div>
+
       {phone && (
         <div>
           <label className="mb-1 block text-sm font-medium text-zinc-500">
@@ -66,17 +70,6 @@ export default function ProfileForm({
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           required
-        />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium">Email (không bắt buộc)</label>
-        <input
-          type="email"
-          className="input"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Dùng để nhận thông báo/hóa đơn"
         />
       </div>
 

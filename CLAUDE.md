@@ -1108,7 +1108,442 @@
       chưa tự làm bước này vì commit/push là hành động cần user xác nhận
       trước (theo quy tắc chỉ commit khi được yêu cầu rõ ràng).
 
+- [x] Deploy thành công lên Vercel (https://fptshop-clone.vercel.app), đã push
+      commit lên `origin/master` và import project qua Vercel dashboard. Gặp
+      2 LỖI THẬT lúc deploy, cả 2 đều chỉ lộ ra ở production chứ không tái
+      hiện được lúc test local:
+
+      1. Trang chủ/`/products`/`/stores` (mọi trang có query DB) trả 500.
+         NGUYÊN NHÂN: `.env` local lưu giá trị bọc trong dấu ngoặc kép (vd
+         `DATABASE_URL="postgresql://..."`) — dotenv/Next.js tự bóc dấu `"`
+         khi đọc file `.env`, nhưng lúc dán tay giá trị đó vào ô Environment
+         Variables trên Vercel dashboard thì dấu `"` bị dán luôn thành 1
+         phần của giá trị thật, phá vỡ connection string. Đã sửa: dán lại
+         KHÔNG có dấu ngoặc kép ở đầu/cuối.
+
+      2. Sau khi sửa lỗi (1), vẫn 500 với lỗi khác:
+         `(EMAXCONNSESSION) max clients reached in session mode - max
+         clients are limited to pool_size: 15`. NGUYÊN NHÂN: DATABASE_URL
+         đang trỏ vào Supabase **Session Pooler** (port 5432) — phù hợp khi
+         chạy local vì `npm run dev` chỉ có 1 process giữ 1 pool kết nối
+         duy nhất, nhưng Vercel chạy serverless: nhiều instance function có
+         thể được spawn song song, MỖI instance tự tạo 1 `PrismaClient`/
+         `pg.Pool` riêng (biến cache instance qua `globalThis` trong
+         lib/prisma.ts chỉ có tác dụng khi `NODE_ENV !== "production"`,
+         KHÔNG áp dụng trên Vercel) — chỉ cần 2 instance chạy cùng lúc là
+         đã vượt giới hạn 15 connection của Session Pooler. Đã sửa bằng
+         cách đổi `DATABASE_URL` trên Vercel sang **Transaction Pooler**
+         (port 6543, lấy từ Supabase Dashboard -> Project Settings ->
+         Database -> Connection string -> tab "Transaction") — pooler mode
+         này chỉ giữ 1 connection thật trong lúc chạy đúng 1 câu query rồi
+         trả ngay lại pool, chịu được nhiều instance serverless chạy song
+         song với cùng 1 giới hạn pool_size nhỏ. Local `.env` vẫn giữ
+         nguyên Session Pooler (không bắt buộc đổi vì local luôn chỉ có 1
+         process). LƯU Ý: `@prisma/adapter-pg` (driver adapter dùng `pg`
+         thay vì query engine gốc của Prisma) tương thích tốt với
+         Transaction Pooler vì phát query dạng unnamed prepared statement —
+         nếu dùng Prisma Client thường (không qua driver adapter) thì có
+         thể cần thêm `?pgbouncer=true` vào connection string, dự án này
+         không cần vì đã dùng driver adapter từ đầu.
+
+      Đã xác minh lại toàn bộ sau khi sửa: `/`, `/products`, `/stores`,
+      `/faq` đều 200 kèm đúng dữ liệu thật (không chỉ tin status code, đã
+      grep nội dung HTML thấy đúng tên sản phẩm/cửa hàng), theme "Đêm Hổ
+      Phách" build đúng vào CSS production, guard đăng nhập (`/checkout`,
+      `/admin/products`) redirect đúng khi chưa đăng nhập.
+
+      PHÁT HIỆN THÊM (chưa phải bug, là hệ quả tất yếu của môi trường
+      production): gọi `/api/auth/otp/request` trên production không còn
+      trả về `devCode` (đúng thiết kế — chỉ trả khi `NODE_ENV !==
+      "production"`) — nghĩa là trước khi nối SMS gateway thật, KHÔNG ai
+      đăng nhập được trên bản production vì không có cách nào thấy mã OTP.
+      Đây chính là lý do làm tiếp mục SMS bên dưới ngay sau đó.
+
+- [x] Gửi OTP qua SMS thật bằng SpeedSMS (thay cho mock console.log trước
+      giờ). Chọn SpeedSMS theo yêu cầu của user (so với Twilio/eSMS đã nêu
+      trong ghi chú TODO cũ) — lý do chọn: nhà cung cấp Việt Nam, đăng ký
+      nhanh bằng tài khoản cá nhân, không cần giấy phép kinh doanh, phù hợp
+      project cá nhân/học tập.
+
+      src/lib/sms.ts (mới, thuần logic gọi API, không đụng DB):
+      `isSmsConfigured()` check biến env `SPEEDSMS_ACCESS_TOKEN`,
+      `sendOtpSms(localPhone, code)` gọi
+      `POST https://api.speedsms.vn/index.php/sms/send` — xác thực bằng
+      HTTP Basic Auth (access token làm username, password để trống, theo
+      đúng tài liệu API của SpeedSMS), body `sms_type: 2` (loại "CSKH" —
+      cố tình chọn loại này vì KHÔNG cần đăng ký brandname trước như loại
+      3/5, phù hợp để bắt đầu ngay không cần chờ duyệt hồ sơ thương hiệu).
+      Tự đổi định dạng số điện thoại: `normalizePhone()` ở lib/otp.ts trả
+      dạng nội địa "0912345678" nhưng SpeedSMS yêu cầu dạng quốc tế không
+      dấu "+" ("84912345678") — có hàm `toInternationalPhone()` riêng xử
+      lý. Nội dung SMS CỐ Ý viết KHÔNG dấu tiếng Việt (theo đúng bảng giá
+      SpeedSMS: tin có dấu giới hạn 70 ký tự/tin trước khi bị tính thành 2
+      tin, không dấu được tới 160 ký tự — tránh phát sinh chi phí/rủi ro bị
+      cắt đôi tin ngoài ý muốn).
+
+      lib/otp.ts: `requestOtp()` đổi thứ tự thao tác — GỬI SMS TRƯỚC, chỉ
+      tạo bản ghi `OtpCode` trong DB (kích hoạt cooldown 60s) NẾU gửi SMS
+      thành công (hoặc chưa cấu hình SMS thì vẫn tạo bình thường + log
+      console như cũ) — tránh trường hợp gửi SMS lỗi nhưng vẫn lỡ tạo bản
+      ghi, khiến user bị khóa cooldown 60 giây cho 1 mã mà họ chẳng bao giờ
+      nhận được. Thêm 2 class lỗi riêng `OtpCooldownError`/`SmsSendError`
+      (trước đó chỉ ném `Error` chung chung) để API route phân biệt được
+      trả đúng status code (429 cho cooldown, 502 cho lỗi gửi SMS — trước
+      đây lỡ trả 429 cho MỌI lỗi, sai ngữ nghĩa HTTP). Trả kèm `smsSent:
+      boolean` để route quyết định có lộ `devCode` hay không.
+
+      API /api/auth/otp/request: chỉ trả `devCode` khi VỪA `NODE_ENV !==
+      "production"` VỪA `smsSent === false` — nghĩa là một khi đã cấu hình
+      SPEEDSMS_ACCESS_TOKEN (kể cả lúc chạy local), `devCode` sẽ TỰ ĐỘNG
+      biến mất khỏi response vì SMS thật đã gửi thành công, không cần thiết
+      phải lộ mã qua API nữa — tránh tình trạng dev quen dùng devCode mà
+      quên rằng production đã không còn kênh dự phòng này.
+
+      .env: thêm `SPEEDSMS_ACCESS_TOKEN` (để trống — lấy tại
+      https://connect.speedsms.vn, mục Cài đặt > Hồ sơ, sau khi đăng ký
+      tài khoản). Để trống thì toàn bộ hành vi CŨ được giữ nguyên (mock
+      console.log + trả devCode ở dev) — không phá luồng test hiện có.
+
+      Đã test qua dev server (không cấu hình token, xác nhận hành vi cũ
+      không đổi): gọi `/api/auth/otp/request` với số test ngẫu nhiên vẫn
+      trả đúng `{"ok":true,"devCode":"..."}` y hệt trước khi sửa. `tsc`/
+      `eslint` sạch. CHƯA test được luồng gửi SMS THẬT (cần user tự đăng
+      ký tài khoản SpeedSMS + điền `SPEEDSMS_ACCESS_TOKEN` vì đây là thông
+      tin tài khoản riêng, không tự tạo hộ được) — sau khi có token cần
+      test: gửi thử 1 số điện thoại thật nhận được SMS, xác nhận cooldown
+      không bị kích hoạt sai khi gửi lỗi (vd token sai), xác nhận devCode
+      biến mất khỏi response khi gửi SMS thành công. Đã dọn dữ liệu test
+      OTP record tạo ra lúc test hành vi cũ.
+
+      ĐÃ BỊ THAY THẾ HOÀN TOÀN — xem mục "Chuyển sang Firebase Phone
+      Authentication" ngay bên dưới. Lý do: tài khoản SpeedSMS đăng ký được
+      nhưng không có gói dịch vụ nào active (bảng gói trong Cài đặt trống,
+      nút đăng ký gói Basic 0đ không bấm được), thử cả 2 sản phẩm của
+      SpeedSMS (API SMS thường /sms/send và sản phẩm 2FA/Verification
+      /pin/create+/pin/verify) đều gặp lỗi "sender not found" — xác nhận qua
+      curl trực tiếp (bỏ qua hẳn code của app) vẫn cùng lỗi, nên chắc chắn là
+      vấn đề ở phía tài khoản SpeedSMS chứ không phải bug code. Toàn bộ
+      src/lib/sms.ts, src/lib/otp.ts, 2 API route /api/auth/otp/{request,
+      verify}, và 2 biến env SPEEDSMS_ACCESS_TOKEN/SPEEDSMS_APP_ID đã bị XÓA
+      HẲN (không giữ lại code chết) khi chuyển sang Firebase.
+
+- [x] Chuyển sang Firebase Phone Authentication để gửi OTP thật (thay hẳn
+      SpeedSMS — xem lý do bỏ SpeedSMS ở mục ngay trên). Cân nhắc thêm trước
+      khi chọn: eSMS.vn (nhà cung cấp SMS Việt Nam khác) cũng bị loại vì tài
+      liệu chính thức của họ ghi rõ bắt buộc đăng ký Brandname + template
+      trước khi dùng API — cùng rào cản pháp lý chống spam SMS của VN áp
+      dụng cho MỌI nhà cung cấp SMS trong nước, không riêng SpeedSMS, nên
+      không có nhà cung cấp VN nào dùng được ngay cho project cá nhân không
+      có giấy phép kinh doanh. Twilio Verify cũng bị loại vì tài khoản dùng
+      thử (trial) bắt buộc PHẢI tự "verify" số điện thoại người nhận trong
+      dashboard Twilio trước thì mới gửi được — không gửi được cho số bất kỳ
+      ngay từ đầu, cùng kiểu rào cản "cần duyệt trước" đã gặp với SpeedSMS/
+      eSMS. Firebase Phone Auth không có rào cản nào trong 2 loại trên: gửi
+      được cho số thật bất kỳ ngay khi tạo xong project, miễn phí, và do
+      chính Google vận hành hạ tầng gửi SMS (không phải nhà mạng VN duyệt).
+
+      KHÁC BIỆT KIẾN TRÚC quan trọng so với SpeedSMS/mock cũ: trước đây toàn
+      bộ việc sinh mã + gửi SMS + xác thực đều do SERVER của app tự làm
+      (gọi API SpeedSMS hoặc tự lưu bảng OtpCode). Với Firebase Phone Auth,
+      việc gửi SMS + xác thực mã diễn ra ở TRÌNH DUYỆT qua Firebase JS SDK
+      (kèm reCAPTCHA vô hình bắt buộc để chống spam) — server của app không
+      bao giờ thấy mã OTP, chỉ nhận lại 1 idToken (JWT do Firebase ký) sau
+      khi trình duyệt xác thực xong, rồi TỰ VERIFY lại chữ ký idToken đó
+      bằng Firebase Admin SDK để lấy số điện thoại ĐÃ ĐƯỢC XÁC THỰC (không
+      tin số điện thoại do client tự gửi lên dưới dạng text thường).
+
+      src/lib/phone.ts (mới, tách ra từ lib/otp.ts cũ vì giờ cả client
+      (login/page.tsx) lẫn server (API verify) đều cần dùng): normalizePhone()
+      giữ nguyên y hệt logic cũ (chuẩn hóa về dạng nội địa "0912345678" để
+      khớp quy ước lưu User.phone có sẵn), thêm toE164() đổi sang dạng quốc
+      tế "+84912345678" mà Firebase Phone Auth bắt buộc phải dùng khi gọi
+      signInWithPhoneNumber().
+
+      src/lib/firebaseClient.ts (mới, "use client"): getFirebaseAuth() khởi
+      tạo Firebase App phía trình duyệt từ 3 biến NEXT_PUBLIC_FIREBASE_*
+      (API key/authDomain/projectId — các giá trị này vốn công khai theo
+      thiết kế của Firebase, không phải bí mật cần giấu, bảo mật thật nằm ở
+      danh sách "Authorized domains" chứ không phải giấu config).
+
+      src/lib/firebaseAdmin.ts (mới, chỉ chạy server): getFirebaseAdminAuth()
+      khởi tạo Firebase Admin App từ service account (FIREBASE_PROJECT_ID/
+      FIREBASE_CLIENT_EMAIL/FIREBASE_PRIVATE_KEY) — dùng để verifyIdToken()
+      xác thực chữ ký token gửi lên từ client. FIREBASE_PRIVATE_KEY lưu
+      trong .env dưới dạng 1 dòng có "\n" theo nghĩa đen (không phải xuống
+      dòng thật, vì .env không hỗ trợ multi-line), code tự `.replace(/\\n/g,
+      "\n")` lại thành PEM hợp lệ trước khi dùng.
+
+      src/app/api/auth/firebase/verify/route.ts (mới, thay hẳn 2 route
+      /api/auth/otp/{request,verify} đã xóa): nhận `{ idToken }`, verify chữ
+      ký qua Firebase Admin, lấy `decoded.phone_number` (đã được Firebase xác
+      thực, KHÔNG phải giá trị client tự khai), tìm/tạo User theo đúng logic
+      cũ y hệt (tạo mới nếu chưa có phone, fullName mặc định = SĐT — vẫn
+      đóng vai trò "đăng ký" ẩn như trước), rồi createSession() y hệt luồng
+      cũ trong lib/auth.ts (không đổi gì ở tầng session/cookie).
+
+      src/app/login/page.tsx: viết lại toàn bộ luồng gửi/xác thực mã sang
+      chạy qua Firebase JS SDK thay vì gọi 2 API cũ. Bước 1 (nhập SĐT):
+      tạo mới 1 `RecaptchaVerifier` (size "invisible") MỖI LẦN gửi — verifier
+      đã dùng 1 lần hoặc hết hạn sẽ lỗi nếu tái sử dụng cho lần gửi tiếp
+      theo, nên không cache lại. Gọi `signInWithPhoneNumber()`, lưu
+      `ConfirmationResult` trả về vào 1 `useRef` (không phải state — không
+      cần re-render khi có, và object này không serialize được nên không
+      thể để trong state an toàn qua các lần render). Bước 2 (nhập mã): gọi
+      `confirmationRef.current.confirm(code)` (Firebase tự xác thực mã,
+      KHÔNG gọi lên server của app), lấy `idToken` từ kết quả rồi POST sang
+      `/api/auth/firebase/verify` để tạo session. Thêm 1 `<div
+      id="recaptcha-container">` ẩn trong trang — bắt buộc phải tồn tại
+      trong DOM trước khi gọi `signInWithPhoneNumber()`. Bỏ hẳn state/UI
+      `devCode` (không còn ý nghĩa — Firebase không có "chế độ dev lộ mã"
+      kiểu app tự làm trước đây; muốn test không tốn SMS thật thì dùng tính
+      năng "Phone numbers for testing" trong Firebase Console, chưa cấu
+      hình vì không bắt buộc).
+
+      GIỮ NGUYÊN, KHÔNG ĐỤNG: model `OtpCode` trong schema.prisma (cùng
+      quyết định như đã giữ `passwordHash`/`email` lúc bỏ đăng nhập email —
+      bảng giờ hoàn toàn không còn code nào ghi/đọc vào nữa nhưng để lại
+      không có tác hại, không cần thêm 1 lần `prisma db push` chỉ để xóa 1
+      bảng rỗng); toàn bộ src/lib/auth.ts (createSession/destroySession/
+      getCurrentUser/requireAdmin/requireSuperAdmin) không đổi gì.
+
+      ĐÃ XÓA: src/lib/otp.ts, src/lib/sms.ts, src/app/api/auth/otp/{request,
+      verify}/route.ts, dependency `bcryptjs`+`@types/bcryptjs` (hết nơi
+      dùng sau khi xóa lib/otp.ts — trước đó chỉ dùng để hash mã OTP trong
+      bảng OtpCode).
+
+      THÊM dependency: `firebase` (SDK phía client) + `firebase-admin` (SDK
+      phía server, dùng Node.js runtime — API route Next.js mặc định chạy
+      Node runtime nên không cần khai báo `export const runtime` gì thêm).
+
+      CHƯA CẤU HÌNH (cần user tự tạo project Firebase — xem hướng dẫn chi
+      tiết ngay trong .env cạnh 6 biến FIREBASE_*/NEXT_PUBLIC_FIREBASE_*):
+      để trống thì `RecaptchaVerifier`/`signInWithPhoneNumber` ở client sẽ
+      lỗi ngay (Firebase config rỗng), và `getFirebaseAdminAuth()` ở server
+      throw lỗi rõ ràng "Thiếu cấu hình Firebase Admin..." — CHƯA có nhánh
+      fallback mock như SpeedSMS trước đây (khác quyết định trước: lúc đó
+      giữ fallback vì SMS gateway là bổ sung thêm cho luồng OtpCode tự viết
+      sẵn có; giờ OTP tự viết đã bị xóa hẳn nên không còn gì để fallback về).
+      Trên Vercel, nhớ thêm domain `fptshop-clone.vercel.app` vào
+      "Authorized domains" (Authentication > Settings) — thiếu bước này thì
+      `signInWithPhoneNumber` sẽ báo lỗi domain không được phép ngay trên
+      production dù đã điền đủ env vars.
+
+      Đã test qua dev server (chưa có Firebase project thật, chỉ xác nhận
+      không phá vỡ luồng còn lại): `tsc --noEmit` + `eslint` sạch sau khi
+      xóa 4 file cũ + thêm 5 file mới, `npm run build` thành công (đủ 85
+      route, có `/api/auth/firebase/verify` thay cho 2 route otp cũ đã
+      biến mất khỏi danh sách route), `/login` trả 200 và HTML render đúng
+      `<div id="recaptcha-container">`, không còn chữ "Đăng ký" ở đâu.
+      CHƯA test được luồng thật (cần user tự tạo Firebase project + điền 6
+      biến env vì đây là thông tin project riêng) — sau khi có project cần
+      test: gửi OTP tới số thật nhận được SMS qua Firebase, xác nhận
+      reCAPTCHA vô hình không chặn luồng bình thường, xác nhận tạo
+      User mới đúng ở lần xác thực đầu tiên, đăng nhập lại lần 2 với cùng số
+      không tạo User trùng, và trên Vercel sau khi thêm Authorized domain.
+
+      ĐÃ BỊ THAY THẾ HOÀN TOÀN — xem mục "Chuyển sang Twilio Verify" ngay bên
+      dưới. Lý do bỏ Firebase: gửi SMS thật đòi hỏi nâng cấp project lên gói
+      Blaze (`auth/billing-not-enabled` ở Spark), nhưng billing account
+      Google Cloud của user ("ttt") bị khóa "not in good standing" và không
+      tự "Reopen" được — vấn đề nằm ở hồ sơ thanh toán Google, ngoài tầm code.
+      Thử dùng "Phone numbers for testing" (né được billing) để tạm test thì
+      lại dính bug khác của chính script reCAPTCHA của Google (`Cannot read
+      properties of null (reading 'style')` trong recaptcha__en.js) — thử
+      thêm `auth.settings.appVerificationDisabledForTesting = true` để né
+      script reCAPTCHA thật vẫn không dứt điểm được, user quyết định bỏ hẳn
+      Firebase. Toàn bộ src/lib/firebaseClient.ts, src/lib/firebaseAdmin.ts,
+      API route /api/auth/firebase/verify, và dependency `firebase`+
+      `firebase-admin` đã bị XÓA HẲN khi chuyển sang Twilio.
+
+- [x] Chuyển sang Twilio Verify để gửi OTP thật (thay hẳn Firebase — xem lý
+      do bỏ Firebase ở mục ngay trên). Twilio dùng hệ thống billing riêng của
+      Twilio/Stripe (không qua Google Cloud Billing) nên né được đúng vấn đề
+      "not in good standing" đã gặp — user tự đăng ký tài khoản Twilio, không
+      gặp lại lỗi billing tương tự lúc đăng ký.
+
+      QUAY LẠI kiến trúc server-driven y hệt bản SpeedSMS trước đây (khác hẳn
+      Firebase — Firebase bắt buộc gửi/xác thực mã ở client qua SDK kèm
+      reCAPTCHA; Twilio Verify giống SpeedSMS 2FA: server tự gọi API tạo mã +
+      xác thực mã, không cần JS SDK ở client, không cần reCAPTCHA). Nhờ vậy
+      phục hồi lại gần như nguyên vẹn code trước khi có Firebase: src/lib/
+      otp.ts (requestOtp/verifyOtp + fallback bảng OtpCode khi chưa cấu hình
+      + 2 class lỗi OtpCooldownError/SmsSendError), 2 API route /api/auth/otp/
+      {request,verify}, và trang /login dạng form 2 bước gọi thẳng 2 API đó
+      (không còn RecaptchaVerifier/ConfirmationResult gì cả).
+
+      src/lib/sms.ts (viết lại cho Twilio, thay nội dung SpeedSMS cũ):
+      `isSmsConfigured()` check đủ 3 biến TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/
+      TWILIO_VERIFY_SERVICE_SID. `createOtpPin(e164Phone)` gọi
+      `POST https://verify.twilio.com/v2/Services/{ServiceSid}/Verifications`
+      (body `To`+`Channel=sms`), `verifyOtpPin(e164Phone, code)` gọi
+      `.../VerificationCheck` (body `To`+`Code`, coi thành công khi
+      `data.status === "approved"`) — cả 2 xác thực bằng HTTP Basic Auth
+      (Account SID làm username, Auth Token làm password). KHÔNG dùng SDK
+      `twilio` npm (gọi thẳng REST API qua `fetch` cho nhất quán với cách đã
+      làm với SpeedSMS, tránh thêm dependency không cần thiết). Khác SpeedSMS
+      (nhận số dạng nội địa "0912...") — Twilio Verify bắt buộc dạng quốc tế
+      "+8491...", nên lib/otp.ts tự gọi `toE164()` (từ lib/phone.ts, viết lúc
+      làm Firebase, vẫn tái sử dụng được nguyên vẹn) trước khi gọi sang
+      lib/sms.ts.
+
+      Cài lại dependency `bcryptjs`+`@types/bcryptjs` (đã gỡ lúc chuyển sang
+      Firebase vì hết chỗ dùng — giờ cần lại cho nhánh fallback OtpCode tự
+      viết trong lib/otp.ts, y hệt lý do dùng trước đây). Gỡ hẳn dependency
+      `firebase`+`firebase-admin`.
+
+      .env: thay 6 biến FIREBASE_*/NEXT_PUBLIC_FIREBASE_* bằng 3 biến
+      TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_VERIFY_SERVICE_SID (để trống
+      thì fallback y hệt hành vi cũ: log mã ra console + trả devCode ở dev).
+      LƯU Ý tài khoản Twilio Trial (miễn phí): chỉ gửi được tới số đã tự
+      "verify" thủ công trong Twilio Console (Phone Numbers > Verified Caller
+      IDs) — gửi cho số bất kỳ (dùng thật cho người dùng) cần nâng cấp tài
+      khoản trả phí, ghi rõ trong .env để user biết trước khi test.
+
+      Đã test qua dev server (chưa cấu hình Twilio, xác nhận toàn bộ luồng
+      fallback hoạt động lại đúng như trước khi có Firebase): gọi
+      `/api/auth/otp/request` với số test trả đúng `{"ok":true,"devCode":
+      "..."}`, dùng đúng mã đó gọi `/api/auth/otp/verify` tạo đúng User mới +
+      session (kiểm tra qua response trả về id/phone/fullName), `/login` trả
+      200 không còn `<div id="recaptcha-container">`. `tsc --noEmit` +
+      `npm run build` (đủ 85 route, có lại `/api/auth/otp/{request,verify}`,
+      hết `/api/auth/firebase/verify`) + `eslint` đều sạch. Đã dọn User/
+      Session/OtpCode tạo ra lúc test. CHƯA test được luồng gửi SMS THẬT qua
+      Twilio (cần user tự đăng ký tài khoản + tạo Verify Service + điền 3
+      biến env, và tự verify số nhận trong Console nếu còn ở Trial) — sau khi
+      có đủ cấu hình cần test: gửi OTP thật nhận được SMS, xác nhận devCode
+      biến mất khỏi response khi đã cấu hình Twilio.
+
+      ĐÃ BỊ THAY THẾ HOÀN TOÀN — xem mục "Chuyển hẳn sang đăng nhập bằng
+      Google (OAuth)" ngay bên dưới. Lý do bỏ Twilio: tạo "Verify Service"
+      (bắt buộc để dùng Twilio Verify) đòi hỏi phải nâng cấp/gắn thanh toán
+      trước — cùng 1 kiểu rào cản "cần thẻ trước khi dùng" đã gặp ở CẢ 4 nhà
+      cung cấp thử qua (SpeedSMS, eSMS, Firebase, Twilio), xác nhận đây là
+      yêu cầu chung của toàn ngành SMS OTP (chống spam/lừa đảo) chứ không
+      phải do chọn sai provider — nên user quyết định bỏ hẳn hướng SMS, đổi
+      hẳn phương thức đăng nhập sang OAuth Google (không nhà cung cấp SMS
+      nào bị dính líu nữa, Google OAuth Client miễn phí hoàn toàn, không cần
+      thẻ). Toàn bộ src/lib/otp.ts, src/lib/sms.ts, src/lib/phone.ts, 2 route
+      /api/auth/otp/{request,verify}, và dependency `bcryptjs`+
+      `@types/bcryptjs` đã bị XÓA HẲN.
+
+- [x] Chuyển hẳn sang đăng nhập bằng Google (OAuth 2.0), bỏ HOÀN TOÀN đăng
+      nhập bằng số điện thoại + OTP (xem chuỗi lý do bỏ SMS ở mục ngay trên —
+      SpeedSMS/eSMS/Firebase/Twilio đều bị chặn bởi rào cản đăng ký
+      Brandname VN hoặc yêu cầu billing/thẻ thanh toán). Đây là thay đổi
+      KIẾN TRÚC đăng nhập lần thứ 2 trong dự án (lần 1: email/mật khẩu ->
+      SĐT/OTP; lần 2 này: SĐT/OTP -> Google OAuth) — `email` (đã có sẵn
+      trong schema từ đầu, unique) giờ thay thế `phone` làm định danh đăng
+      nhập chính.
+
+      TỰ VIẾT OAuth 2.0 Authorization Code flow (KHÔNG dùng NextAuth/Auth.js
+      hay SDK `google-auth-library` — nhất quán với cách toàn bộ dự án tự
+      viết auth từ đầu bằng session token + cookie riêng, xem lib/auth.ts).
+      src/lib/googleOAuth.ts (mới): `isGoogleOAuthConfigured()` check đủ 3
+      biến GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI;
+      `getGoogleAuthUrl(state)` build URL sang
+      `https://accounts.google.com/o/oauth2/v2/auth` (scope
+      userinfo.email + userinfo.profile, `prompt=select_account` để luôn
+      cho chọn lại tài khoản thay vì tự động dùng tài khoản Google đã đăng
+      nhập sẵn trên trình duyệt); `exchangeCodeForAccessToken(code)` POST
+      sang `https://oauth2.googleapis.com/token` lấy access_token;
+      `getGoogleUserInfo(accessToken)` GET
+      `https://www.googleapis.com/oauth2/v2/userinfo` lấy email/name — CHỌN
+      gọi endpoint userinfo thay vì tự parse+verify chữ ký `id_token` (JWT)
+      trả về cùng lúc, vì access_token/id_token đến từ 1 lệnh gọi server-to-
+      server trực tiếp tới Google (không phải do client gửi lên), nên không
+      cần tự verify chữ ký như trường hợp Firebase idToken trước đây (lúc đó
+      idToken đi qua trình duyệt trước khi tới server, cần verify để không
+      tin nhầm giá trị client tự khai).
+
+      API: `/api/auth/google/start` (GET) — sinh `state` ngẫu nhiên chống
+      CSRF, lưu vào cookie httpOnly 5 phút, redirect 307 sang URL Google;
+      chưa cấu hình đủ 3 biến thì redirect thẳng về `/login?error=
+      not_configured` thay vì lỗi 500. `/api/auth/google/callback` (GET) —
+      đối chiếu `state` trả về đúng cookie đã lưu (xóa cookie ngay sau khi
+      đọc, dùng 1 lần), đổi `code` lấy access_token rồi lấy thông tin user,
+      CHẶN nếu `verified_email !== true` (không tin email chưa được Google
+      tự xác minh), tìm/tạo User theo `email` (logic tự tạo User mới ở lần
+      đăng nhập đầu tiên giống hệt pattern cũ của OTP — `fullName` mặc định
+      lấy từ `name` Google trả về, dự phòng dùng luôn email nếu thiếu),
+      `createSession()` y hệt lib/auth.ts không đổi gì, cuối cùng redirect
+      về `/`. Mọi lỗi ở giữa (state sai, Google trả lỗi, email chưa xác
+      minh, tài khoản bị khóa) đều redirect về `/login?error=<mã lỗi>` kèm
+      thông báo tiếng Việt tương ứng hiện ở trang login, không bao giờ crash
+      500 giữa luồng OAuth.
+
+      src/app/login/page.tsx: đổi hẳn từ Client Component (form nhập liệu)
+      sang Server Component thuần — không còn state/JS nào cần thiết, chỉ là
+      1 thẻ `<a href="/api/auth/google/start">` (điều hướng browser bình
+      thường, không cần `fetch`/`onClick`), đọc `searchParams.error` để hiện
+      thông báo lỗi tương ứng nếu quay lại từ luồng OAuth thất bại.
+
+      src/app/profile: `email` chuyển từ "thông tin liên hệ tùy chọn có thể
+      sửa" (thời OTP) sang **read-only** giống hệt cách `phone` từng read-
+      only ở thời OTP — vì lý do TƯƠNG TỰ: email giờ là định danh đăng nhập
+      khớp với tài khoản Google, cho sửa tự do trong `/api/profile` sẽ làm
+      lệch giữa email lưu trong User và email Google trả về ở lần đăng nhập
+      sau, dẫn tới KHÔNG tìm thấy User cũ nữa và vô tình tạo User trùng cho
+      cùng 1 tài khoản Google thật (bug tương tự lớp bug "quan hệ optional
+      tự SetNull" đã note ở mục Lưu ý quan trọng — chủ động ngăn trước thay
+      vì để xảy ra rồi mới vá). `/api/profile` (PATCH) bỏ hẳn toàn bộ logic
+      check trùng email/EMAIL_REGEX, giờ chỉ còn nhận và cập nhật `fullName`.
+
+      GIỮ NGUYÊN, KHÔNG ĐỤNG: field `phone`/`passwordHash` trên model User
+      (cùng quyết định như các lần đổi kiến trúc auth trước — cột giờ không
+      còn code nào ghi vào nhưng để lại không có tác hại, không cần thêm 1
+      lần `prisma db push`); model `OtpCode` (đã dead từ lúc chuyển sang
+      Firebase, nay càng chắc chắn không cần nữa nhưng vẫn giữ nguyên lý do
+      cũ); toàn bộ lib/auth.ts không đổi gì.
+
+      .env: thay 3 biến TWILIO_* bằng 3 biến GOOGLE_CLIENT_ID/
+      GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI (hướng dẫn đầy đủ cách lấy 3
+      giá trị này qua Google Cloud Console — OAuth consent screen + OAuth
+      client ID — ngay trong .env). KHÁC các lần trước: KHÔNG có nhánh
+      fallback mock nào nếu thiếu cấu hình (route `/api/auth/google/start`
+      chỉ redirect về `/login?error=not_configured`) — vì đây không còn là
+      "gateway phụ có thể tắt" như SMS mà là cách đăng nhập DUY NHẤT còn lại
+      của cả hệ thống.
+
+      Đã test qua dev server: `tsc --noEmit` sạch, `npm run build` thành
+      công (đủ 85 route, có `/api/auth/google/{start,callback}` thay hẳn
+      2 route `/api/auth/otp/*` đã biến mất), `eslint` sạch. Smoke-test:
+      `/login` trả 200 kèm đúng nút "Đăng nhập bằng Google" trỏ tới
+      `/api/auth/google/start`, `/register` và `/api/auth/otp/request` đều
+      404 (xác nhận xóa sạch), gọi `/api/auth/google/start` khi chưa cấu
+      hình 3 biến GOOGLE_* trả đúng 307 redirect về
+      `/login?error=not_configured` thay vì lỗi 500. CHƯA test được luồng
+      OAuth thật đầu-cuối (cần user tự tạo OAuth Client trên Google Cloud
+      Console vì đây là thông tin project riêng) — sau khi có đủ cấu hình
+      cần test: bấm "Đăng nhập bằng Google" → chọn tài khoản → tạo đúng User
+      mới ở lần đầu (email/fullName đúng) → đăng nhập lại lần 2 với cùng
+      tài khoản Google không tạo User trùng mà tìm lại đúng User cũ → trên
+      Vercel sau khi thêm đúng Authorized redirect URI production.
+
+      ĐÃ TEST LUỒNG THẬT THÀNH CÔNG (local): user tự tạo OAuth Client trên
+      Google Cloud Console (project `fptshopclone`, OAuth consent screen ở
+      chế độ External/Testing), đăng nhập thật bằng tài khoản Google cá nhân
+      qua `/login` → tạo đúng User mới trong DB với `email` khớp tài khoản
+      Google, `fullName` lấy đúng tên hiển thị Google trả về, `emailVerified`
+      được set, `phone` là null (đúng dự kiến — không còn OTP nữa).
+
 ## Việc còn thiếu / cần làm tiếp
+- [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
+      .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
+      test ở mục "Chuyển hẳn sang đăng nhập bằng Google" ở trên).
+- [ ] CHƯA làm cho Vercel: thêm Authorized redirect URI production
+      (`https://fptshop-clone.vercel.app/api/auth/google/callback`) vào
+      đúng OAuth Client trên Google Cloud Console (Credentials > sửa OAuth
+      Client vừa tạo > Authorized redirect URIs > + Add URI), rồi điền 3
+      biến GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI vào
+      Environment Variables trên Vercel dashboard (GOOGLE_REDIRECT_URI dùng
+      URL production, KHÔNG phải localhost). CHƯA làm thì đăng nhập trên
+      production sẽ lỗi `redirect_uri_mismatch` từ Google dù local vẫn chạy
+      bình thường.
+- [ ] OAuth consent screen đang ở chế độ "Testing" — chỉ tài khoản nằm trong
+      danh sách "Test users" (Audience > Test users) mới đăng nhập được.
+      Muốn CHO NGƯỜI KHÁC đăng nhập được (vd khi demo cho người ngoài xem)
+      cần bấm "Publish app" chuyển sang "In production" (không cần Google
+      duyệt vì chỉ xin scope email/profile cơ bản).
 - [ ] Thanh toán online qua Momo — chưa làm, xem ghi chú ở mục VNPay trên
 - [ ] Polish CẤU TRÚC (không phải màu sắc — màu đã tự động đổi theo theme
       mới) cho phần còn lại của admin (danh mục, thương hiệu, người dùng,
@@ -1119,7 +1554,16 @@
 ## Lưu ý quan trọng
 - Không chạy `npm audit fix --force` — dễ đổi version Prisma linh tinh
 - Mật khẩu Supabase có ký tự đặc biệt phải URL-encode trong DATABASE_URL
-- Đăng nhập OTP hiện là MOCK (chưa gửi SMS thật) — xem TODO trong src/lib/otp.ts
+- Đăng nhập DUY NHẤT qua Google OAuth (lib/googleOAuth.ts) — không còn SĐT/
+  OTP/mật khẩu nào cả. Thiếu 1 trong 3 biến GOOGLE_CLIENT_ID/
+  GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI thì KHÔNG ai đăng nhập được, kể cả
+  local (không có fallback mock). GOOGLE_REDIRECT_URI phải khớp CHÍNH XÁC 1
+  URI đã khai trong Google Cloud Console (Credentials > OAuth client), đổi
+  giá trị này khi deploy Vercel (xem hướng dẫn trong .env).
+- Email trong User giờ là ĐỊNH DANH ĐĂNG NHẬP (khớp tài khoản Google) — KHÔNG
+  cho user tự sửa email trong /profile nữa (khác trước đây), tránh lệch giữa
+  email lưu trong DB và email Google trả về gây tạo User trùng ở lần đăng
+  nhập sau.
 - SUPABASE_URL trong .env phải là URL GỐC project (https://<ref>.supabase.co),
   KHÔNG phải URL REST API (.../rest/v1/) — nếu nhầm sẽ lỗi "Invalid path
   specified in request URL" khi upload ảnh (đã từng gặp, xem lib/supabaseStorage.ts)
