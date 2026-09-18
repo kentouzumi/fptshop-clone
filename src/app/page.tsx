@@ -1,69 +1,115 @@
-import Image from "next/image";
+import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { getProducts } from "@/lib/products";
+import { getCurrentUser } from "@/lib/auth";
+import { getWishlistedProductIds } from "@/lib/wishlist";
+import { getActivePromotions } from "@/lib/promotions";
+import ProductCard from "@/components/ProductCard";
+import HeroBanner from "@/components/HeroBanner";
 
-export default function Home() {
+export default async function Home() {
+  const [banners, categories, featured, newest, currentUser, promotions] = await Promise.all([
+    prisma.banner.findMany({
+      where: { position: "home_slider", isActive: true },
+      orderBy: { sortOrder: "asc" },
+    }),
+    prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: "asc" },
+    }),
+    getProducts({ featuredOnly: true, limit: 4 }),
+    getProducts({ limit: 8 }),
+    getCurrentUser(),
+    getActivePromotions(),
+  ]);
+
+  const wishlistedIds = currentUser
+    ? await getWishlistedProductIds(currentUser.id, [
+        ...featured.products.map((p) => p.id),
+        ...newest.products.map((p) => p.id),
+      ])
+    : new Set<string>();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="flex flex-col gap-14 pb-16">
+      {banners.length > 0 && (
+        <HeroBanner
+          banners={banners.map((b) => ({ id: b.id, imageUrl: b.imageUrl, linkUrl: b.linkUrl }))}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+      )}
+
+      {promotions.length > 0 && (
+        <section className="mx-auto w-full max-w-6xl px-6">
+          <h2 className="mb-4 text-xl font-semibold tracking-tight">Khuyến mãi</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {promotions.map((p) => {
+              const content = (
+                <div className="card group flex h-full flex-col justify-between overflow-hidden p-5 transition hover:-translate-y-0.5 hover:shadow-lg">
+                  <div>
+                    <p className="font-semibold text-zinc-900">{p.title}</p>
+                    {p.description && <p className="mt-1 text-sm text-zinc-600">{p.description}</p>}
+                  </div>
+                  <p className="mt-3 text-xs text-zinc-400">
+                    Đến hết {new Date(p.endsAt).toLocaleDateString("vi-VN")}
+                  </p>
+                </div>
+              );
+              return p.linkUrl ? (
+                <Link key={p.id} href={p.linkUrl}>
+                  {content}
+                </Link>
+              ) : (
+                <div key={p.id}>{content}</div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <section className="mx-auto w-full max-w-6xl px-6">
+        <h2 className="mb-4 text-xl font-semibold tracking-tight">Danh mục sản phẩm</h2>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {categories.map((c) => (
+            <Link
+              key={c.id}
+              href={`/products?category=${c.slug}`}
+              className="card flex items-center justify-center p-6 text-center font-medium text-zinc-700 transition hover:-translate-y-0.5 hover:text-zinc-900 hover:shadow-lg"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              {c.name}
+            </Link>
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      {featured.products.length > 0 && (
+        <section className="mx-auto w-full max-w-6xl px-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold tracking-tight">Sản phẩm nổi bật</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+            {featured.products.map((p) => (
+              <ProductCard key={p.id} product={p} initialInWishlist={wishlistedIds.has(p.id)} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="mx-auto w-full max-w-6xl px-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold tracking-tight">Sản phẩm mới</h2>
         </div>
-      </main>
+        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+          {newest.products.map((p) => (
+            <ProductCard key={p.id} product={p} initialInWishlist={wishlistedIds.has(p.id)} />
+          ))}
+        </div>
+      </section>
+
+      <div className="mx-auto w-full max-w-6xl px-6 text-center">
+        <Link href="/products" className="btn-secondary">
+          Xem tất cả sản phẩm
+        </Link>
+      </div>
     </div>
   );
 }

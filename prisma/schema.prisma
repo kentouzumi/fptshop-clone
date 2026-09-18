@@ -67,6 +67,19 @@ model Session {
   @@index([userId])
 }
 
+// Mã OTP đăng nhập bằng số điện thoại (chưa gắn nhà cung cấp SMS thật)
+model OtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([phone])
+}
+
 model Address {
   id           String  @id @default(cuid())
   userId       String
@@ -408,6 +421,7 @@ enum PaymentMethod {
   E_WALLET
   INSTALLMENT
   BANK_TRANSFER
+  VNPAY
 }
 
 enum PaymentStatus {
@@ -528,6 +542,7 @@ model Review {
   votes   ReviewVote[]
 
   @@index([productId])
+  @@unique([productId, userId])
 }
 
 model ReviewImage {

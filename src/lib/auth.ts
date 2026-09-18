@@ -1,18 +1,9 @@
 import { cookies } from "next/headers";
 import { randomBytes } from "crypto";
-import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
 export const SESSION_COOKIE_NAME = "session_token";
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 ngày
-
-export function hashPassword(password: string) {
-  return bcrypt.hash(password, 10);
-}
-
-export function verifyPassword(password: string, hash: string) {
-  return bcrypt.compare(password, hash);
-}
 
 export async function createSession(userId: string) {
   const token = randomBytes(32).toString("hex");
@@ -53,9 +44,25 @@ export async function getCurrentUser() {
     include: { user: true },
   });
 
-  if (!session || session.expiresAt < new Date()) {
+  if (!session || session.expiresAt < new Date() || !session.user.isActive) {
     return null;
   }
 
   return session.user;
+}
+
+export async function requireAdmin() {
+  const user = await getCurrentUser();
+  if (!user || (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN")) {
+    return null;
+  }
+  return user;
+}
+
+export async function requireSuperAdmin() {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "SUPER_ADMIN") {
+    return null;
+  }
+  return user;
 }

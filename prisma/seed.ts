@@ -184,6 +184,32 @@ async function main() {
     }
   }
 
+  const bannerCount = await prisma.banner.count({ where: { position: "home_slider" } });
+  if (bannerCount === 0) {
+    await prisma.banner.createMany({
+      data: [
+        {
+          imageUrl: "https://placehold.co/1200x400.png?text=Khuyen+Mai+iPhone+15",
+          linkUrl: "/products?category=dien-thoai",
+          position: "home_slider",
+          sortOrder: 1,
+        },
+        {
+          imageUrl: "https://placehold.co/1200x400.png?text=Laptop+Giam+Gia",
+          linkUrl: "/products?category=laptop",
+          position: "home_slider",
+          sortOrder: 2,
+        },
+        {
+          imageUrl: "https://placehold.co/1200x400.png?text=Phu+Kien+Chinh+Hang",
+          linkUrl: "/products?category=phu-kien",
+          position: "home_slider",
+          sortOrder: 3,
+        },
+      ],
+    });
+  }
+
   console.log(`Seed xong: ${products.length} sản phẩm.`);
 }
 

@@ -12,7 +12,7 @@ export default function LogoutButton() {
   }
 
   return (
-    <button onClick={handleLogout} className="text-sm text-zinc-600 underline">
+    <button onClick={handleLogout} className="text-sm text-zinc-500 hover:text-zinc-900">
       Đăng xuất
     </button>
   );
