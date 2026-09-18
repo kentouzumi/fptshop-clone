@@ -1795,6 +1795,47 @@
       6 kết quả) và KHÔNG cache `getProductsForCompare()` (tần suất gọi thấp,
       không đáng công sức thêm cơ chế invalidate).
 
+- [x] Nút "Danh mục" dạng mega menu ở Header (user gửi ảnh chụp màn hình
+      fptshop.com.vn thật làm mẫu, yêu cầu chỉ cần di chuột vào là hiện ra).
+      src/components/CategoryMegaMenu.tsx (mới, Client Component — cần state
+      để đổi category đang hover ở cột trái): dùng thuần CSS `group-hover`
+      để đóng/mở panel (KHÔNG dùng onMouseEnter/onMouseLeave + useState cho
+      việc đóng/mở — dễ dính race condition khi chuột di chuyển giữa nút và
+      panel qua 1 khoảng hở, nếu panel có `margin-top` sẽ tạo "vùng chết"
+      khiến :hover của phần tử cha bị ngắt giữa chừng trước khi chuột tới
+      panel). Panel đặt `top-full` sát ngay dưới nút, dùng padding-top BÊN
+      TRONG panel để tạo khoảng cách thị giác thay vì margin bên ngoài — giữ
+      panel luôn là 1 khối liền với nút trong cùng 1 vùng hover.
+
+      KHÁC BẢN GỐC (đã lường trước, không phải thiếu sót): FPT Shop thật
+      nhóm sub-category theo TỪNG thương hiệu trong từng danh mục (vd
+      "Apple > iPhone 17/16/15 Series..."). Dữ liệu project này ĐANG chỉ có
+      3 danh mục phẳng không có con (Điện thoại/Laptop/Phụ kiện — Category
+      có sẵn quan hệ parent/children trong schema nhưng seed chưa tạo danh
+      mục con nào) và Brand là danh sách chung không gắn categoryId (không
+      biết Xiaomi/Dell có thuộc "Điện thoại" hay không theo dữ liệu thật) —
+      nên cột phải hiển thị TOÀN BỘ brand đang active dưới dạng chip link
+      thẳng tới `/products?category=<slug>&brand=<slug>` (tái dùng đúng
+      filter category+brand đã có sẵn ở lib/products.ts) thay vì bịa thêm
+      sub-category/gán brand-theo-category giả không có trong DB.
+
+      Header.tsx: gọi thêm `getActiveCategories()`/`getActiveBrands()` (đã
+      cache sẵn từ mục "Thêm tầng cache" ở trên, gần như miễn phí) SONG SONG
+      với `getCurrentUser()` trong cùng 1 Promise.all (3 lệnh gọi này hoàn
+      toàn độc lập) thay vì query riêng — không làm tăng thêm round-trip DB
+      nào so với trước. Nút đặt giữa logo và ô tìm kiếm (đúng vị trí trong
+      ảnh mẫu), ẩn dưới `md` (mega menu 2 cột cần đủ rộng, màn hình nhỏ đã
+      có link "Sản phẩm" ở thanh nav phụ bên dưới làm lối vào thay thế).
+
+      Đã test qua dev server: `tsc --noEmit`/`eslint`/`npm run build` sạch,
+      tải HTML trang chủ xác nhận đúng cả 3 danh mục + 4 thương hiệu thật
+      (Xiaomi/Samsung/Apple/Dell) render trong menu, đúng href
+      `/products?category=dien-thoai&brand=apple` kiểu, gọi thẳng URL đó lẫn
+      `/products?category=laptop` đều 200. CHƯA tự xem qua trình duyệt thật
+      hiệu ứng hover mượt hay không (môi trường không có màn hình) — nhờ
+      user tự mở `npm run dev` di chuột thử, báo lại nếu panel bị giật/đóng
+      sai lúc di chuột từ nút xuống panel.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

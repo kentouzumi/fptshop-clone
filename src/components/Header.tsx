@@ -3,8 +3,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { getCartItemCount } from "@/lib/cart";
 import { getWishlistCount } from "@/lib/wishlist";
 import { getUnreadNotificationCount } from "@/lib/notifications";
+import { getActiveCategories } from "@/lib/categories";
+import { getActiveBrands } from "@/lib/brands";
 import LogoutButton from "@/components/LogoutButton";
 import SearchAutocomplete from "@/app/products/SearchAutocomplete";
+import CategoryMegaMenu from "@/components/CategoryMegaMenu";
 
 function IconBadge({ count }: { count: number }) {
   if (count <= 0) return null;
@@ -55,7 +58,13 @@ const ICON_LINK_CLASS =
   "relative flex h-9 w-9 items-center justify-center rounded-full text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900";
 
 export default async function Header() {
-  const user = await getCurrentUser();
+  // user và categories/brands hoàn toàn độc lập (categories/brands đã cache
+  // qua unstable_cache nên gần như miễn phí) — chạy song song thay vì tuần tự.
+  const [user, categories, brands] = await Promise.all([
+    getCurrentUser(),
+    getActiveCategories(),
+    getActiveBrands(),
+  ]);
   // Header render trên MỌI trang (nhúng ở layout.tsx) nên 3 query này cộng dồn
   // độ trễ ở MỌI lần chuyển trang nếu chạy tuần tự — độc lập với nhau (chỉ cùng
   // cần user.id) nên chạy song song bằng Promise.all thay vì await lần lượt.
@@ -74,6 +83,10 @@ export default async function Header() {
         <Link href="/" className="shrink-0 font-display text-lg font-bold tracking-tight text-zinc-900">
           FPT<span className="text-accent">.</span>Shop
         </Link>
+
+        <div className="hidden shrink-0 md:block">
+          <CategoryMegaMenu categories={categories} brands={brands} />
+        </div>
 
         <form action="/products" method="GET" className="hidden flex-1 max-w-md sm:flex">
           <SearchAutocomplete />
