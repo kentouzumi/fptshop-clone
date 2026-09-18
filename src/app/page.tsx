@@ -1,22 +1,31 @@
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getProducts } from "@/lib/products";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistedProductIds } from "@/lib/wishlist";
 import { getActivePromotions } from "@/lib/promotions";
+import { getActiveCategories } from "@/lib/categories";
 import ProductCard from "@/components/ProductCard";
 import HeroBanner from "@/components/HeroBanner";
 
-export default async function Home() {
-  const [banners, categories, featured, newest, currentUser, promotions] = await Promise.all([
+// Banner không có trang admin quản lý (chỉ tạo qua seed/Prisma Studio) nên
+// không có điểm nào để gọi revalidateTag — cache thuần theo thời gian (5
+// phút) là đủ, không cần cơ chế tag như category/brand/store/promotion/faq.
+const getHomeBanners = unstable_cache(
+  async () =>
     prisma.banner.findMany({
       where: { position: "home_slider", isActive: true },
       orderBy: { sortOrder: "asc" },
     }),
-    prisma.category.findMany({
-      where: { isActive: true },
-      orderBy: { sortOrder: "asc" },
-    }),
+  ["home-banners"],
+  { revalidate: 300 }
+);
+
+export default async function Home() {
+  const [banners, categories, featured, newest, currentUser, promotions] = await Promise.all([
+    getHomeBanners(),
+    getActiveCategories(),
     getProducts({ featuredOnly: true, limit: 4 }),
     getProducts({ limit: 8 }),
     getCurrentUser(),

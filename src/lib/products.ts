@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { ProductStatus, Prisma } from "@prisma/client";
+import { unstable_cache } from "next/cache";
+
+export const PRODUCTS_TAG = "products";
 
 export interface ProductListItem {
   id: string;
@@ -109,7 +112,22 @@ export async function searchSuggestions(query: string, limit = 6): Promise<Produ
   }));
 }
 
-export async function getProducts(
+// Danh sách sản phẩm không phụ thuộc user hiện tại (giỏ hàng/wishlist được
+// ghép riêng ở tầng gọi, xem trang chủ/trang /products) nên cache được toàn
+// bộ kết quả theo params. revalidate: 60 để chấp nhận độ trễ tối đa 1 phút
+// khi admin vừa sửa sản phẩm/giá hoặc có review mới làm đổi điểm đánh giá —
+// đủ nhanh để cảm nhận là "cập nhật gần như ngay" mà vẫn giảm mạnh số lần
+// query DB cho các trang được xem nhiều nhất (trang chủ, trang /products với
+// filter phổ biến). revalidateTag(PRODUCTS_TAG) được gọi thêm ở các API tạo/
+// sửa/xóa sản phẩm và biến thể để admin thấy thay đổi của chính mình ngay,
+// không phải đợi hết 60 giây.
+export const getProducts = unstable_cache(
+  getProductsUncached,
+  ["get-products"],
+  { tags: [PRODUCTS_TAG], revalidate: 60 }
+);
+
+async function getProductsUncached(
   params: GetProductsParams = {}
 ): Promise<GetProductsResult> {
   const page = Math.max(1, params.page ?? 1);

@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { revalidateTag } from "next/cache";
+import { PRODUCTS_TAG } from "@/lib/products";
 
 export interface VariantInput {
   sku: string;
@@ -52,7 +54,9 @@ export async function createVariant(productId: string, input: VariantInput) {
   if (existing) {
     throw new Error("SKU này đã tồn tại.");
   }
-  return prisma.productVariant.create({ data: { ...input, productId } });
+  const variant = await prisma.productVariant.create({ data: { ...input, productId } });
+  revalidateTag(PRODUCTS_TAG, { expire: 0 });
+  return variant;
 }
 
 export async function updateVariant(id: string, input: VariantInput) {
@@ -62,7 +66,9 @@ export async function updateVariant(id: string, input: VariantInput) {
   if (existing) {
     throw new Error("SKU này đã tồn tại.");
   }
-  return prisma.productVariant.update({ where: { id }, data: input });
+  const variant = await prisma.productVariant.update({ where: { id }, data: input });
+  revalidateTag(PRODUCTS_TAG, { expire: 0 });
+  return variant;
 }
 
 export async function deleteVariant(id: string) {
@@ -75,4 +81,5 @@ export async function deleteVariant(id: string) {
   // khóa ngoại - dọn giỏ hàng trước (không phải dữ liệu lịch sử nên an toàn để xóa)
   await prisma.cartItem.deleteMany({ where: { variantId: id } });
   await prisma.productVariant.delete({ where: { id } });
+  revalidateTag(PRODUCTS_TAG, { expire: 0 });
 }

@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { revalidateTag, unstable_cache } from "next/cache";
+
+const STORES_TAG = "stores";
 
 export interface StoreInput {
   name: string;
@@ -26,23 +29,30 @@ export function parseStoreInput(body: unknown): StoreInput | null {
   return { name, province, district, address, phone, openHours, isActive };
 }
 
-export async function getActiveStores() {
-  return prisma.store.findMany({
-    where: { isActive: true },
-    orderBy: [{ province: "asc" }, { name: "asc" }],
-  });
-}
+export const getActiveStores = unstable_cache(
+  async () =>
+    prisma.store.findMany({
+      where: { isActive: true },
+      orderBy: [{ province: "asc" }, { name: "asc" }],
+    }),
+  ["active-stores"],
+  { tags: [STORES_TAG] }
+);
 
 export async function getAllStoresForAdmin() {
   return prisma.store.findMany({ orderBy: [{ province: "asc" }, { name: "asc" }] });
 }
 
 export async function createStore(input: StoreInput) {
-  return prisma.store.create({ data: input });
+  const store = await prisma.store.create({ data: input });
+  revalidateTag(STORES_TAG, { expire: 0 });
+  return store;
 }
 
 export async function updateStore(id: string, input: StoreInput) {
-  return prisma.store.update({ where: { id }, data: input });
+  const store = await prisma.store.update({ where: { id }, data: input });
+  revalidateTag(STORES_TAG, { expire: 0 });
+  return store;
 }
 
 export async function deleteStore(id: string) {
@@ -51,4 +61,5 @@ export async function deleteStore(id: string) {
     throw new Error("Không thể xóa vì cửa hàng này đã được chọn làm điểm nhận hàng cho đơn hàng.");
   }
   await prisma.store.delete({ where: { id } });
+  revalidateTag(STORES_TAG, { expire: 0 });
 }

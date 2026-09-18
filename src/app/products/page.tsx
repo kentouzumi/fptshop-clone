@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import { getProducts, type ProductSort } from "@/lib/products";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistedProductIds } from "@/lib/wishlist";
+import { getActiveCategories } from "@/lib/categories";
+import { getActiveBrands } from "@/lib/brands";
 import ProductCard from "@/components/ProductCard";
 import SortSelect from "./SortSelect";
 
@@ -55,14 +56,8 @@ export default async function ProductsPage({
   };
 
   const [categories, brands, { products, totalPages }, currentUser] = await Promise.all([
-    prisma.category.findMany({
-      where: { isActive: true },
-      orderBy: { sortOrder: "asc" },
-    }),
-    prisma.brand.findMany({
-      where: { isActive: true },
-      orderBy: { name: "asc" },
-    }),
+    getActiveCategories(),
+    getActiveBrands(),
     getProducts({
       categorySlug: params.category,
       brandSlug: params.brand,

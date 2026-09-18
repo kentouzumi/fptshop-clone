@@ -1,4 +1,22 @@
 import { prisma } from "@/lib/prisma";
+import { revalidateTag, unstable_cache } from "next/cache";
+
+const CATEGORIES_TAG = "categories";
+
+// Danh sách category công khai (menu trang chủ, chip lọc ở /products) hầu như
+// không đổi giữa các lần admin thao tác — cache bằng unstable_cache (Next.js
+// Data Cache, không cần Redis riêng) thay vì query lại DB mỗi request. Chỉ
+// dùng cho phần PUBLIC (isActive:true); trang admin (getAllCategoriesForAdmin)
+// vẫn query trực tiếp để luôn thấy dữ liệu mới nhất khi quản lý.
+export const getActiveCategories = unstable_cache(
+  async () =>
+    prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: "asc" },
+    }),
+  ["active-categories"],
+  { tags: [CATEGORIES_TAG] }
+);
 
 export interface CategoryInput {
   name: string;
@@ -37,7 +55,9 @@ export async function createCategory(input: CategoryInput) {
   if (existing) {
     throw new Error("Slug này đã tồn tại.");
   }
-  return prisma.category.create({ data: input });
+  const category = await prisma.category.create({ data: input });
+  revalidateTag(CATEGORIES_TAG, { expire: 0 });
+  return category;
 }
 
 export async function updateCategory(id: string, input: CategoryInput) {
@@ -50,7 +70,9 @@ export async function updateCategory(id: string, input: CategoryInput) {
   if (existing) {
     throw new Error("Slug này đã tồn tại.");
   }
-  return prisma.category.update({ where: { id }, data: input });
+  const category = await prisma.category.update({ where: { id }, data: input });
+  revalidateTag(CATEGORIES_TAG, { expire: 0 });
+  return category;
 }
 
 export async function deleteCategory(id: string) {
@@ -63,4 +85,5 @@ export async function deleteCategory(id: string) {
     throw new Error("Không thể xóa vì còn danh mục con bên trong danh mục này.");
   }
   await prisma.category.delete({ where: { id } });
+  revalidateTag(CATEGORIES_TAG, { expire: 0 });
 }

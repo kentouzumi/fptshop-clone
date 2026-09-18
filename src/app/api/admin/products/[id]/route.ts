@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { parseProductInput } from "@/lib/productInput";
+import { PRODUCTS_TAG } from "@/lib/products";
 
 export async function PATCH(
   request: Request,
@@ -51,6 +53,7 @@ export async function PATCH(
     });
   }
 
+  revalidateTag(PRODUCTS_TAG, { expire: 0 });
   return NextResponse.json(product);
 }
 
@@ -66,5 +69,6 @@ export async function DELETE(
   const { id } = await params;
   await prisma.product.delete({ where: { id } });
 
+  revalidateTag(PRODUCTS_TAG, { expire: 0 });
   return NextResponse.json({ ok: true });
 }

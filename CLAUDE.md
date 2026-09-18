@@ -1649,12 +1649,9 @@
          rồi 4 query còn lại song song) — gom lại còn 3 lượt round-trip nối
          tiếp thay vì 7.
 
-      CHƯA kiểm tra: liệu Vercel function của project đang chạy ở region
-      nào so với Supabase (đang ở `ap-south-1`, Mumbai) — nếu 2 bên cách xa
-      nhau về địa lý (vd Vercel mặc định `iad1` ở Mỹ) thì MỖI round-trip DB
-      còn lại (dù đã giảm số lượng) vẫn cộng thêm độ trễ mạng đáng kể; gói
-      Hobby có thể không cho chọn lại region. Đây là hướng cần kiểm tra tiếp
-      nếu sau khi sửa 2 điểm trên vẫn thấy chậm.
+      ĐÃ XONG (user tự đổi trên Vercel dashboard sau đó): Vercel Function
+      Region đổi sang khớp gần Supabase (`ap-south-1`, Mumbai) thay vì mặc
+      định North America (iad1) — giảm độ trễ mạng cho mỗi round-trip DB.
 
       Đã test qua dev server: `tsc --noEmit` + `eslint` sạch, `npm run
       build` thành công, gọi thử `/`, `/products`, `/products/[slug]` đều
@@ -1723,6 +1720,81 @@
       thể bị timing attack nhưng cần đo thời gian cực chính xác qua mạng,
       rủi ro thực tế rất thấp với quy mô project này, chưa ưu tiên sửa.
 
+- [x] Thêm tầng cache cho dữ liệu ít đổi (user hỏi so với FPT Shop thật còn
+      nâng cấp hiệu năng được không — trả lời: còn, vì trước đó CHƯA có tầng
+      cache nào, mọi route đều Dynamic 100% nghĩa là mỗi lần vào trang đều
+      query lại DB dù dữ liệu gần như không đổi giữa các request).
+
+      DÙNG `unstable_cache` (Next.js Data Cache có sẵn, không cần thêm Redis
+      hay dịch vụ ngoài nào) cho các query KHÔNG phụ thuộc user hiện tại:
+      danh mục/thương hiệu đang active (lib/categories.ts: getActiveCategories,
+      lib/brands.ts: getActiveBrands — dùng ở trang chủ + /products, tách
+      riêng khỏi getAllCategoriesForAdmin/getAllBrandsForAdmin vẫn query trực
+      tiếp không cache vì admin cần luôn thấy dữ liệu mới nhất), cửa hàng
+      active (lib/stores.ts: getActiveStores — dùng ở /checkout + /stores),
+      khuyến mãi đang chạy (lib/promotions.ts: getActivePromotions), FAQ
+      (lib/content.ts: getAllFaqItems — dùng chung cho cả /faq public LẪN
+      /admin/faq, cache tự invalidate đúng cả 2 nơi), trang tĩnh
+      (getStaticPage theo slug), banner trang chủ (không có trang admin quản
+      lý banner nên chỉ cache theo thời gian 5 phút, không có tag để
+      invalidate), và quan trọng nhất: `getProducts()` (lib/products.ts) —
+      danh sách sản phẩm dùng ở CẢ trang chủ lẫn /products với mọi tổ hợp
+      filter/sort, đây là query nặng nhất và được gọi nhiều nhất trong app.
+
+      CƠ CHẾ INVALIDATE: mỗi hàm cache được gán 1 cache tag (vd "categories",
+      "products"), và mọi hàm tạo/sửa/xóa dữ liệu tương ứng
+      (createCategory/updateCategory/deleteCategory, createBrand/..., 3 hàm
+      trong variants.ts, và 3 route admin/products) đều gọi thêm
+      `revalidateTag(tag, { expire: 0 })` ngay sau khi ghi DB thành công —
+      xóa cache ngay lập tức, không đợi TTL, để admin luôn thấy đúng thay đổi
+      của chính mình ngay khi vừa lưu (đã test thật, xem bên dưới). LƯU Ý
+      QUAN TRỌNG về API: bản Next.js 16.3.4 dự án đang dùng đã đổi chữ ký
+      `revalidateTag` từ 1 tham số (`revalidateTag(tag)`, hành vi cũ ở Next
+      14/15) sang BẮT BUỘC 2 tham số
+      (`revalidateTag(tag, profile | { expire })`) — thiếu tham số thứ 2 sẽ
+      lỗi biên dịch TypeScript ngay (`tsc` báo "Expected 2 arguments, but got
+      1"), không phải lỗi runtime âm thầm. `{ expire: 0 }` = xóa cache ngay
+      (tương đương hành vi cũ), còn `"max"` = cho phép phục vụ dữ liệu cũ
+      thêm 1 năm trong lúc load lại nền (stale-while-revalidate, KHÔNG dùng ở
+      đây vì cần thấy đúng ngay sau khi admin sửa).
+
+      RIÊNG `getProducts()`: KHÔNG chỉ dựa vào tag (khác 5 hàm còn lại ở
+      trên) vì mutation ảnh hưởng tới nó nằm rải rác ở nhiều nơi hơn (tạo/
+      sửa/xóa sản phẩm ở 2 route admin, tạo/sửa/xóa biến thể ở variants.ts —
+      đã hook đủ revalidateTag ở cả 2 nhóm này) VÀ còn phụ thuộc dữ liệu
+      Review (điểm đánh giá trung bình/số lượng review hiển thị trên
+      ProductCard) mà KHÔNG hook revalidateTag khi có review mới (quyết định
+      có chủ đích — thêm 1 dòng revalidateTag ở lib/reviews.ts không sai
+      nhưng đổi thêm 1 file chỉ để giảm từ tối đa 60s xuống 0s cho riêng số
+      liệu rating, không đáng — đã có sẵn `revalidate: 60` làm lưới an toàn
+      chung). Vì vậy thêm `revalidate: 60` (giây) cùng với tag — chấp nhận
+      độ trễ tối đa 1 phút cho các thay đổi KHÔNG được hook tag tường minh
+      (chủ yếu là rating từ review mới), còn thay đổi CÓ hook tag (thêm/sửa/
+      xóa sản phẩm hoặc biến thể) vẫn thấy ngay lập tức nhờ revalidateTag.
+      Tương tự, `getActivePromotions()` cũng thêm `revalidate: 60` dù ĐÃ có
+      tag — vì 1 khuyến mãi có thể tự hết hạn theo `endsAt` mà không cần
+      admin thao tác gì, chỉ dựa vào tag sẽ khiến nó hiện "đang chạy" mãi tới
+      lần admin sửa thứ khác.
+
+      Đã test qua dev server bằng DB thật (không mock — tạo 1 SUPER_ADMIN
+      test tạm qua script Node gọi thẳng Prisma, không đụng dữ liệu thật):
+      `tsc --noEmit` + `eslint` sạch, `npm run build` thành công (đủ 85
+      route, vẫn toàn bộ Dynamic vì cache nằm ở tầng data, không phải page-
+      level), `/`, `/products`, `/faq`, `/stores` đều 200 và đúng nội dung
+      thật (danh mục Apple/Samsung, cửa hàng Cầu Giấy/Quận 1...). QUAN TRỌNG
+      NHẤT — xác nhận invalidate hoạt động thật bằng luồng thật: gọi
+      `POST /api/admin/categories` tạo 1 danh mục test mới → gọi lại
+      `GET /products` NGAY LẬP TỨC (không đợi, không restart server) → danh
+      mục mới đã xuất hiện đúng trong HTML trả về, chứng minh
+      `revalidateTag(..., { expire: 0 })` xóa cache ngay chứ không cần chờ
+      TTL; xóa danh mục test đó đi → gọi lại `/products` lần nữa → danh mục
+      biến mất đúng ngay lập tức. Đã dọn user/session test.
+
+      QUYẾT ĐỊNH PHẠM VI: KHÔNG cache `searchSuggestions()` (autocomplete,
+      cần cảm giác tức thời khi gõ, chi phí mỗi query đã rất rẻ vì giới hạn
+      6 kết quả) và KHÔNG cache `getProductsForCompare()` (tần suất gọi thấp,
+      không đáng công sức thêm cơ chế invalidate).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -1786,3 +1858,11 @@
   kết là không chấp nhận được (vd Address <-> Order) phải tự check thủ công
   trong code trước khi xóa (xem deleteAddress() trong lib/addresses.ts),
   không được tin tưởng ràng buộc DB sẽ tự chặn.
+- Đã thêm tầng cache (`unstable_cache`) cho category/brand/store/promotion/
+  FAQ/trang tĩnh/banner/danh sách sản phẩm — xem mục "Thêm tầng cache cho dữ
+  liệu ít đổi". MỌI hàm tạo/sửa/xóa dữ liệu có cache tương ứng PHẢI gọi
+  `revalidateTag(tag, { expire: 0 })` ngay sau khi ghi DB, nếu không admin sẽ
+  thấy dữ liệu cũ tới khi hết TTL. Bản Next.js 16 project đang dùng bắt buộc
+  `revalidateTag` nhận ĐỦ 2 tham số (thiếu tham số 2 lỗi biên dịch ngay, xem
+  chi tiết ở mục trên) — khác hành vi 1 tham số quen thuộc ở Next 14/15, nhớ
+  điều này nếu sau này thêm cache mới cho model khác.

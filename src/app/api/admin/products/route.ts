@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { parseProductInput } from "@/lib/productInput";
+import { PRODUCTS_TAG } from "@/lib/products";
 
 export async function POST(request: Request) {
   const admin = await requireAdmin();
@@ -38,5 +40,6 @@ export async function POST(request: Request) {
     },
   });
 
+  revalidateTag(PRODUCTS_TAG, { expire: 0 });
   return NextResponse.json(product, { status: 201 });
 }

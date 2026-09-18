@@ -1,4 +1,17 @@
 import { prisma } from "@/lib/prisma";
+import { revalidateTag, unstable_cache } from "next/cache";
+
+const BRANDS_TAG = "brands";
+
+export const getActiveBrands = unstable_cache(
+  async () =>
+    prisma.brand.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    }),
+  ["active-brands"],
+  { tags: [BRANDS_TAG] }
+);
 
 export interface BrandInput {
   name: string;
@@ -37,7 +50,9 @@ export async function createBrand(input: BrandInput) {
   if (existingName) {
     throw new Error("Tên thương hiệu này đã tồn tại.");
   }
-  return prisma.brand.create({ data: input });
+  const brand = await prisma.brand.create({ data: input });
+  revalidateTag(BRANDS_TAG, { expire: 0 });
+  return brand;
 }
 
 export async function updateBrand(id: string, input: BrandInput) {
@@ -49,7 +64,9 @@ export async function updateBrand(id: string, input: BrandInput) {
   if (existingName) {
     throw new Error("Tên thương hiệu này đã tồn tại.");
   }
-  return prisma.brand.update({ where: { id }, data: input });
+  const brand = await prisma.brand.update({ where: { id }, data: input });
+  revalidateTag(BRANDS_TAG, { expire: 0 });
+  return brand;
 }
 
 export async function deleteBrand(id: string) {
@@ -58,4 +75,5 @@ export async function deleteBrand(id: string) {
     throw new Error("Không thể xóa vì còn sản phẩm thuộc thương hiệu này.");
   }
   await prisma.brand.delete({ where: { id } });
+  revalidateTag(BRANDS_TAG, { expire: 0 });
 }

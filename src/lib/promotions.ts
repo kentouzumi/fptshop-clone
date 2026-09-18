@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { revalidateTag, unstable_cache } from "next/cache";
+
+const PROMOTIONS_TAG = "promotions";
 
 export interface PromotionInput {
   title: string;
@@ -35,26 +38,38 @@ export function parsePromotionInput(body: unknown): PromotionInput | null {
   return { title, description, bannerUrl, linkUrl, startsAt, endsAt, isActive, sortOrder };
 }
 
-export async function getActivePromotions() {
-  const now = new Date();
-  return prisma.promotion.findMany({
-    where: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
-    orderBy: { sortOrder: "asc" },
-  });
-}
+// revalidate: 60 (không chỉ dựa vào tag) vì khuyến mãi có thể tự hết hạn theo
+// endsAt mà không cần admin thao tác gì — nếu chỉ cache theo tag, 1 khuyến mãi
+// đã qua endsAt vẫn hiện "đang chạy" cho tới lần admin sửa gì đó tiếp theo.
+export const getActivePromotions = unstable_cache(
+  async () => {
+    const now = new Date();
+    return prisma.promotion.findMany({
+      where: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
+      orderBy: { sortOrder: "asc" },
+    });
+  },
+  ["active-promotions"],
+  { tags: [PROMOTIONS_TAG], revalidate: 60 }
+);
 
 export async function getAllPromotionsForAdmin() {
   return prisma.promotion.findMany({ orderBy: [{ sortOrder: "asc" }, { startsAt: "desc" }] });
 }
 
 export async function createPromotion(input: PromotionInput) {
-  return prisma.promotion.create({ data: input });
+  const promotion = await prisma.promotion.create({ data: input });
+  revalidateTag(PROMOTIONS_TAG, { expire: 0 });
+  return promotion;
 }
 
 export async function updatePromotion(id: string, input: PromotionInput) {
-  return prisma.promotion.update({ where: { id }, data: input });
+  const promotion = await prisma.promotion.update({ where: { id }, data: input });
+  revalidateTag(PROMOTIONS_TAG, { expire: 0 });
+  return promotion;
 }
 
 export async function deletePromotion(id: string) {
   await prisma.promotion.delete({ where: { id } });
+  revalidateTag(PROMOTIONS_TAG, { expire: 0 });
 }
