@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
-import { uploadProductImage } from "@/lib/supabaseStorage";
+import { uploadProductImage, isAllowedImageType } from "@/lib/supabaseStorage";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -16,8 +16,11 @@ export async function POST(request: Request) {
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Thiếu file ảnh." }, { status: 400 });
   }
-  if (!file.type.startsWith("image/")) {
-    return NextResponse.json({ error: "Chỉ chấp nhận file ảnh." }, { status: 400 });
+  if (!isAllowedImageType(file.type)) {
+    return NextResponse.json(
+      { error: "Chỉ chấp nhận ảnh JPEG/PNG/WEBP/GIF." },
+      { status: 400 }
+    );
   }
   if (file.size > MAX_SIZE) {
     return NextResponse.json({ error: "Ảnh tối đa 5MB." }, { status: 400 });

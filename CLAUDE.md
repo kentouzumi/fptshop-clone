@@ -1622,6 +1622,107 @@
       MoMo, cần đối chiếu lại thứ tự field trong tài liệu MoMo mới nhất tại
       https://developers.momo.vn.
 
+- [x] Sửa lỗi hiệu năng: chuyển trang chậm (user báo lại sau khi test MoMo).
+      Tìm được 2 nguyên nhân THẬT qua đọc code (không phải đoán):
+
+      1. `getCurrentUser()` (lib/auth.ts) được gọi RIÊNG LẺ ở Header.tsx
+         (nhúng layout.tsx, chạy trên MỌI trang) VÀ ở hầu hết page.tsx cần
+         đăng nhập (đã đếm được 45 lượt gọi trong 40 file) — mỗi lượt gọi tự
+         query lại bảng Session dù CÙNG 1 request chỉ có đúng 1 session
+         token, nghĩa là MỌI trang tốn ít nhất 2 round-trip DB chỉ để tra
+         cùng 1 thứ. Đã bọc `getCurrentUser` bằng `cache()` của React (import
+         từ package "react", không phải Next.js) — dedupe tự động mọi lệnh
+         gọi giống hệt nhau trong CÙNG 1 lượt render server, chỉ query DB
+         đúng 1 lần dù gọi bao nhiêu lần. Không cần sửa bất kỳ file nào khác
+         đang gọi `getCurrentUser()`/`requireAdmin()`/`requireSuperAdmin()`
+         vì cả 2 hàm sau chỉ gọi lại hàm đã cache.
+
+      2. Header.tsx gọi 3 query đếm (giỏ hàng/yêu thích/thông báo) TUẦN TỰ
+         bằng 3 lệnh `await` liên tiếp dù cả 3 hoàn toàn độc lập với nhau
+         (chỉ cùng cần `user.id`) — đổi sang chạy song song bằng
+         `Promise.all`. Tương tự ở trang chi tiết sản phẩm
+         (products/[slug]/page.tsx): 7 lượt `await` nối đuôi nhau (sản phẩm
+         -> sản phẩm liên quan -> user hiện tại -> đánh giá -> review của
+         user -> đã yêu thích chưa -> danh sách đã yêu thích cho sản phẩm
+         liên quan) trong khi thực ra chỉ có 3 ĐỢT phụ thuộc dữ liệu thật sự
+         (sản phẩm trước tiên; rồi (liên quan + user hiện tại) song song;
+         rồi 4 query còn lại song song) — gom lại còn 3 lượt round-trip nối
+         tiếp thay vì 7.
+
+      CHƯA kiểm tra: liệu Vercel function của project đang chạy ở region
+      nào so với Supabase (đang ở `ap-south-1`, Mumbai) — nếu 2 bên cách xa
+      nhau về địa lý (vd Vercel mặc định `iad1` ở Mỹ) thì MỖI round-trip DB
+      còn lại (dù đã giảm số lượng) vẫn cộng thêm độ trễ mạng đáng kể; gói
+      Hobby có thể không cho chọn lại region. Đây là hướng cần kiểm tra tiếp
+      nếu sau khi sửa 2 điểm trên vẫn thấy chậm.
+
+      Đã test qua dev server: `tsc --noEmit` + `eslint` sạch, `npm run
+      build` thành công, gọi thử `/`, `/products`, `/products/[slug]` đều
+      200 và nội dung render đúng (không chỉ tin status code — đã grep thấy
+      đúng tên sản phẩm/thương hiệu trong HTML trả về) sau khi đổi cấu trúc
+      query. Do local dev có overhead riêng của Turbopack/HMR nên số liệu
+      thời gian đo được ở local KHÔNG phản ánh đúng mức cải thiện thực tế
+      trên Vercel (nơi có độ trễ mạng thật giữa serverless function và
+      Supabase) — cần user tự cảm nhận lại trên production sau khi deploy.
+
+- [x] Rà soát bảo mật theo yêu cầu user + vá 2 lỗ hổng tìm được. Đã kiểm tra
+      có hệ thống (không đoán): toàn bộ 22 route admin đều có
+      requireAdmin()/requireSuperAdmin() + trả 403 đúng; IDOR ở giỏ hàng/địa
+      chỉ/thông báo/đánh giá/wishlist/hỗ trợ đều đối chiếu đúng userId; session
+      cookie httpOnly+secure(production)+SameSite=Lax+token ngẫu nhiên 256-bit;
+      Google OAuth có state chống CSRF + verify token ở server + check
+      verified_email; MoMo verify chữ ký HMAC + đối chiếu số tiền với DB trước
+      khi tin callback; giá đơn hàng luôn tính từ DB, không tin client; 100%
+      Prisma ORM (không raw SQL); không dangerouslySetInnerHTML/eval; .env
+      chưa từng lọt vào git history (đã grep toàn bộ log).
+
+      2 LỖ HỔNG THẬT đã tìm và vá:
+
+      1. Upload ảnh chấp nhận SVG (rủi ro XSS lưu trữ): 2 route upload
+         (/api/admin/upload, /api/reviews/upload-image) chỉ check
+         `file.type.startsWith("image/")` — "image/svg+xml" cũng khớp điều
+         kiện này dù SVG là XML có thể nhúng `<script>`, mở trực tiếp ảnh (vd
+         bấm xem ảnh đánh giá ở tab mới, dùng `<a target="_blank">`) có thể
+         chạy được script trong đó. Lớp chặn DUY NHẤT trước đây là cấu hình
+         MIME allowlist ở bucket Supabase (ngoài code, có thể bị đổi/quên) —
+         giờ thêm allowlist tường minh NGAY TRONG CODE: `isAllowedImageType()`
+         (lib/supabaseStorage.ts) chỉ chấp nhận đúng 4 giá trị
+         jpeg/png/webp/gif, dùng chung cho cả 2 route lẫn hàm
+         `uploadToBucket()` (validate lại 1 lần nữa ở tầng thấp nhất, không
+         chỉ tin route đã check). NHÂN TIỆN sửa thêm 1 lỗ hổng nhỏ liên quan:
+         đuôi file lưu trên Storage trước đây lấy từ `file.name` (tên file
+         client tự đặt, không đáng tin — tên không có dấu chấm sẽ khiến
+         `.split(".").pop()` trả về nguyên tên file làm đuôi) — đổi sang suy
+         ra đuôi file từ chính MIME type đã validate (`EXT_BY_TYPE`), không
+         còn phụ thuộc giá trị client tự khai. Đã test qua dev server bằng
+         session thật: upload file .svg giả (chứa `<script>`) bị từ chối
+         đúng 400, upload PNG hợp lệ vẫn thành công 200 kèm đúng URL Supabase.
+
+      2. Thiếu HTTP security headers: không có CSP/X-Frame-Options/X-Content-
+         Type-Options — dễ bị nhúng site vào iframe lừa đảo (clickjacking)
+         hoặc browser đoán sai content-type. Thêm qua `headers()` trong
+         next.config.ts (áp dụng cho MỌI route, không cần middleware riêng):
+         Content-Security-Policy (script-src/style-src bắt buộc có
+         'unsafe-inline' vì Next.js App Router tự chèn `<script>` inline để
+         stream RSC payload lúc hydrate, không tắt được hành vi này ngoài
+         dùng nonce — đổi lại vẫn giữ được `frame-ancestors 'none'`/
+         `object-src 'none'`/`base-uri 'self'` chặn đúng các lớp tấn công
+         quan trọng), X-Frame-Options: DENY, X-Content-Type-Options: nosniff,
+         Referrer-Policy, Permissions-Policy (tắt camera/mic/geolocation vì
+         không dùng). Đã test qua dev server: `curl -D` xác nhận đủ 5 header
+         xuất hiện đúng trên mọi route, smoke-test lại `/`, `/products`,
+         `/login`, `/faq`, `/stores` vẫn 200 sau khi thêm CSP (không bị chặn
+         script/style nào — không có `style={{...}}` inline nào trong toàn
+         bộ codebase nên style-src không cần nới thêm ngoài mức đã đặt).
+
+      KHÔNG SỬA (rủi ro thấp/không áp dụng, ghi rõ lý do): `npm audit` báo 4
+      lỗ hổng "high" nhưng đều nằm trong `mysql2`/`deepmerge-ts` — dependency
+      CLI của Prisma dùng cho MySQL, project chỉ dùng PostgreSQL nên code đó
+      không bao giờ chạy, rủi ro thực tế gần như 0; so sánh chữ ký HMAC bằng
+      `===` thay vì `crypto.timingSafeEqual` (lib/momo.ts) — về lý thuyết có
+      thể bị timing attack nhưng cần đo thời gian cực chính xác qua mạng,
+      rủi ro thực tế rất thấp với quy mô project này, chưa ưu tiên sửa.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
