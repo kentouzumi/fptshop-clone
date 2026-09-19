@@ -2231,6 +2231,98 @@
       category test + user/session test tạo ra lúc test (kể cả 1 user tạo dư
       do lần chạy script test đầu tiên bị lỗi giữa chừng).
 
+- [x] Đơn giản hóa lại toàn bộ hệ thống danh mục + bộ lọc (user yêu cầu sau
+      khi thấy 75 category quá rối): "bỏ danh mục và cái hãng sản xuất chỉ
+      được chọn 1" trong bộ lọc /products, "sửa lại cái danh mục chỉ giữ lại
+      điện thoại, laptop, điện máy và phụ kiện", và mega menu hover 1 category
+      (vd Điện thoại) phải hiện thêm "danh mục con" kiểu iPhone/Samsung...
+
+      1. QUAY VỀ ĐÚNG 4 DANH MỤC PHẲNG: viết lại hoàn toàn prisma/seed.ts —
+         bỏ hẳn cấu trúc `CATEGORY_GROUPS` (20 nhóm cấp cao + 52 category
+         con dùng parentId, làm ở 2 mục "Mở rộng...9 danh mục"/"Tách...23
+         danh mục" trước đó), chỉ còn 4 category tạo trực tiếp: Điện thoại,
+         Laptop, **Điện máy** (mới thêm lại — dùng làm danh mục TỔNG cho mọi
+         thiết bị điện tử/gia dụng không phải điện thoại/laptop/phụ kiện,
+         đúng nghĩa "điện máy" ngoài đời như siêu thị Điện Máy Xanh), Phụ
+         kiện. Toàn bộ 34 sản phẩm được gán lại categoryId vào 1 trong 4 mục
+         này (Điện thoại: 4 điện thoại; Laptop: 3 laptop; Phụ kiện: tai nghe/
+         chuột/router/camera an ninh — đồ phụ kiện/ngoại vi nhỏ gọn, 5 sản
+         phẩm; Điện máy: toàn bộ 22 sản phẩm còn lại — tivi/tủ lạnh/máy giặt/
+         đồng hồ/tablet/PC-màn hình/máy in/đồ gia dụng bếp/robot hút bụi/máy
+         lọc không khí...). Sau khi gán lại xong, script tự xóa (deleteMany)
+         toàn bộ 52 category con (`parentId != null`) rồi tới 20 category
+         nhóm cũ theo đúng slug — thứ tự bắt buộc phải xóa CON TRƯỚC vì
+         parentId là quan hệ optional (mặc định `onDelete: SetNull`, không
+         cascade), xóa cha trước sẽ khiến con mồ côi thành category cấp cao
+         mới thay vì bị xóa theo. Đã chạy `npx prisma db seed --config
+         prisma7.config.ts` áp thật lên Supabase — xác nhận qua script Node
+         query trực tiếp: đúng 4 category (Điện thoại 5*/Laptop 3/Điện máy
+         22/Phụ kiện 5 sản phẩm — *5 vì còn 1 sản phẩm test cũ "samsung s21
+         max" sót lại từ phiên trước, xem ghi chú cuối mục), không còn
+         category con nào.
+
+         GIỮ NGUYÊN (không xóa): field `Category.parentId` trong schema và
+         toàn bộ cơ chế cha/con ở lib/categories.ts (`assertValidParent()`,
+         chặn biến 1 category đang có con thành con của cái khác, dropdown
+         "Danh mục cha" ở admin chỉ cho chọn cấp cao nhất, `getAllCategories
+         ForAdmin()` trả về kèm `depth` để admin/categories thụt lề) — đây
+         là NĂNG LỰC CHUNG của admin CRUD category, không phải dữ liệu cụ
+         thể của lần seed này, admin vẫn có thể tự tạo category con qua UI
+         sau này nếu muốn. CHỈ xóa `getActiveCategoriesWithChildren()` (lib/
+         categories.ts) vì hàm này SINH RA riêng cho mega menu hiển thị
+         children — không còn nơi nào gọi sau khi Header quay lại dùng
+         `getActiveCategories()` (phẳng) và CategoryMegaMenu bỏ hẳn logic
+         tách nhiều tên trong 1 dòng.
+
+      2. BỘ LỌC /products (FilterSidebar.tsx): xóa hẳn `<Section
+         title="Danh mục">` — trang /products giờ chỉ còn điều hướng vào 1
+         category qua mega menu/link sản phẩm, không có UI đổi category
+         ngay trong bộ lọc nữa (page.tsx bỏ fetch `getActiveCategories()`
+         và props `categories`/`selectedCategory` truyền cho sidebar, nhưng
+         VẪN đọc đúng `?category=` từ URL để lọc sản phẩm — chỉ bỏ Ô CHỌN,
+         không bỏ khả năng lọc). "Hãng sản xuất" đổi lại từ multi-select
+         (mới thêm ở lần trước) về ĐÚNG 1 lựa chọn tại 1 thời điểm: bấm 1
+         hãng sẽ THAY THẾ hoàn toàn hãng đang chọn (không cộng dồn), bấm lại
+         đúng hãng đang chọn thì bỏ chọn — sửa trong `brandHref()` của
+         FilterSidebar, không cần đổi lại `lib/products.ts` (vẫn giữ
+         `brandSlugs: string[]` ở tầng data vì OR nhiều hãng vẫn là code
+         đúng/vô hại, chỉ tầng UI không bao giờ gửi quá 1 phần tử nữa).
+
+      3. MEGA MENU (CategoryMegaMenu.tsx): viết lại đơn giản hơn hẳn — cột
+         trái giờ là list phẳng 4 category (bỏ hẳn logic render nhiều tên
+         con trong 1 dòng vì không còn category con nào). Panel bên phải đổi
+         tên từ "Thương hiệu {category}" thành **"Danh mục con"** theo đúng
+         yêu cầu — dữ liệu vẫn là brand THẬT đang có sản phẩm trong category
+         đó (tái dùng nguyên `getBrandsByCategory()` đã có sẵn, KHÔNG bịa
+         thêm bảng category con mới): hover "Điện thoại" hiện đúng "Apple,
+         OPPO, Samsung, Xiaomi" — khớp ví dụ user đưa ra ("iphone, samsung").
+         QUYẾT ĐỊNH PHẠM VI: không tạo 2 danh sách riêng biệt "Thương hiệu"
+         VÀ "Danh mục con" (dù user dùng chữ "ngoài thương hiệu thì thêm
+         vào") vì dữ liệu thật của dự án không có khái niệm product-line
+         (vd "dòng iPhone" tách biệt khỏi "hãng Apple") để lấp đầy 1 danh
+         sách thứ 2 mà không trùng lặp y hệt danh sách brand — gộp làm 1,
+         đổi tên cho đúng ý người dùng thay vì hiện 2 khối giống hệt nhau.
+
+      Đã test qua dev server (dùng DB thật, không mock): `tsc --noEmit`/
+      `eslint`/`npm run build` sạch; script Node xác nhận đúng 4 category
+      không còn category con; trang chủ hiện đúng 4 thẻ danh mục (grep
+      `category=dien-thoai|laptop|dien-may|phu-kien`, không còn category
+      nào khác); mega menu hiện đúng chữ "Danh mục con"; `/products` không
+      còn chữ "Tất cả danh mục" (xác nhận đã bỏ Section); link hãng trong
+      sidebar luôn dạng `?brand=<1-slug>` (không bao giờ có dấu phẩy nối
+      nhiều hãng); `/api/products?category=dien-may` trả đúng 22, kết hợp
+      thêm `&brand=samsung` trả đúng 2 (Tab S9 + Tivi Samsung); script Node
+      group brand-theo-category xác nhận đúng: dien-thoai→Apple/OPPO/
+      Samsung/Xiaomi, laptop→Apple/Asus/Dell, phu-kien→Apple/JBL/Logitech/
+      TP-Link/Xiaomi, dien-may→8 hãng đồ gia dụng/điện tử còn lại.
+
+      LƯU Ý NGOÀI LỀ (đã báo cho user, chưa xóa vì không phải yêu cầu của
+      lần này): DB có 1 sản phẩm rác từ phiên trước "samsung s21 max" (tên
+      viết thường, gán brandId Apple — rõ ràng là dữ liệu test cũ bị sót lại
+      khi thao tác thủ công, không phải bug hay dữ liệu seed) đang nằm
+      trong danh mục Điện thoại — không đụng vào vì nằm ngoài phạm vi yêu
+      cầu, đã nhắc lại để user tự quyết định có xóa hay không.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

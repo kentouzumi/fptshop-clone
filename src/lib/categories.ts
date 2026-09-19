@@ -9,11 +9,11 @@ const CATEGORIES_TAG = "categories";
 // dùng cho phần PUBLIC (isActive:true); trang admin (getAllCategoriesForAdmin)
 // vẫn query trực tiếp để luôn thấy dữ liệu mới nhất khi quản lý.
 //
-// CHỈ lấy category CẤP CAO NHẤT (parentId: null) — từ khi có category con
-// (xem prisma/seed.ts: các danh mục gộp kiểu "Thiết bị bếp, Máy rửa bát,
-// Máy hút mùi" giờ là 1 category cha chứa nhiều category con để mỗi tên
-// chọn được riêng), nếu không lọc thì trang chủ/trang /products sẽ hiện
-// LẪN cả ~50 category con vào lưới/chip vốn chỉ nên có 23 mục cấp cao.
+// CHỈ lấy category CẤP CAO NHẤT (parentId: null) — dữ liệu hiện tại chỉ có
+// đúng 4 category phẳng (Điện thoại/Laptop/Điện máy/Phụ kiện, không còn
+// category con nào) nhưng vẫn giữ filter này để phòng trường hợp admin tự
+// tạo category con qua /admin/categories sau này (xem assertValidParent bên
+// dưới) — nếu không lọc, category con đó sẽ lẫn vào lưới/chip trang chủ.
 export const getActiveCategories = unstable_cache(
   async () =>
     prisma.category.findMany({
@@ -21,25 +21,6 @@ export const getActiveCategories = unstable_cache(
       orderBy: { sortOrder: "asc" },
     }),
   ["active-categories"],
-  { tags: [CATEGORIES_TAG] }
-);
-
-// Dành riêng cho mega menu "Danh mục" ở Header: cần thêm category con của
-// mỗi category cấp cao (nếu có) để hiện được từng tên tách riêng, mỗi tên
-// vẫn là 1 <Link> chọn được độc lập — xem CategoryMegaMenu.tsx.
-export const getActiveCategoriesWithChildren = unstable_cache(
-  async () =>
-    prisma.category.findMany({
-      where: { isActive: true, parentId: null },
-      orderBy: { sortOrder: "asc" },
-      include: {
-        children: {
-          where: { isActive: true },
-          orderBy: { sortOrder: "asc" },
-        },
-      },
-    }),
-  ["active-categories-with-children"],
   { tags: [CATEGORIES_TAG] }
 );
 

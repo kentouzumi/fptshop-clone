@@ -1,12 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 
-interface CategoryLite {
-  id: string;
-  name: string;
-  slug: string;
-}
-
 interface BrandLite {
   id: string;
   name: string;
@@ -103,16 +97,12 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function FilterSidebar({
-  categories,
   brands,
-  selectedCategory,
   selectedBrands,
   activePriceKey,
   currentFilters,
 }: {
-  categories: CategoryLite[];
   brands: BrandLite[];
-  selectedCategory?: string;
   selectedBrands: string[];
   activePriceKey: string;
   currentFilters: Record<string, string | undefined>;
@@ -120,11 +110,12 @@ export default function FilterSidebar({
   const visibleBrands = brands.slice(0, 6);
   const extraBrands = brands.slice(6);
 
+  // Chỉ chọn được ĐÚNG 1 hãng tại 1 thời điểm (radio behavior) — bấm lại
+  // đúng hãng đang chọn thì bỏ chọn (về "tất cả"), bấm hãng khác thì THAY
+  // THẾ hoàn toàn lựa chọn cũ (không cộng dồn nhiều hãng như trước).
   function brandHref(slug: string) {
-    const next = selectedBrands.includes(slug)
-      ? selectedBrands.filter((s) => s !== slug)
-      : [...selectedBrands, slug];
-    return buildHref(currentFilters, { brand: next.length ? next.join(",") : undefined });
+    const alreadySelected = selectedBrands.length === 1 && selectedBrands[0] === slug;
+    return buildHref(currentFilters, { brand: alreadySelected ? undefined : slug });
   }
 
   function renderBrand(b: BrandLite) {
@@ -160,22 +151,6 @@ export default function FilterSidebar({
           </svg>
           <h2 className="text-sm font-bold text-zinc-900">Bộ lọc tìm kiếm</h2>
         </div>
-
-        <Section title="Danh mục">
-          <FilterRow
-            href={buildHref(currentFilters, { category: undefined })}
-            checked={!selectedCategory}
-            label="Tất cả danh mục"
-          />
-          {categories.map((c) => (
-            <FilterRow
-              key={c.id}
-              href={buildHref(currentFilters, { category: c.slug })}
-              checked={selectedCategory === c.slug}
-              label={c.name}
-            />
-          ))}
-        </Section>
 
         {brands.length > 0 && (
           <Section title="Hãng sản xuất">

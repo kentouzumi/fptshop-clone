@@ -2,7 +2,6 @@ import Link from "next/link";
 import { getProducts, type ProductSort } from "@/lib/products";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistedProductIds } from "@/lib/wishlist";
-import { getActiveCategories } from "@/lib/categories";
 import { getActiveBrands } from "@/lib/brands";
 import ProductCard from "@/components/ProductCard";
 import SortSelect from "./SortSelect";
@@ -48,12 +47,12 @@ export default async function ProductsPage({
     search: params.search,
   };
 
-  // Hãng sản xuất giờ chọn được nhiều cùng lúc (checkbox) — lưu dạng
-  // "apple,samsung" trong query "brand", tách ra mảng để filter OR nhiều hãng.
+  // Chỉ chọn được đúng 1 hãng tại 1 thời điểm (xem FilterSidebar.tsx) — vẫn
+  // đọc dạng mảng vì lib/products.ts hỗ trợ sẵn nhiều slug (brandSlugs),
+  // UI chỉ đơn giản là luôn gửi lên đúng 1 phần tử.
   const selectedBrands = params.brand ? params.brand.split(",").filter(Boolean) : [];
 
-  const [categories, brands, { products, totalPages }, currentUser] = await Promise.all([
-    getActiveCategories(),
+  const [brands, { products, totalPages }, currentUser] = await Promise.all([
     getActiveBrands(),
     getProducts({
       categorySlug: params.category,
@@ -89,9 +88,7 @@ export default async function ProductsPage({
 
       <div className="flex flex-col gap-8 md:flex-row md:items-start">
         <FilterSidebar
-          categories={categories}
           brands={brands}
-          selectedCategory={params.category}
           selectedBrands={selectedBrands}
           activePriceKey={activePriceKey}
           currentFilters={currentFilters}

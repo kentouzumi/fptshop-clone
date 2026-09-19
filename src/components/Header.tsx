@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getCartItemCount } from "@/lib/cart";
 import { getWishlistCount } from "@/lib/wishlist";
 import { getUnreadNotificationCount } from "@/lib/notifications";
-import { getActiveCategoriesWithChildren } from "@/lib/categories";
+import { getActiveCategories } from "@/lib/categories";
 import { getBrandsByCategory } from "@/lib/products";
 import LogoutButton from "@/components/LogoutButton";
 import SearchAutocomplete from "@/app/products/SearchAutocomplete";
@@ -62,7 +62,7 @@ export default async function Header() {
   // qua unstable_cache nên gần như miễn phí) — chạy song song thay vì tuần tự.
   const [user, categories, brandsByCategory] = await Promise.all([
     getCurrentUser(),
-    getActiveCategoriesWithChildren(),
+    getActiveCategories(),
     getBrandsByCategory(),
   ]);
   // Header render trên MỌI trang (nhúng ở layout.tsx) nên 3 query này cộng dồn
