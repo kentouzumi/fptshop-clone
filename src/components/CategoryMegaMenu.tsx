@@ -25,9 +25,20 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18v-8.25a1.5 1.5 0 011.5-1.5h16.5a1.5 1.5 0 011.5 1.5V18M2.25 18l-.5 2.121A1.5 1.5 0 003.211 22h17.578a1.5 1.5 0 001.462-1.879L21.75 18M2.25 18h19.5" />
     </svg>
   ),
-  "dien-may": (
+  "tivi-may-lanh-dieu-hoa": (
     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.5h16.5a1 1 0 011 1v11a1 1 0 01-1 1H3.75a1 1 0 01-1-1v-11a1 1 0 011-1zM8.25 20.25h7.5M12 17.5v2.75" />
+    </svg>
+  ),
+  "tu-lanh-tu-dong-tu-mat": (
+    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 3.75h12a1 1 0 011 1v14.5a1 1 0 01-1 1H6a1 1 0 01-1-1V4.75a1 1 0 011-1zM5 9.75h14M8.5 6.5v1.5M8.5 12.5v1.5" />
+    </svg>
+  ),
+  "may-giat-may-say-tu-say": (
+    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <circle cx="12" cy="13" r="5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.75 3.75h14.5a1 1 0 011 1v14.5a1 1 0 01-1 1H4.75a1 1 0 01-1-1V4.75a1 1 0 011-1zM7 6h.01M9.5 6h.01" />
     </svg>
   ),
   "phu-kien": (
@@ -50,13 +61,18 @@ const DEFAULT_ICON = (
 //
 // KHÁC BẢN GỐC: FPT Shop thật nhóm sub-category theo TỪNG thương hiệu bên
 // trong từng danh mục (vd "Apple > iPhone 17/16/15 Series..."). Dữ liệu
-// project này không có sub-category (Category chỉ có 4 danh mục phẳng: Điện
-// thoại/Laptop/Điện máy/Phụ kiện) — nên cột phải hiển thị brand dạng chip
-// link thẳng tới /products?category=...&brand=... (dùng đúng filter đã có
-// sẵn) thay vì bịa thêm sub-category giả không tồn tại trong DB. `brandsByCategory`
-// suy ra TỪ dữ liệu Product thật (xem getBrandsByCategory() trong
-// lib/products.ts) — mỗi danh mục chỉ hiện brand THẬT SỰ có sản phẩm trong
-// danh mục đó (vd Dell chỉ hiện ở Laptop, không hiện lẫn ở Điện thoại).
+// project này không có sub-category theo brand — nên cột phải hiển thị brand
+// dạng chip link thẳng tới /products?category=...&brand=... (dùng đúng
+// filter đã có sẵn) thay vì bịa thêm sub-category giả không tồn tại trong
+// DB. `brandsByCategory` suy ra TỪ dữ liệu Product thật (xem
+// getBrandsByCategory() trong lib/products.ts) — mỗi danh mục chỉ hiện brand
+// THẬT SỰ có sản phẩm trong danh mục đó (vd Dell chỉ hiện ở Laptop).
+//
+// Cột trái giờ có 23 danh mục (đã tách đủ theo từng dòng trong ảnh sidebar
+// thật, xem prisma/seed.ts) nên cần `max-h` + `overflow-y-auto` để không
+// tràn quá chiều cao màn hình — đúng hành vi "Lăn chuột xuống để khám phá"
+// đã thấy trong ảnh mẫu (chỉ 3-4 icon đầu có SVG riêng, còn lại dùng
+// DEFAULT_ICON chung — không đáng công vẽ icon riêng cho từng dòng nhỏ lẻ).
 export default function CategoryMegaMenu({
   categories,
   brandsByCategory,
@@ -83,22 +99,22 @@ export default function CategoryMegaMenu({
         <span className="hidden sm:inline">Danh mục</span>
       </button>
 
-      <div className="invisible absolute left-0 top-full z-40 w-[min(90vw,600px)] pt-2 opacity-0 transition group-hover:visible group-hover:opacity-100">
+      <div className="invisible absolute left-0 top-full z-40 w-[min(90vw,640px)] pt-2 opacity-0 transition group-hover:visible group-hover:opacity-100">
         <div className="flex overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
-          <div className="w-48 shrink-0 border-r border-zinc-100 bg-zinc-50 py-2">
+          <div className="max-h-[420px] w-56 shrink-0 overflow-y-auto border-r border-zinc-100 bg-zinc-50 py-2">
             {categories.map((c) => (
               <Link
                 key={c.id}
                 href={`/products?category=${c.slug}`}
                 onMouseEnter={() => setActiveSlug(c.slug)}
-                className={`flex items-center gap-3 px-4 py-2.5 text-sm transition ${
+                className={`flex items-center gap-3 px-4 py-2 text-sm transition ${
                   c.slug === active.slug
                     ? "bg-white font-semibold text-accent"
                     : "text-zinc-600 hover:bg-white hover:text-zinc-900"
                 }`}
               >
-                {CATEGORY_ICONS[c.slug] ?? DEFAULT_ICON}
-                {c.name}
+                <span className="shrink-0">{CATEGORY_ICONS[c.slug] ?? DEFAULT_ICON}</span>
+                <span className="leading-tight">{c.name}</span>
               </Link>
             ))}
           </div>

@@ -1989,6 +1989,70 @@
       -D` xác nhận CSP KHÔNG có 2 giá trị nới lỏng đó, `/` và `/products`
       vẫn 200 — production không bị ảnh hưởng bởi thay đổi này.
 
+- [x] Tách 5 danh mục gộp thành đủ 23 danh mục nhỏ lẻ y hệt từng dòng trong
+      ảnh sidebar thật (user chủ động yêu cầu làm lại sau khi được hỏi rõ:
+      "giữ 5 danh mục gộp" hay "tách thành ~20 danh mục nhỏ lẻ" — chọn tách
+      đầy đủ, chỉ đồng ý bỏ riêng "Chuyên trang thương hiệu" như quyết định
+      cũ). Đây là thay đổi LỚN hơn hẳn 2 lần mở rộng category trước — không
+      chỉ THÊM mà còn phải XÓA 3 category gộp cũ (dien-may,
+      dien-gia-dung-nha-bep, cham-soc-nha-cua-suc-khoe) và DI CHUYỂN 8 sản
+      phẩm đã tồn tại sang category mới tương ứng.
+
+      LỖI TIỀM ẨN đã lường trước và sửa ngay trong seed.ts (không phải sửa
+      sau khi gặp lỗi): vòng lặp upsert sản phẩm trước đó dùng `update: {}`
+      (no-op) — nếu giữ nguyên, đổi `categoryId` của 1 sản phẩm ĐÃ TỒN TẠI
+      trong mảng `products` sẽ KHÔNG có tác dụng gì (upsert rơi vào nhánh
+      update vì slug đã có, mà update rỗng) — sản phẩm cũ vẫn kẹt ở category
+      cũ dù code đã sửa categoryId. Đã sửa `update` thành đồng bộ lại
+      `categoryId/brandId/basePrice/isFeatured` mỗi lần chạy seed (không chỉ
+      lúc tạo mới) — nhờ vậy 8 sản phẩm di chuyển đúng: Samsung Tivi + Sony
+      Bravia -> "Tivi, Máy lạnh - Điều hòa"; LG Tủ lạnh -> "Tủ lạnh, Tủ
+      đông, Tủ mát"; LG Máy giặt -> "Máy giặt, Máy sấy, Tủ sấy"; Philips Nồi
+      chiên -> "Nồi chiên, Lò vi sóng, Bếp nướng điện"; Philips Nồi cơm điện
+      -> "Ấm siêu tốc, Nồi cơm điện"; Xiaomi Robot hút bụi + Philips Máy lọc
+      không khí -> "Robot hút bụi, Máy hút bụi, Máy lọc khí". Sau khi 3
+      category cũ chắc chắn còn 0 sản phẩm, seed.ts tự
+      `prisma.category.delete()` (bọc check tồn tại trước để idempotent,
+      chạy lại seed nhiều lần không lỗi "record not found").
+
+      Thêm 11 sản phẩm mới (để 11 danh mục còn thiếu đều có ít nhất 1 sản
+      phẩm thật, không hiện trống): HP LaserJet Pro M15w (Máy in), Kangaroo
+      Máy hút ẩm KG150, Philips Máy sấy tóc BHC010, Xiaomi Cân điện tử Mi
+      Body Scale, Kangaroo Máy lọc nước RO, Kangaroo Máy nước nóng KG69,
+      Sunhouse Máy xay sinh tố SHD5341, Sunhouse Máy hút mùi SHB6822,
+      Sunhouse Nồi áp suất điện SHD8616, Sunhouse Chảo chống dính đáy từ,
+      Logitech G304. Thêm 4 brand mới: HP, Sunhouse, Kangaroo, Logitech —
+      ƯU TIÊN chọn brand THẬT SỰ gắn với đúng ngành hàng ở thị trường VN
+      (Sunhouse/Kangaroo là 2 thương hiệu gia dụng/nhà bếp phổ biến nhất VN,
+      không nhét đại Apple/Samsung vào category không liên quan).
+
+      SỬA THÊM CategoryMegaMenu.tsx: cột trái giờ có 23 mục nên PHẢI thêm
+      `max-h-[420px] overflow-y-auto` (nếu không panel sẽ tràn quá chiều cao
+      màn hình) — đúng hành vi "Lăn chuột xuống để khám phá" thấy trong ảnh
+      mẫu gốc. Mở rộng panel từ 600px lên 640px (tên category giờ dài hơn:
+      "Nồi áp suất, Nồi lẩu điện, Bếp điện"...). Thêm icon riêng cho 2 mục
+      mới (Tủ lạnh, Máy giặt — vẽ SVG tủ lạnh/máy giặt đơn giản), đổi icon
+      cũ "dien-may" (đã xóa category đó) thành icon dùng chung cho "Tivi,
+      Máy lạnh - Điều hòa". 19 danh mục còn lại KHÔNG vẽ icon riêng (dùng
+      DEFAULT_ICON chung) — không đáng công sức vẽ ~20 icon SVG riêng chỉ để
+      trang trí, đúng tinh thần ưu tiên đã áp dụng xuyên suốt dự án.
+
+      Database giờ có 34 sản phẩm / 23 category / 15 brand.
+
+      Đã test qua dev server (xóa `.next` trước khi chạy lại, rút kinh
+      nghiệm từ 2 lần trước): `tsc --noEmit`/`eslint`/`npm run build` sạch;
+      script Node xác nhận ĐÚNG 23 category (không còn 3 category cũ), ĐÚNG
+      brand-per-category cho toàn bộ 23 mục (vd "Nồi, Chảo, Đồ dùng nhà
+      bếp" -> Sunhouse, "Thiết bị chơi game..." -> Logitech, không lẫn brand
+      sai chỗ); trang chủ render đủ 23 thẻ danh mục (grep xác nhận từng
+      href+tên); `/products?category=<slug>` và kèm `&brand=<slug>` cho 4
+      category mới bất kỳ (tivi-may-lanh-dieu-hoa, noi-chao-do-dung-nha-bep
+      +sunhouse, thiet-bi-choi-game...+logitech, may-in-may-chieu...+hp) đều
+      200; xác nhận class `max-h-[420px] overflow-y-auto` có mặt đúng trong
+      HTML render thật. CHƯA tự xem qua trình duyệt thật hiệu ứng cuộn 23
+      mục (môi trường không có màn hình) — nhờ user tự mở `npm run dev` xác
+      nhận cuộn mượt, icon hiển thị đúng, không bị vỡ layout ở màn hình nhỏ.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

@@ -9,11 +9,7 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  // sortOrder đặt lại theo đúng thứ tự 4 mục chính trong sidebar "Danh mục"
-  // thật của fptshop.com.vn (Điện thoại/Laptop/Điện máy/Phụ kiện) — dùng
-  // `update` thay vì `update: {}` cho dien-may/phu-kien để lần seed lại sau
-  // này (dữ liệu đã tồn tại từ trước) vẫn tự sửa đúng thứ tự nếu có lệch.
-  const [dienThoai, laptop, dienMay, phuKien] = await Promise.all([
+  const [dienThoai, laptop, phuKien] = await Promise.all([
     prisma.category.upsert({
       where: { slug: "dien-thoai" },
       update: {},
@@ -25,55 +21,192 @@ async function main() {
       create: { name: "Laptop", slug: "laptop", sortOrder: 2 },
     }),
     prisma.category.upsert({
-      where: { slug: "dien-may" },
-      update: { sortOrder: 3 },
-      create: { name: "Điện máy", slug: "dien-may", sortOrder: 3 },
-    }),
-    prisma.category.upsert({
       where: { slug: "phu-kien" },
-      update: { sortOrder: 4 },
-      create: { name: "Phụ kiện", slug: "phu-kien", sortOrder: 4 },
+      update: { sortOrder: 3 },
+      create: { name: "Phụ kiện", slug: "phu-kien", sortOrder: 3 },
     }),
   ]);
 
-  // 5 danh mục thêm theo yêu cầu user (gửi ảnh chụp sidebar "Danh mục" thật
-  // của fptshop.com.vn — dài hơn nhiều so với 4 danh mục cũ, gồm nhiều nhóm:
-  // "Điện tử điện lạnh", "Công nghệ & thiết bị số", "Chăm sóc nhà cửa & sức
-  // khỏe", "Thiết bị gia đình & điện gia dụng", "Thiết bị nhà bếp", "Kết
-  // nối, Tiện ích & Giải trí"). KHÔNG tạo đúng ~20 danh mục nhỏ lẻ y hệt
-  // từng dòng trong ảnh (vd tách riêng "Nồi chiên..." / "Nồi áp suất..." /
-  // "Nồi, Chảo..." thành 3 danh mục khác nhau) vì sẽ phải bịa thêm rất nhiều
-  // brand/sản phẩm giả không cần thiết cho quy mô demo — thay vào đó GOM
-  // thành 5 danh mục rộng hơn, mỗi danh mục có sản phẩm thật đại diện đúng
-  // nhóm đó, vẫn phủ được đúng các mảng sản phẩm chính trong ảnh.
-  const [dongHoMayTinhBang, pcManHinh, dienGiaDungNhaBep, chamSocNhaCua, cameraThietBiMang] =
-    await Promise.all([
-      prisma.category.upsert({
-        where: { slug: "dong-ho-may-tinh-bang" },
-        update: { sortOrder: 5 },
-        create: { name: "Đồng hồ, Máy tính bảng", slug: "dong-ho-may-tinh-bang", sortOrder: 5 },
-      }),
-      prisma.category.upsert({
-        where: { slug: "pc-man-hinh-linh-kien" },
-        update: { sortOrder: 6 },
-        create: { name: "PC, Màn hình, Linh kiện", slug: "pc-man-hinh-linh-kien", sortOrder: 6 },
-      }),
-      prisma.category.upsert({
-        where: { slug: "dien-gia-dung-nha-bep" },
-        update: { sortOrder: 7 },
-        create: { name: "Điện gia dụng, Nhà bếp", slug: "dien-gia-dung-nha-bep", sortOrder: 7 },
-      }),
-      prisma.category.upsert({
-        where: { slug: "cham-soc-nha-cua-suc-khoe" },
-        update: { sortOrder: 8 },
-        create: { name: "Chăm sóc nhà cửa & sức khỏe", slug: "cham-soc-nha-cua-suc-khoe", sortOrder: 8 },
-      }),
-      prisma.category.upsert({
-        where: { slug: "camera-thiet-bi-mang" },
-        update: { sortOrder: 9 },
-        create: { name: "Camera, Thiết bị mạng, Smart Home", slug: "camera-thiet-bi-mang", sortOrder: 9 },
-      }),
-    ]);
+  // User yêu cầu tách ĐÚNG theo từng dòng trong ảnh sidebar "Danh mục" thật
+  // của fptshop.com.vn (thay cho bản gộp 5 danh mục rộng trước đó) — CHỈ bỏ
+  // riêng "Chuyên trang thương hiệu" (Apple/Samsung/LG/Xiaomi/Garmin icon)
+  // vì đó là trang microsite theo hãng của FPT thật, khác bản chất category
+  // sản phẩm (user đã đồng ý bỏ mục này). 20 danh mục dưới đây thay thế
+  // HẲN 3 danh mục gộp cũ: "Điện máy" (dien-may) tách thành 3 dòng đầu,
+  // "Điện gia dụng, Nhà bếp" (dien-gia-dung-nha-bep) tách thành 8 dòng gia
+  // dụng/nhà bếp, "Chăm sóc nhà cửa & sức khỏe" (cham-soc-nha-cua-suc-khoe)
+  // tách thành 4 dòng — 3 category cũ này sẽ bị XÓA hẳn bên dưới sau khi đã
+  // chuyển hết sản phẩm sang category mới tương ứng (xem đoạn dọn dẹp cuối
+  // hàm). "Đồng hồ, Máy tính bảng" / "PC, Màn hình, Linh kiện" / "Camera,
+  // Thiết bị mạng, Smart Home" giữ nguyên vì đã đúng y hệt 1 dòng trong ảnh
+  // từ lần seed trước, không cần tách thêm.
+  const [
+    tiviMayLanh,
+    tuLanh,
+    mayGiat,
+    dongHoMayTinhBang,
+    pcManHinh,
+    mayInMayChieu,
+    robotHutBui,
+    mayHutAm,
+    mayMassage,
+    chamSocSucKhoe,
+    quatMayLocNuoc,
+    mayNuocNong,
+    dienGiaDungSinhTo,
+    amSieuToc,
+    thietBiBep,
+    noiChienLoViSong,
+    noiApSuat,
+    noiChao,
+    cameraThietBiMang,
+    thietBiChoiGame,
+  ] = await Promise.all([
+    prisma.category.upsert({
+      where: { slug: "tivi-may-lanh-dieu-hoa" },
+      update: { sortOrder: 4 },
+      create: { name: "Tivi, Máy lạnh - Điều hòa", slug: "tivi-may-lanh-dieu-hoa", sortOrder: 4 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "tu-lanh-tu-dong-tu-mat" },
+      update: { sortOrder: 5 },
+      create: { name: "Tủ lạnh, Tủ đông, Tủ mát", slug: "tu-lanh-tu-dong-tu-mat", sortOrder: 5 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "may-giat-may-say-tu-say" },
+      update: { sortOrder: 6 },
+      create: { name: "Máy giặt, Máy sấy, Tủ sấy", slug: "may-giat-may-say-tu-say", sortOrder: 6 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "dong-ho-may-tinh-bang" },
+      update: { sortOrder: 7 },
+      create: { name: "Đồng hồ, Máy tính bảng", slug: "dong-ho-may-tinh-bang", sortOrder: 7 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "pc-man-hinh-linh-kien" },
+      update: { sortOrder: 8 },
+      create: { name: "PC, Màn hình, Linh kiện", slug: "pc-man-hinh-linh-kien", sortOrder: 8 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "may-in-may-chieu-phan-mem" },
+      update: { sortOrder: 9 },
+      create: { name: "Máy in, Máy chiếu, Phần mềm", slug: "may-in-may-chieu-phan-mem", sortOrder: 9 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "robot-hut-bui-may-loc-khi" },
+      update: { sortOrder: 10 },
+      create: {
+        name: "Robot hút bụi, Máy hút bụi, Máy lọc khí",
+        slug: "robot-hut-bui-may-loc-khi",
+        sortOrder: 10,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "may-hut-am-thiet-bi-suoi-am" },
+      update: { sortOrder: 11 },
+      create: {
+        name: "Máy hút ẩm, Thiết bị sưởi ấm",
+        slug: "may-hut-am-thiet-bi-suoi-am",
+        sortOrder: 11,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "may-massage-may-say-toc" },
+      update: { sortOrder: 12 },
+      create: { name: "Máy massage, Máy sấy tóc", slug: "may-massage-may-say-toc", sortOrder: 12 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "cham-soc-suc-khoe-do-dung-gia-dinh" },
+      update: { sortOrder: 13 },
+      create: {
+        name: "Chăm sóc sức khỏe, Đồ dùng gia đình",
+        slug: "cham-soc-suc-khoe-do-dung-gia-dinh",
+        sortOrder: 13,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "quat-quat-dieu-hoa-may-loc-nuoc" },
+      update: { sortOrder: 14 },
+      create: {
+        name: "Quạt, Quạt điều hòa, Máy lọc nước",
+        slug: "quat-quat-dieu-hoa-may-loc-nuoc",
+        sortOrder: 14,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "may-nuoc-nong-cay-nuoc-nong-lanh" },
+      update: { sortOrder: 15 },
+      create: {
+        name: "Máy nước nóng, Cây nước nóng lạnh",
+        slug: "may-nuoc-nong-cay-nuoc-nong-lanh",
+        sortOrder: 15,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "dien-gia-dung-sinh-to-xay-vat-ep" },
+      update: { sortOrder: 16 },
+      create: {
+        name: "Điện gia dụng, Sinh tố - xay vắt ép",
+        slug: "dien-gia-dung-sinh-to-xay-vat-ep",
+        sortOrder: 16,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "am-sieu-toc-noi-com-dien" },
+      update: { sortOrder: 17 },
+      create: { name: "Ấm siêu tốc, Nồi cơm điện", slug: "am-sieu-toc-noi-com-dien", sortOrder: 17 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "thiet-bi-bep-may-rua-bat-may-hut-mui" },
+      update: { sortOrder: 18 },
+      create: {
+        name: "Thiết bị bếp, Máy rửa bát, Máy hút mùi",
+        slug: "thiet-bi-bep-may-rua-bat-may-hut-mui",
+        sortOrder: 18,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "noi-chien-lo-vi-song-bep-nuong-dien" },
+      update: { sortOrder: 19 },
+      create: {
+        name: "Nồi chiên, Lò vi sóng, Bếp nướng điện",
+        slug: "noi-chien-lo-vi-song-bep-nuong-dien",
+        sortOrder: 19,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "noi-ap-suat-noi-lau-dien-bep-dien" },
+      update: { sortOrder: 20 },
+      create: {
+        name: "Nồi áp suất, Nồi lẩu điện, Bếp điện",
+        slug: "noi-ap-suat-noi-lau-dien-bep-dien",
+        sortOrder: 20,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "noi-chao-do-dung-nha-bep" },
+      update: { sortOrder: 21 },
+      create: { name: "Nồi, Chảo, Đồ dùng nhà bếp", slug: "noi-chao-do-dung-nha-bep", sortOrder: 21 },
+    }),
+    prisma.category.upsert({
+      where: { slug: "camera-thiet-bi-mang" },
+      update: { sortOrder: 22 },
+      create: {
+        name: "Camera, Thiết bị mạng, Smart Home",
+        slug: "camera-thiet-bi-mang",
+        sortOrder: 22,
+      },
+    }),
+    prisma.category.upsert({
+      where: { slug: "thiet-bi-choi-game-ban-ghe-xe-dap" },
+      update: { sortOrder: 23 },
+      create: {
+        name: "Thiết bị chơi game, Bàn ghế, Xe đạp",
+        slug: "thiet-bi-choi-game-ban-ghe-xe-dap",
+        sortOrder: 23,
+      },
+    }),
+  ]);
 
   const [apple, samsung, xiaomi, dell, oppo, asus, jbl, sony] = await Promise.all([
     prisma.brand.upsert({
@@ -133,6 +266,33 @@ async function main() {
       where: { slug: "tp-link" },
       update: {},
       create: { name: "TP-Link", slug: "tp-link" },
+    }),
+  ]);
+
+  // 4 brand thêm để lấp đủ 20 danh mục nhỏ lẻ mới — ưu tiên brand THẬT SỰ
+  // gắn liền với đúng ngành hàng đó ở thị trường Việt Nam (Sunhouse/Kangaroo
+  // là 2 thương hiệu gia dụng/nhà bếp phổ biến nhất VN, không phải chọn đại)
+  // thay vì nhét tạm Apple/Samsung vào những category không liên quan.
+  const [hp, sunhouse, kangaroo, logitech] = await Promise.all([
+    prisma.brand.upsert({
+      where: { slug: "hp" },
+      update: {},
+      create: { name: "HP", slug: "hp" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "sunhouse" },
+      update: {},
+      create: { name: "Sunhouse", slug: "sunhouse" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "kangaroo" },
+      update: {},
+      create: { name: "Kangaroo", slug: "kangaroo" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "logitech" },
+      update: {},
+      create: { name: "Logitech", slug: "logitech" },
     }),
   ]);
 
@@ -284,7 +444,7 @@ async function main() {
       name: "Samsung Smart Tivi Crystal UHD 55 inch",
       slug: "samsung-crystal-uhd-55-inch",
       description: "Smart Tivi Samsung Crystal UHD 55 inch 4K, hệ điều hành Tizen.",
-      categoryId: dienMay.id,
+      categoryId: tiviMayLanh.id,
       brandId: samsung.id,
       basePrice: 11990000,
       isFeatured: true,
@@ -296,7 +456,7 @@ async function main() {
       name: "Sony Bravia 43 inch Google TV",
       slug: "sony-bravia-43-inch-google-tv",
       description: "Sony Bravia 43 inch Google TV, xử lý hình ảnh X1, âm thanh sống động.",
-      categoryId: dienMay.id,
+      categoryId: tiviMayLanh.id,
       brandId: sony.id,
       basePrice: 9490000,
       isFeatured: false,
@@ -311,7 +471,7 @@ async function main() {
       name: "LG Tủ lạnh Inverter 375L",
       slug: "lg-tu-lanh-inverter-375l",
       description: "Tủ lạnh LG Inverter 375L ngăn đông trên, tiết kiệm điện.",
-      categoryId: dienMay.id,
+      categoryId: tuLanh.id,
       brandId: lg.id,
       basePrice: 10490000,
       isFeatured: false,
@@ -323,7 +483,7 @@ async function main() {
       name: "LG Máy giặt cửa trước Inverter 9kg",
       slug: "lg-may-giat-inverter-9kg",
       description: "Máy giặt LG Inverter 9kg cửa trước, công nghệ giặt hơi nước diệt khuẩn.",
-      categoryId: dienMay.id,
+      categoryId: mayGiat.id,
       brandId: lg.id,
       basePrice: 8290000,
       isFeatured: false,
@@ -383,7 +543,7 @@ async function main() {
       name: "Philips Nồi chiên không dầu",
       slug: "philips-noi-chien-khong-dau",
       description: "Nồi chiên không dầu Philips công nghệ Rapid Air, dung tích 4.1L.",
-      categoryId: dienGiaDungNhaBep.id,
+      categoryId: noiChienLoViSong.id,
       brandId: philips.id,
       basePrice: 1990000,
       isFeatured: false,
@@ -395,7 +555,7 @@ async function main() {
       name: "Philips Nồi cơm điện tử",
       slug: "philips-noi-com-dien-tu",
       description: "Nồi cơm điện tử Philips lòng nồi chống dính cao cấp, nấu đa năng.",
-      categoryId: dienGiaDungNhaBep.id,
+      categoryId: amSieuToc.id,
       brandId: philips.id,
       basePrice: 1290000,
       isFeatured: false,
@@ -407,7 +567,7 @@ async function main() {
       name: "Xiaomi Robot hút bụi lau nhà",
       slug: "xiaomi-robot-hut-bui-lau-nha",
       description: "Robot hút bụi lau nhà Xiaomi, lực hút mạnh mẽ, điều khiển qua app.",
-      categoryId: chamSocNhaCua.id,
+      categoryId: robotHutBui.id,
       brandId: xiaomi.id,
       basePrice: 5990000,
       isFeatured: true,
@@ -419,7 +579,7 @@ async function main() {
       name: "Philips Máy lọc không khí",
       slug: "philips-may-loc-khong-khi",
       description: "Máy lọc không khí Philips lọc bụi mịn PM2.5, khử mùi, kháng khuẩn.",
-      categoryId: chamSocNhaCua.id,
+      categoryId: robotHutBui.id,
       brandId: philips.id,
       basePrice: 3990000,
       isFeatured: false,
@@ -451,12 +611,158 @@ async function main() {
       attributes: [{ groupName: "Độ phân giải", attrName: "Camera", attrValue: "2K" }],
       variants: [{ sku: "XIAOMI-CAM-360", color: "Trắng", storage: null, price: 590000 }],
     },
+    // 11 sản phẩm thêm để 11 danh mục nhỏ lẻ còn trống (mới tách ra ở trên)
+    // đều có ít nhất 1 sản phẩm thật, không hiện "chưa có sản phẩm" khi bấm
+    // vào từ mega menu.
+    {
+      name: "HP LaserJet Pro M15w",
+      slug: "hp-laserjet-pro-m15w",
+      description: "Máy in laser HP LaserJet Pro M15w, in không dây qua WiFi, nhỏ gọn.",
+      categoryId: mayInMayChieu.id,
+      brandId: hp.id,
+      basePrice: 2690000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=HP+LaserJet+M15w",
+      attributes: [{ groupName: "Kết nối", attrName: "WiFi", attrValue: "Có" }],
+      variants: [{ sku: "HP-M15W", color: "Trắng", storage: null, price: 2690000 }],
+    },
+    {
+      name: "Kangaroo Máy hút ẩm KG150",
+      slug: "kangaroo-may-hut-am-kg150",
+      description: "Máy hút ẩm Kangaroo KG150, phù hợp phòng đến 30m², chống ẩm mốc.",
+      categoryId: mayHutAm.id,
+      brandId: kangaroo.id,
+      basePrice: 3290000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Kangaroo+May+Hut+Am",
+      attributes: [{ groupName: "Công suất hút ẩm", attrName: "Lít/ngày", attrValue: "12L/ngày" }],
+      variants: [{ sku: "KGR-HA-KG150", color: "Trắng", storage: null, price: 3290000 }],
+    },
+    {
+      name: "Philips Máy sấy tóc BHC010",
+      slug: "philips-may-say-toc-bhc010",
+      description: "Máy sấy tóc Philips BHC010, công suất 1200W, gọn nhẹ.",
+      categoryId: mayMassage.id,
+      brandId: philips.id,
+      basePrice: 390000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Philips+May+Say+Toc",
+      attributes: [{ groupName: "Công suất", attrName: "Watt", attrValue: "1200W" }],
+      variants: [{ sku: "PHILIPS-BHC010", color: "Hồng", storage: null, price: 390000 }],
+    },
+    {
+      name: "Xiaomi Cân điện tử Mi Body Scale",
+      slug: "xiaomi-can-dien-tu-mi-body-scale",
+      description: "Cân điện tử Xiaomi Mi Body Scale, đo chỉ số cơ thể, kết nối app sức khỏe.",
+      categoryId: chamSocSucKhoe.id,
+      brandId: xiaomi.id,
+      basePrice: 390000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Xiaomi+Can+Dien+Tu",
+      attributes: [{ groupName: "Kết nối", attrName: "Bluetooth", attrValue: "Có" }],
+      variants: [{ sku: "XIAOMI-SCALE", color: "Trắng", storage: null, price: 390000 }],
+    },
+    {
+      name: "Kangaroo Máy lọc nước RO",
+      slug: "kangaroo-may-loc-nuoc-ro",
+      description: "Máy lọc nước Kangaroo RO 10 lõi lọc, loại bỏ tạp chất, nước tinh khiết.",
+      categoryId: quatMayLocNuoc.id,
+      brandId: kangaroo.id,
+      basePrice: 4990000,
+      isFeatured: true,
+      imageUrl: "https://placehold.co/600x600.png?text=Kangaroo+May+Loc+Nuoc",
+      attributes: [{ groupName: "Số lõi lọc", attrName: "Lõi", attrValue: "10 lõi" }],
+      variants: [{ sku: "KGR-RO-10", color: "Trắng", storage: null, price: 4990000 }],
+    },
+    {
+      name: "Kangaroo Máy nước nóng KG69",
+      slug: "kangaroo-may-nuoc-nong-kg69",
+      description: "Máy nước nóng trực tiếp Kangaroo KG69, chống giật, làm nóng nhanh.",
+      categoryId: mayNuocNong.id,
+      brandId: kangaroo.id,
+      basePrice: 1090000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Kangaroo+May+Nuoc+Nong",
+      attributes: [{ groupName: "Công suất", attrName: "Watt", attrValue: "4500W" }],
+      variants: [{ sku: "KGR-NN-KG69", color: "Trắng", storage: null, price: 1090000 }],
+    },
+    {
+      name: "Sunhouse Máy xay sinh tố SHD5341",
+      slug: "sunhouse-may-xay-sinh-to-shd5341",
+      description: "Máy xay sinh tố Sunhouse SHD5341, cối xay inox, xay đá dễ dàng.",
+      categoryId: dienGiaDungSinhTo.id,
+      brandId: sunhouse.id,
+      basePrice: 590000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Sunhouse+May+Xay",
+      attributes: [{ groupName: "Công suất", attrName: "Watt", attrValue: "500W" }],
+      variants: [{ sku: "SUNHOUSE-SHD5341", color: "Đỏ", storage: null, price: 590000 }],
+    },
+    {
+      name: "Sunhouse Máy hút mùi SHB6822",
+      slug: "sunhouse-may-hut-mui-shb6822",
+      description: "Máy hút mùi Sunhouse SHB6822 dạng áp tường, khử mùi hiệu quả cho bếp.",
+      categoryId: thietBiBep.id,
+      brandId: sunhouse.id,
+      basePrice: 2490000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Sunhouse+May+Hut+Mui",
+      attributes: [{ groupName: "Kích thước", attrName: "Chiều rộng", attrValue: "70cm" }],
+      variants: [{ sku: "SUNHOUSE-SHB6822", color: "Đen", storage: null, price: 2490000 }],
+    },
+    {
+      name: "Sunhouse Nồi áp suất điện SHD8616",
+      slug: "sunhouse-noi-ap-suat-dien-shd8616",
+      description: "Nồi áp suất điện Sunhouse SHD8616, nấu nhanh, an toàn với van xả áp tự động.",
+      categoryId: noiApSuat.id,
+      brandId: sunhouse.id,
+      basePrice: 1190000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Sunhouse+Noi+Ap+Suat",
+      attributes: [{ groupName: "Dung tích", attrName: "Thể tích", attrValue: "5 lít" }],
+      variants: [{ sku: "SUNHOUSE-SHD8616", color: "Bạc", storage: null, price: 1190000 }],
+    },
+    {
+      name: "Sunhouse Chảo chống dính đáy từ",
+      slug: "sunhouse-chao-chong-dinh-day-tu",
+      description: "Chảo chống dính Sunhouse đáy từ, dùng được cho mọi loại bếp.",
+      categoryId: noiChao.id,
+      brandId: sunhouse.id,
+      basePrice: 290000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Sunhouse+Chao+Chong+Dinh",
+      attributes: [{ groupName: "Đường kính", attrName: "Kích thước", attrValue: "28cm" }],
+      variants: [{ sku: "SUNHOUSE-CHAO28", color: "Đen", storage: null, price: 290000 }],
+    },
+    {
+      name: "Logitech G304 Chuột chơi game không dây",
+      slug: "logitech-g304-chuot-choi-game",
+      description: "Chuột chơi game không dây Logitech G304, cảm biến HERO 12000 DPI.",
+      categoryId: thietBiChoiGame.id,
+      brandId: logitech.id,
+      basePrice: 690000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Logitech+G304",
+      attributes: [{ groupName: "Cảm biến", attrName: "DPI tối đa", attrValue: "12000 DPI" }],
+      variants: [{ sku: "LOGITECH-G304", color: "Đen", storage: null, price: 690000 }],
+    },
   ];
 
   for (const p of products) {
+    // `update` giờ đồng bộ lại categoryId/brandId/basePrice/isFeatured mỗi
+    // lần chạy seed (không chỉ `{}` no-op như trước) — cần thiết để lần seed
+    // này THỰC SỰ chuyển được 8 sản phẩm cũ (Tivi, Tủ lạnh, Máy giặt, Nồi
+    // chiên, Nồi cơm điện, Robot hút bụi, Máy lọc không khí) sang category
+    // mới tách ra, vì các sản phẩm này đã tồn tại từ lần seed trước (upsert
+    // rơi vào nhánh update, không phải create).
     const product = await prisma.product.upsert({
       where: { slug: p.slug },
-      update: {},
+      update: {
+        categoryId: p.categoryId,
+        brandId: p.brandId,
+        basePrice: p.basePrice,
+        isFeatured: p.isFeatured,
+      },
       create: {
         name: p.name,
         slug: p.slug,
@@ -483,6 +789,20 @@ async function main() {
           price: v.price,
         },
       });
+    }
+  }
+
+  // Dọn 3 category gộp cũ (dien-may, dien-gia-dung-nha-bep,
+  // cham-soc-nha-cua-suc-khoe) — đã tách hết thành 11 category nhỏ lẻ ở
+  // trên và đã chuyển hết sản phẩm sang category mới trong vòng lặp ngay
+  // trên (nhờ sửa `update` không còn no-op nữa) nên giờ 3 category này chắc
+  // chắn productCount = 0, xóa an toàn. Bọc try/catch + kiểm tra tồn tại
+  // trước để chạy lại seed lần nữa (sau khi đã xóa) không bị lỗi "record
+  // not found".
+  for (const slug of ["dien-may", "dien-gia-dung-nha-bep", "cham-soc-nha-cua-suc-khoe"]) {
+    const existing = await prisma.category.findUnique({ where: { slug } });
+    if (existing) {
+      await prisma.category.delete({ where: { slug } });
     }
   }
 
