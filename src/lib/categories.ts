@@ -68,11 +68,53 @@ export function parseCategoryInput(body: unknown): CategoryInput | null {
   return { name, slug, parentId, imageUrl, sortOrder, isActive };
 }
 
+// Trả về DẠNG PHẲNG nhưng đúng thứ tự cha-rồi-tới-con (không sort chung 1
+// mảng theo sortOrder/name như trước — với 52 category con mới thêm, sort
+// phẳng khiến con của các cha khác nhau bị trộn lẫn ngẫu nhiên, rất khó
+// quản lý). Mỗi dòng có thêm `depth` (0 = cấp cao nhất, 1 = con) để trang
+// admin/categories thụt lề hiển thị đúng cây phân cấp.
 export async function getAllCategoriesForAdmin() {
-  return prisma.category.findMany({
+  const topLevel = await prisma.category.findMany({
+    where: { parentId: null },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    include: { parent: true, _count: { select: { products: true, children: true } } },
+    include: {
+      parent: true,
+      _count: { select: { products: true, children: true } },
+      children: {
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        include: { parent: true, _count: { select: { products: true, children: true } } },
+      },
+    },
   });
+
+  return topLevel.flatMap((top) => {
+    const { children, ...topRow } = top;
+    return [
+      { ...topRow, depth: 0 as const },
+      ...children.map((child) => ({ ...child, depth: 1 as const })),
+    ];
+  });
+}
+
+// Chỉ hỗ trợ tối đa 2 cấp cha/con (xem prisma/seed.ts + getProducts() ở
+// lib/products.ts — cả 2 chỉ tra ĐÚNG 1 cấp children, không đệ quy nhiều
+// cấp). Dropdown chọn cha ở admin đã lọc chỉ còn category cấp cao nhất
+// (xem admin/categories/new,[id]/edit) nhưng vẫn tự kiểm tra lại ở đây
+// (không tin dữ liệu client) phòng trường hợp gọi thẳng API — nếu không,
+// tạo được cấp thứ 3 sẽ khiến category đó biến mất khỏi mega menu/kết quả
+// duyệt theo danh mục cha dù vẫn tồn tại trong DB.
+async function assertValidParent(parentId: string | null) {
+  if (!parentId) return;
+  const parent = await prisma.category.findUnique({
+    where: { id: parentId },
+    select: { parentId: true },
+  });
+  if (!parent) {
+    throw new Error("Danh mục cha không tồn tại.");
+  }
+  if (parent.parentId) {
+    throw new Error("Không thể chọn 1 danh mục con làm danh mục cha (chỉ hỗ trợ tối đa 2 cấp).");
+  }
 }
 
 export async function createCategory(input: CategoryInput) {
@@ -80,6 +122,7 @@ export async function createCategory(input: CategoryInput) {
   if (existing) {
     throw new Error("Slug này đã tồn tại.");
   }
+  await assertValidParent(input.parentId);
   const category = await prisma.category.create({ data: input });
   revalidateTag(CATEGORIES_TAG, { expire: 0 });
   return category;
@@ -94,6 +137,15 @@ export async function updateCategory(id: string, input: CategoryInput) {
   });
   if (existing) {
     throw new Error("Slug này đã tồn tại.");
+  }
+  await assertValidParent(input.parentId);
+  if (input.parentId) {
+    const childCount = await prisma.category.count({ where: { parentId: id } });
+    if (childCount > 0) {
+      throw new Error(
+        "Danh mục này đang là cha của danh mục khác, không thể biến nó thành danh mục con."
+      );
+    }
   }
   const category = await prisma.category.update({ where: { id }, data: input });
   revalidateTag(CATEGORIES_TAG, { expire: 0 });

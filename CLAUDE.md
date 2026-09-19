@@ -2184,6 +2184,53 @@
       giác khớp ảnh mẫu đủ tốt, đặc biệt trên mobile (sidebar xếp trên lưới
       sản phẩm, chưa test kỹ responsive ở màn hình rất nhỏ).
 
+- [x] Admin thêm danh mục (user hỏi "có được không, nếu không thì thêm chức
+      năng ấy"). TRẢ LỜI: tính năng NÀY ĐÃ CÓ SẴN từ trước (mục "Admin quản
+      lý User/Category/Brand" ở trên) — /admin/categories/new vẫn hoạt động
+      bình thường, kể cả chọn danh mục cha. Nhưng rà lại phát hiện 1 LỖ HỔNG
+      THẬT phát sinh do thay đổi cấu trúc category gần đây (mục "Cho phép
+      chọn RIÊNG từng tên trong 1 dòng danh mục gộp" — lần đầu tiên dự án có
+      category CON): dropdown "Danh mục cha" ở CategoryForm trước đó liệt kê
+      TOÀN BỘ 75 category (kể cả 52 category con) làm lựa chọn cha — admin
+      có thể vô tình chọn 1 category CON làm cha cho category mới, tạo ra
+      cấp thứ 3. Toàn bộ phần còn lại của app (mega menu
+      `getActiveCategoriesWithChildren()`, lọc theo danh mục cha ở
+      `getProducts()`) chỉ tra ĐÚNG 1 cấp `children`, không đệ quy — category
+      cấp 3 đó sẽ tồn tại trong DB nhưng biến mất khỏi mega menu và khỏi kết
+      quả duyệt danh mục cha, một dạng lỗi ngầm rất khó phát hiện bằng mắt.
+
+      Đã sửa 3 lớp:
+      1. admin/categories/new/page.tsx và admin/categories/[id]/edit/page.tsx:
+         dropdown "Danh mục cha" giờ CHỈ liệt kê category CẤP CAO NHẤT
+         (`where: { parentId: null }`) — không thể chọn category con làm cha
+         qua UI nữa.
+      2. lib/categories.ts: thêm `assertValidParent()` dùng CHUNG cho cả
+         `createCategory()`/`updateCategory()` — validate lại ở SERVER (không
+         tin dropdown đã lọc đúng, phòng trường hợp gọi thẳng API bỏ qua UI):
+         chặn chọn 1 category đã CÓ parentId làm cha (409 "chỉ hỗ trợ tối đa
+         2 cấp"). `updateCategory()` thêm chặn thứ 2: không cho gán parentId
+         cho 1 category ĐANG LÀ CHA của category khác (childCount > 0) — nếu
+         không, top-level category đang có con sẽ tự nhiên "chui" xuống làm
+         con của category khác, biến các con hiện tại của nó thành cháu (cấp
+         3) một cách âm thầm.
+      3. lib/categories.ts `getAllCategoriesForAdmin()`: đổi từ trả về 1
+         mảng phẳng sort theo `sortOrder+name` TOÀN CỤC (với 75 dòng, cách
+         sort này trộn lẫn ngẫu nhiên category con của các cha khác nhau,
+         gần như không đọc được) sang trả về ĐÚNG THỨ TỰ cha-rồi-tới-các-con
+         (thêm field `depth`: 0 = cấp cao, 1 = con). admin/categories/page.tsx
+         thụt lề + thêm ký hiệu "↳" cho category con dựa vào `depth`.
+
+      Đã test qua dev server (tạo 1 SUPER_ADMIN test tạm + gọi thẳng API,
+      không đụng dữ liệu thật): tạo 1 category cấp cao mới thành công, tạo 1
+      category con hợp lệ dưới nó thành công; cố tạo cấp thứ 3 (chọn category
+      con vừa tạo làm cha cho category khác) bị chặn đúng 409; cố PATCH biến
+      1 category ĐANG LÀ CHA (dien-thoai) thành con bị chặn đúng 409 "không
+      thể biến nó thành danh mục con"; trang /admin/categories render đúng
+      thứ tự cha ngay trên các con của nó kèm ký hiệu "↳" (xác nhận qua grep
+      HTML thật). `tsc --noEmit`/`eslint`/`npm run build` sạch. Đã xóa sạch 2
+      category test + user/session test tạo ra lúc test (kể cả 1 user tạo dư
+      do lần chạy script test đầu tiên bị lỗi giữa chừng).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

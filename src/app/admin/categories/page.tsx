@@ -30,7 +30,15 @@ export default async function AdminCategoriesPage() {
           <tbody>
             {categories.map((c) => (
               <tr key={c.id} className="border-t border-zinc-100">
-                <td className="px-4 py-2">{c.name}</td>
+                <td className="px-4 py-2">
+                  <span
+                    className="inline-flex items-center gap-1.5"
+                    style={c.depth > 0 ? { paddingLeft: 20 } : undefined}
+                  >
+                    {c.depth > 0 && <span className="text-zinc-400">↳</span>}
+                    {c.name}
+                  </span>
+                </td>
                 <td className="px-4 py-2">{c.parent?.name ?? "-"}</td>
                 <td className="px-4 py-2">{c._count.products}</td>
                 <td className="px-4 py-2">
