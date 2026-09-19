@@ -139,6 +139,9 @@ async function main() {
       attributes: [
         { groupName: "Màn hình", attrName: "Kích thước", attrValue: "6.7 inch" },
         { groupName: "Camera", attrName: "Camera sau", attrValue: "48MP + 12MP + 12MP" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Cấu hình", attrName: "Bộ nhớ trong", attrValue: "256GB" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "iOS 17" },
       ],
       variants: [
         { sku: "IP15PM-128-TN", color: "Titan Tự Nhiên", storage: "128GB", price: 29990000 },
@@ -157,6 +160,9 @@ async function main() {
       attributes: [
         { groupName: "Màn hình", attrName: "Kích thước", attrValue: "6.8 inch" },
         { groupName: "Camera", attrName: "Camera sau", attrValue: "200MP + 12MP + 50MP + 10MP" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "12GB" },
+        { groupName: "Cấu hình", attrName: "Bộ nhớ trong", attrValue: "256GB" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 14" },
       ],
       variants: [
         { sku: "S24U-256-BLK", color: "Đen", storage: "256GB", price: 26990000 },
@@ -172,7 +178,12 @@ async function main() {
       basePrice: 4990000,
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Redmi+Note+13",
-      attributes: [{ groupName: "Pin", attrName: "Dung lượng", attrValue: "5000 mAh" }],
+      attributes: [
+        { groupName: "Pin", attrName: "Dung lượng", attrValue: "5000 mAh" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Cấu hình", attrName: "Bộ nhớ trong", attrValue: "128GB" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 13" },
+      ],
       variants: [{ sku: "RN13-128-BLK", color: "Đen", storage: "128GB", price: 4990000 }],
     },
     {
@@ -184,7 +195,12 @@ async function main() {
       basePrice: 9990000,
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=OPPO+Reno11+5G",
-      attributes: [{ groupName: "Camera", attrName: "Camera sau", attrValue: "50MP + 8MP + 2MP" }],
+      attributes: [
+        { groupName: "Camera", attrName: "Camera sau", attrValue: "50MP + 8MP + 2MP" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Cấu hình", attrName: "Bộ nhớ trong", attrValue: "256GB" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 14" },
+      ],
       variants: [{ sku: "OPPO-RENO11-256-GRN", color: "Xanh Ngọc", storage: "256GB", price: 9990000 }],
     },
     {
@@ -196,7 +212,12 @@ async function main() {
       basePrice: 27990000,
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=MacBook+Air+M3",
-      attributes: [{ groupName: "Vi xử lý", attrName: "Chip", attrValue: "Apple M3" }],
+      attributes: [
+        { groupName: "Vi xử lý", attrName: "Chip", attrValue: "Apple M3" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "256GB SSD" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "macOS" },
+      ],
       variants: [{ sku: "MBA-M3-8-256", color: "Bạc", storage: "8GB/256GB", price: 27990000 }],
     },
     {
@@ -208,7 +229,12 @@ async function main() {
       basePrice: 32990000,
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Dell+XPS+13",
-      attributes: [{ groupName: "Vi xử lý", attrName: "CPU", attrValue: "Intel Core i7 thế hệ 13" }],
+      attributes: [
+        { groupName: "Vi xử lý", attrName: "CPU", attrValue: "Intel Core i7 thế hệ 13" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "16GB" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Windows 11" },
+      ],
       variants: [{ sku: "XPS13-16-512", color: "Bạc", storage: "16GB/512GB", price: 32990000 }],
     },
     {
@@ -220,7 +246,12 @@ async function main() {
       basePrice: 22990000,
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Asus+Zenbook+14",
-      attributes: [{ groupName: "Vi xử lý", attrName: "CPU", attrValue: "Intel Core Ultra 5" }],
+      attributes: [
+        { groupName: "Vi xử lý", attrName: "CPU", attrValue: "Intel Core Ultra 5" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "16GB" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Windows 11" },
+      ],
       variants: [{ sku: "ASUS-ZB14-16-512", color: "Đen", storage: "16GB/512GB", price: 22990000 }],
     },
     {
@@ -571,9 +602,22 @@ async function main() {
         basePrice: p.basePrice,
         isFeatured: p.isFeatured,
         images: { create: [{ url: p.imageUrl, sortOrder: 0 }] },
-        attributes: { create: p.attributes },
       },
     });
+
+    // ProductAttribute không có unique key tự nhiên để upsert từng dòng —
+    // xóa hết rồi tạo lại theo ĐÚNG mảng `attributes` trong code mỗi lần
+    // chạy seed (kể cả sản phẩm đã tồn tại từ trước, không chỉ lúc tạo mới)
+    // để bảng "thông số kỹ thuật" dùng làm filter luôn khớp code — nếu chỉ
+    // set attributes lúc `create` như trước, sửa/thêm thông số cho sản phẩm
+    // ĐÃ CÓ SẴN sẽ không có tác dụng gì (giống lỗi `update: {}` no-op đã
+    // từng gặp với categoryId).
+    await prisma.productAttribute.deleteMany({ where: { productId: product.id } });
+    if (p.attributes.length > 0) {
+      await prisma.productAttribute.createMany({
+        data: p.attributes.map((a, i) => ({ ...a, productId: product.id, sortOrder: i })),
+      });
+    }
 
     for (const v of p.variants) {
       await prisma.productVariant.upsert({

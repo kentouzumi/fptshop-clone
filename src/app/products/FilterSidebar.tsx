@@ -7,6 +7,18 @@ interface BrandLite {
   slug: string;
 }
 
+interface AttributeFacetValue {
+  value: string;
+  slug: string;
+  count: number;
+}
+
+interface AttributeFacet {
+  attrName: string;
+  slug: string;
+  values: AttributeFacetValue[];
+}
+
 export interface PriceRangeDef {
   key: string;
   label: string;
@@ -100,11 +112,13 @@ export default function FilterSidebar({
   brands,
   selectedBrands,
   activePriceKey,
+  facets,
   currentFilters,
 }: {
   brands: BrandLite[];
   selectedBrands: string[];
   activePriceKey: string;
+  facets: AttributeFacet[];
   currentFilters: Record<string, string | undefined>;
 }) {
   const visibleBrands = brands.slice(0, 6);
@@ -116,6 +130,19 @@ export default function FilterSidebar({
   function brandHref(slug: string) {
     const alreadySelected = selectedBrands.length === 1 && selectedBrands[0] === slug;
     return buildHref(currentFilters, { brand: alreadySelected ? undefined : slug });
+  }
+
+  // Mỗi thông số kỹ thuật (vd "RAM") CHO CHỌN NHIỀU giá trị cùng lúc (OR
+  // trong cùng thông số, vd chọn cả "8GB" lẫn "12GB") — khác brand ở trên
+  // (chỉ chọn 1) vì đây là hành vi faceted-search tiêu chuẩn, người dùng
+  // thường muốn xem gộp vài mức RAM cùng lúc chứ không chỉ 1 mức.
+  function specHref(facet: AttributeFacet, valueSlug: string) {
+    const key = `spec_${facet.slug}`;
+    const currentSlugs = currentFilters[key]?.split(",").filter(Boolean) ?? [];
+    const next = currentSlugs.includes(valueSlug)
+      ? currentSlugs.filter((s) => s !== valueSlug)
+      : [...currentSlugs, valueSlug];
+    return buildHref(currentFilters, { [key]: next.length ? next.join(",") : undefined });
   }
 
   function renderBrand(b: BrandLite) {
@@ -183,12 +210,14 @@ export default function FilterSidebar({
 
           <form action="/products" method="GET" className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3">
             <p className="text-xs text-zinc-500">Hoặc nhập khoảng giá phù hợp với bạn:</p>
-            {currentFilters.category && (
-              <input type="hidden" name="category" value={currentFilters.category} />
+            {/* Giữ lại MỌI filter khác (category/brand/sort/search/spec_*) khi
+                submit form giá — dùng vòng lặp thay vì liệt kê từng field cố
+                định vì tên field "spec_*" giờ động theo từng danh mục. */}
+            {Object.entries(currentFilters).map(([key, value]) =>
+              value && key !== "minPrice" && key !== "maxPrice" ? (
+                <input key={key} type="hidden" name={key} value={value} />
+              ) : null
             )}
-            {currentFilters.brand && <input type="hidden" name="brand" value={currentFilters.brand} />}
-            {currentFilters.sort && <input type="hidden" name="sort" value={currentFilters.sort} />}
-            {currentFilters.search && <input type="hidden" name="search" value={currentFilters.search} />}
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -213,6 +242,23 @@ export default function FilterSidebar({
             </button>
           </form>
         </Section>
+
+        {facets.map((facet) => {
+          const key = `spec_${facet.slug}`;
+          const selectedSlugs = currentFilters[key]?.split(",").filter(Boolean) ?? [];
+          return (
+            <Section key={facet.slug} title={facet.attrName}>
+              {facet.values.map((v) => (
+                <FilterRow
+                  key={v.slug}
+                  href={specHref(facet, v.slug)}
+                  checked={selectedSlugs.includes(v.slug)}
+                  label={`${v.value} (${v.count})`}
+                />
+              ))}
+            </Section>
+          );
+        })}
       </div>
     </aside>
   );

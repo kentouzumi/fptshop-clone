@@ -2323,6 +2323,116 @@
       trong danh mục Điện thoại — không đụng vào vì nằm ngoài phạm vi yêu
       cầu, đã nhắc lại để user tự quyết định có xóa hay không.
 
+- [x] Xóa sản phẩm rác "samsung s21 max" sót lại từ phiên trước (user xác
+      nhận xóa) — đã kiểm tra kỹ trước khi xóa (đúng nguyên tắc "không tin
+      ràng buộc DB tự chặn" đã áp dụng xuyên suốt dự án): xác nhận KHÔNG có
+      OrderItem nào tham chiếu tới variant của sản phẩm này (nếu có sẽ KHÔNG
+      xóa, giữ nguyên như logic deleteVariant() ở lib/variants.ts) trước khi
+      xóa theo đúng thứ tự CartItem/WishlistItem/Review liên quan/
+      ProductAttribute/ProductImage/ProductVariant rồi mới tới Product. DB
+      giờ đúng 34 sản phẩm sạch (không còn dữ liệu test lẫn vào dữ liệu thật).
+
+- [x] Bảng lọc theo thông số kỹ thuật RIÊNG cho từng danh mục (user yêu cầu
+      "mỗi danh mục có 1 bảng filter riêng ấy kiểu thông số"). ĐÂY LÀ HƯỚNG
+      NGƯỢC LẠI với quyết định phạm vi đã ghi ở mục "Thay bộ lọc chip ngang
+      ở /products bằng sidebar" (lúc đó từ chối làm facet theo thông số vì
+      dữ liệu ProductAttribute quá thưa/không đồng nhất) — lần này user chủ
+      động yêu cầu lại nên đã làm, đồng thời bổ sung thêm dữ liệu attribute
+      thật để facet có ý nghĩa thay vì chỉ dựa vào dữ liệu thưa sẵn có.
+
+      KHÔNG hard-code danh sách thông số theo từng category (vd không tự
+      quyết "Điện thoại phải có RAM/ROM/Hệ điều hành") — `getAttributeFacets
+      (categorySlug)` (lib/products.ts, cache theo PRODUCTS_TAG như
+      getBrandsByCategory) suy ra HOÀN TOÀN từ dữ liệu ProductAttribute thật
+      của các sản phẩm ACTIVE trong danh mục đó: group theo `attrName`, tính
+      danh sách giá trị khác nhau + số sản phẩm mỗi giá trị, CHỈ giữ lại
+      attrName nào xuất hiện ở >= 2 sản phẩm khác nhau (attrName chỉ 1 sản
+      phẩm có thì lọc theo nó vô nghĩa — chắc chắn ra đúng 1 kết quả, thường
+      do sản phẩm khác trong cùng danh mục có thông số không đồng nhất).
+
+      Đã BỔ SUNG THÊM dữ liệu attribute thật cho 4 điện thoại (RAM, Bộ nhớ
+      trong, Hệ điều hành) và 3 laptop (RAM, Ổ cứng, Hệ điều hành) trong
+      prisma/seed.ts để 2 danh mục quan trọng nhất có facet phong phú, nhiều
+      giá trị thật để lọc (vd RAM điện thoại: 8GB x3/12GB x1; Hệ điều hành:
+      iOS 17/Android 13/Android 14). KHÔNG bịa thêm cho "Điện máy"/"Phụ
+      kiện" (giữ nguyên attribute thưa sẵn có) vì đây là 2 danh mục TỔNG gộp
+      nhiều loại thiết bị khác hẳn nhau (tivi/tủ lạnh/máy giặt/gia dụng —
+      xem quyết định phạm vi ở mục "Đơn giản hóa lại danh mục" phía trên),
+      ép mọi sản phẩm phải có cùng bộ thông số giả sẽ vô nghĩa/không trung
+      thực với dữ liệu thật — kết quả: "Điện máy" vẫn TỰ NHIÊN có đúng 3
+      facet thật sự dùng chung được giữa nhiều sản phẩm (Kích thước — tivi,
+      Thể tích — nồi/nồi áp suất/nồi chiên, Watt — máy sấy tóc/máy nước
+      nóng/máy xay), phần còn lại (thông số riêng của từng loại thiết bị,
+      chỉ 1 sản phẩm có) tự động bị lọc bỏ theo ngưỡng >= 2 sản phẩm ở trên
+      — không cần code riêng cho từng category, cơ chế chung tự xử lý đúng.
+
+      LỖI TIỀM ẨN đã chủ động sửa ngay trong seed.ts (rút kinh nghiệm từ lỗi
+      `update: {}` no-op đã gặp nhiều lần với categoryId trước đây):
+      ProductAttribute không có unique key tự nhiên nên không upsert được
+      từng dòng — đổi cách đồng bộ: xóa hết attribute cũ của sản phẩm rồi
+      tạo lại đúng theo mảng `attributes` trong code, áp dụng cho MỌI sản
+      phẩm mỗi lần chạy seed (không chỉ lúc tạo mới) — nếu chỉ set
+      `attributes: { create: ... }` trong nhánh `create` như bản cũ, sửa/
+      thêm attribute cho sản phẩm ĐÃ TỒN TẠI sẽ không có tác dụng gì.
+
+      lib/products.ts: `GetProductsParams` thêm `attributeFilters?:
+      Record<string, string[]>` (key = attrName thật, value = danh sách giá
+      trị được chọn). Where-clause dùng `AND: [{ attributes: { some: {
+      attrName, attrValue: { in: values } } } }, ...]` — BẮT BUỘC dùng mảng
+      `AND` thay vì gộp chung 1 khóa `attributes` trong object literal, vì
+      nhiều điều kiện `attributes: {...}` viết liên tiếp trong 1 object sẽ
+      bị GHI ĐÈ (JS object chỉ giữ key cuối), phải tách thành nhiều phần tử
+      mảng để Prisma AND đúng nhiều điều kiện trên CÙNG 1 quan hệ (AND giữa
+      các attrName khác nhau, OR giữa các giá trị trong CÙNG 1 attrName).
+
+      MÃ HÓA URL: mỗi facet 1 query riêng `spec_<slug-attrName>=<slug-giá-
+      trị-1,slug-giá-trị-2>` (vd `spec_ram=8gb,12gb`) — slug hóa cả tên
+      thuộc tính lẫn giá trị (dùng slugify cục bộ trong products.ts, theo
+      đúng phong cách project đã dùng slugify riêng ở từng file thay vì 1
+      util dùng chung — xem CategoryForm/BrandForm/ProductForm). Trang
+      /products/page.tsx đổi kiểu `searchParams` từ liệt kê field cố định
+      sang `Record<string, string | undefined>` GENERIC vì tên query
+      "spec_*" giờ động theo từng danh mục, không khai báo trước được; giải
+      mã lại thành `{ attrName thật: [giá trị thật] }` dựa vào facet đã tính
+      (`getAttributeFacets`) trước khi gọi `getProducts()`. `currentFilters`
+      cũng đổi thành TOÀN BỘ query hiện tại (trừ `page`) thay vì liệt kê 6
+      field cố định như trước — cần thiết để giữ lại đúng mọi `spec_*` đang
+      chọn khi bấm đổi 1 filter khác (brand/giá).
+
+      FilterSidebar.tsx: mỗi facet 1 `<Section title={facet.attrName}>`
+      riêng (đặt sau "Mức giá", chỉ hiện khi có category — không hiện ở
+      "Tất cả sản phẩm" vì thông số điện thoại/máy giặt không liên quan gì
+      nhau). Mỗi thông số CHO CHỌN NHIỀU giá trị cùng lúc (OR, vd chọn cả
+      8GB lẫn 12GB) — khác "Hãng sản xuất" (chỉ chọn 1, theo yêu cầu trước
+      đó) vì đây là hành vi faceted-search chuẩn, người dùng thường muốn
+      xem gộp vài mức cùng lúc. Form nhập khoảng giá tùy chỉnh đổi từ liệt
+      kê hidden input cố định (category/brand/sort/search) sang lặp qua
+      TOÀN BỘ currentFilters — nếu không, submit form giá sẽ vô tình xóa mất
+      mọi spec_* đang chọn (tên field động, không liệt kê tay được).
+
+      QUYẾT ĐỊNH PHẠM VI: KHÔNG cập nhật `/api/products` (route.ts) để hỗ
+      trợ `spec_*` — route này KHÔNG được trang /products dùng (page.tsx
+      gọi thẳng `getProducts()` ở server, không fetch qua API riêng), chỉ
+      tồn tại như 1 API JSON độc lập cho mục đích khác (test/tích hợp
+      ngoài) — thêm hỗ trợ cho route này không phục vụ được UI thật nào nên
+      không làm để tránh code thừa.
+
+      Đã test qua dev server (dùng DB thật, không mock): `tsc --noEmit`/
+      `eslint`/`npm run build` sạch; script Node xác nhận đúng 34 sản phẩm
+      (đã trừ sản phẩm rác), đúng 12 attribute RAM/ROM/Hệ điều hành cho 4
+      điện thoại; trang `/products?category=dien-thoai` hiện đúng 3 section
+      "RAM"/"Bộ nhớ trong"/"Hệ điều hành" kèm số lượng đúng (8GB (3), 12GB
+      (1), 256GB (3), 128GB (1), Android 14 (2), Android 13 (1), iOS 17
+      (1)); `/products?category=dien-may` hiện ĐÚNG 3 facet thật dùng chung
+      được (Kích thước/Thể tích/Watt), không hiện các thông số chỉ 1 sản
+      phẩm có; lọc `spec_ram=8gb` loại đúng Samsung (12GB) khỏi kết quả;
+      chọn `spec_ram=8gb,12gb` (OR) trả đủ cả 4; kết hợp `spec_ram=8gb` VÀ
+      `spec_he-dieu-hanh=android-14` (AND giữa 2 thông số) trả ĐÚNG 1 kết
+      quả (OPPO); checkbox hiện đúng trạng thái "đã chọn" khi có query
+      tương ứng. CHƯA tự xem qua trình duyệt thật (môi trường không có màn
+      hình) — nhờ user tự mở `npm run dev` xác nhận thị giác/thao tác chọn
+      nhiều checkbox cùng lúc mượt mà.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

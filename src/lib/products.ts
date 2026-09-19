@@ -26,6 +26,12 @@ export interface GetProductsParams {
   /** Nhiều slug thương hiệu cùng lúc (OR với nhau) — bộ lọc "Hãng sản xuất" ở
    * sidebar /products giờ cho chọn nhiều checkbox cùng lúc thay vì chỉ 1. */
   brandSlugs?: string[];
+  /** Lọc theo thông số kỹ thuật (ProductAttribute): key là attrName THẬT
+   * (vd "RAM", "Hệ điều hành"), value là danh sách giá trị được chọn — OR
+   * trong CÙNG 1 attrName, AND giữa CÁC attrName khác nhau. Xem
+   * getAttributeFacets() ngay bên dưới để biết attrName nào tồn tại theo
+   * từng danh mục. */
+  attributeFilters?: Record<string, string[]>;
   search?: string;
   featuredOnly?: boolean;
   minPrice?: number;
@@ -154,6 +160,18 @@ async function getProductsUncached(
     categoryIds = category ? [category.id, ...category.children.map((c) => c.id)] : [];
   }
 
+  // Mỗi attrName được chọn là 1 điều kiện `attributes.some` RIÊNG kết hợp
+  // bằng AND (vd RAM=8GB VÀ Hệ điều hành=Android) — không gộp chung 1 khóa
+  // `attributes` vì object literal chỉ giữ được key cuối cùng nếu ghi đè
+  // nhiều lần, phải dùng mảng `AND` để Prisma AND đúng nhiều điều kiện trên
+  // CÙNG 1 quan hệ. Trong CÙNG 1 attrName, nhiều giá trị được chọn là OR
+  // (attrValue: { in: [...] }).
+  const attributeConditions: Prisma.ProductWhereInput[] = Object.entries(
+    params.attributeFilters ?? {}
+  ).map(([attrName, values]) => ({
+    attributes: { some: { attrName, attrValue: { in: values } } },
+  }));
+
   const where: Prisma.ProductWhereInput = {
     status: ProductStatus.ACTIVE,
     ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
@@ -170,6 +188,7 @@ async function getProductsUncached(
           },
         }
       : {}),
+    ...(attributeConditions.length > 0 ? { AND: attributeConditions } : {}),
   };
 
   const orderBy: Prisma.ProductOrderByWithRelationInput =
@@ -244,6 +263,89 @@ export const getBrandsByCategory = unstable_cache(
     return sorted;
   },
   ["brands-by-category"],
+  { tags: [PRODUCTS_TAG], revalidate: 60 }
+);
+
+function slugifyAttr(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+export interface AttributeFacetValue {
+  value: string;
+  slug: string;
+  count: number;
+}
+
+export interface AttributeFacet {
+  attrName: string;
+  slug: string;
+  values: AttributeFacetValue[];
+}
+
+const MIN_PRODUCTS_FOR_FACET = 2;
+
+// Bảng lọc theo thông số kỹ thuật RIÊNG cho từng danh mục (user yêu cầu
+// "mỗi danh mục có 1 bảng filter riêng kiểu thông số"). KHÔNG hard-code
+// danh sách thông số theo từng category (vd không tự quyết "Điện thoại phải
+// có RAM/ROM/Hệ điều hành") — suy ra HOÀN TOÀN từ dữ liệu ProductAttribute
+// thật đang có trong DB của các sản phẩm ACTIVE thuộc category đó, để danh
+// mục nào cũng ra đúng thông số sản phẩm nó thực sự có, không bịa thêm.
+//
+// Chỉ giữ lại attrName nào xuất hiện ở ÍT NHẤT 2 sản phẩm khác nhau
+// (MIN_PRODUCTS_FOR_FACET) — attrName chỉ 1 sản phẩm có thì lọc theo nó
+// không có tác dụng thu hẹp gì cả (chỉ có đúng 1 kết quả duy nhất), thường
+// là do khác sản phẩm trong cùng danh mục có bộ thông số không đồng nhất
+// (đặc biệt danh mục "Điện máy" vốn là nhóm tổng cho nhiều loại thiết bị
+// khác hẳn nhau — tivi/tủ lạnh/máy giặt/đồ gia dụng — nên không phải
+// attrName nào cũng dùng chung được giữa các sản phẩm).
+export const getAttributeFacets = unstable_cache(
+  async (categorySlug: string): Promise<AttributeFacet[]> => {
+    const category = await prisma.category.findUnique({
+      where: { slug: categorySlug },
+      select: { id: true, children: { select: { id: true } } },
+    });
+    if (!category) return [];
+    const categoryIds = [category.id, ...category.children.map((c) => c.id)];
+
+    const rows = await prisma.productAttribute.findMany({
+      where: { product: { categoryId: { in: categoryIds }, status: ProductStatus.ACTIVE } },
+      select: { productId: true, attrName: true, attrValue: true },
+    });
+
+    const byAttrName = new Map<
+      string,
+      { productIds: Set<string>; values: Map<string, { value: string; count: number }> }
+    >();
+    for (const row of rows) {
+      const entry = byAttrName.get(row.attrName) ?? {
+        productIds: new Set<string>(),
+        values: new Map<string, { value: string; count: number }>(),
+      };
+      entry.productIds.add(row.productId);
+      const valueEntry = entry.values.get(row.attrValue) ?? { value: row.attrValue, count: 0 };
+      valueEntry.count += 1;
+      entry.values.set(row.attrValue, valueEntry);
+      byAttrName.set(row.attrName, entry);
+    }
+
+    return [...byAttrName.entries()]
+      .filter(([, entry]) => entry.productIds.size >= MIN_PRODUCTS_FOR_FACET)
+      .map(([attrName, entry]) => ({
+        attrName,
+        slug: slugifyAttr(attrName),
+        values: [...entry.values.values()]
+          .map((v) => ({ value: v.value, slug: slugifyAttr(v.value), count: v.count }))
+          .sort((a, b) => a.value.localeCompare(b.value)),
+      }))
+      .sort((a, b) => a.attrName.localeCompare(b.attrName));
+  },
+  ["attribute-facets"],
   { tags: [PRODUCTS_TAG], revalidate: 60 }
 );
 

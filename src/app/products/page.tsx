@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getProducts, type ProductSort } from "@/lib/products";
+import { getProducts, getAttributeFacets, type ProductSort } from "@/lib/products";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistedProductIds } from "@/lib/wishlist";
 import { getActiveBrands } from "@/lib/brands";
@@ -23,34 +23,40 @@ function buildHref(
 export default async function ProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    category?: string;
-    brand?: string;
-    minPrice?: string;
-    maxPrice?: string;
-    sort?: string;
-    search?: string;
-    page?: string;
-  }>;
+  // Kiểu generic (thay vì liệt kê từng field cố định như trước) vì giờ còn
+  // có thêm các query "spec_<slug-thông-số>" ĐỘNG theo từng danh mục (xem
+  // getAttributeFacets() ở lib/products.ts) — không thể khai báo trước hết
+  // tên field vì chúng phụ thuộc dữ liệu ProductAttribute thật.
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const params = await searchParams;
   const page = Number(params.page ?? "1");
   const sort: ProductSort =
     params.sort === "price_asc" || params.sort === "price_desc" ? params.sort : "newest";
 
-  const currentFilters = {
-    category: params.category,
-    brand: params.brand,
-    minPrice: params.minPrice,
-    maxPrice: params.maxPrice,
-    sort: params.sort,
-    search: params.search,
-  };
+  // currentFilters = TOÀN BỘ query hiện tại trừ "page" (đổi bất kỳ filter
+  // nào cũng quay về trang 1) — giữ nguyên mọi "spec_*" đang chọn khi bấm
+  // đổi 1 filter khác (brand/giá/...).
+  const { page: _page, ...currentFilters } = params;
 
   // Chỉ chọn được đúng 1 hãng tại 1 thời điểm (xem FilterSidebar.tsx) — vẫn
   // đọc dạng mảng vì lib/products.ts hỗ trợ sẵn nhiều slug (brandSlugs),
   // UI chỉ đơn giản là luôn gửi lên đúng 1 phần tử.
   const selectedBrands = params.brand ? params.brand.split(",").filter(Boolean) : [];
+
+  // Bảng lọc thông số kỹ thuật chỉ có ý nghĩa khi đang xem 1 danh mục cụ thể
+  // (không tính "Tất cả sản phẩm" — thông số của điện thoại và máy giặt
+  // không liên quan gì nhau). Giải mã "spec_<slug>=<slug-giá-trị-1,...>"
+  // thành { attrName thật: [giá trị thật,...] } dựa vào facet đã tính được.
+  const facets = params.category ? await getAttributeFacets(params.category) : [];
+  const attributeFilters: Record<string, string[]> = {};
+  for (const facet of facets) {
+    const raw = params[`spec_${facet.slug}`];
+    if (!raw) continue;
+    const selectedSlugs = raw.split(",").filter(Boolean);
+    const values = facet.values.filter((v) => selectedSlugs.includes(v.slug)).map((v) => v.value);
+    if (values.length > 0) attributeFilters[facet.attrName] = values;
+  }
 
   const [brands, { products, totalPages }, currentUser] = await Promise.all([
     getActiveBrands(),
@@ -60,6 +66,7 @@ export default async function ProductsPage({
       search: params.search,
       minPrice: params.minPrice ? Number(params.minPrice) : undefined,
       maxPrice: params.maxPrice ? Number(params.maxPrice) : undefined,
+      attributeFilters: Object.keys(attributeFilters).length ? attributeFilters : undefined,
       sort,
       page,
     }),
@@ -91,6 +98,7 @@ export default async function ProductsPage({
           brands={brands}
           selectedBrands={selectedBrands}
           activePriceKey={activePriceKey}
+          facets={facets}
           currentFilters={currentFilters}
         />
 
