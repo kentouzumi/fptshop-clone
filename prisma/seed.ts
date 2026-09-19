@@ -36,6 +36,45 @@ async function main() {
     }),
   ]);
 
+  // 5 danh mục thêm theo yêu cầu user (gửi ảnh chụp sidebar "Danh mục" thật
+  // của fptshop.com.vn — dài hơn nhiều so với 4 danh mục cũ, gồm nhiều nhóm:
+  // "Điện tử điện lạnh", "Công nghệ & thiết bị số", "Chăm sóc nhà cửa & sức
+  // khỏe", "Thiết bị gia đình & điện gia dụng", "Thiết bị nhà bếp", "Kết
+  // nối, Tiện ích & Giải trí"). KHÔNG tạo đúng ~20 danh mục nhỏ lẻ y hệt
+  // từng dòng trong ảnh (vd tách riêng "Nồi chiên..." / "Nồi áp suất..." /
+  // "Nồi, Chảo..." thành 3 danh mục khác nhau) vì sẽ phải bịa thêm rất nhiều
+  // brand/sản phẩm giả không cần thiết cho quy mô demo — thay vào đó GOM
+  // thành 5 danh mục rộng hơn, mỗi danh mục có sản phẩm thật đại diện đúng
+  // nhóm đó, vẫn phủ được đúng các mảng sản phẩm chính trong ảnh.
+  const [dongHoMayTinhBang, pcManHinh, dienGiaDungNhaBep, chamSocNhaCua, cameraThietBiMang] =
+    await Promise.all([
+      prisma.category.upsert({
+        where: { slug: "dong-ho-may-tinh-bang" },
+        update: { sortOrder: 5 },
+        create: { name: "Đồng hồ, Máy tính bảng", slug: "dong-ho-may-tinh-bang", sortOrder: 5 },
+      }),
+      prisma.category.upsert({
+        where: { slug: "pc-man-hinh-linh-kien" },
+        update: { sortOrder: 6 },
+        create: { name: "PC, Màn hình, Linh kiện", slug: "pc-man-hinh-linh-kien", sortOrder: 6 },
+      }),
+      prisma.category.upsert({
+        where: { slug: "dien-gia-dung-nha-bep" },
+        update: { sortOrder: 7 },
+        create: { name: "Điện gia dụng, Nhà bếp", slug: "dien-gia-dung-nha-bep", sortOrder: 7 },
+      }),
+      prisma.category.upsert({
+        where: { slug: "cham-soc-nha-cua-suc-khoe" },
+        update: { sortOrder: 8 },
+        create: { name: "Chăm sóc nhà cửa & sức khỏe", slug: "cham-soc-nha-cua-suc-khoe", sortOrder: 8 },
+      }),
+      prisma.category.upsert({
+        where: { slug: "camera-thiet-bi-mang" },
+        update: { sortOrder: 9 },
+        create: { name: "Camera, Thiết bị mạng, Smart Home", slug: "camera-thiet-bi-mang", sortOrder: 9 },
+      }),
+    ]);
+
   const [apple, samsung, xiaomi, dell, oppo, asus, jbl, sony] = await Promise.all([
     prisma.brand.upsert({
       where: { slug: "apple" },
@@ -76,6 +115,24 @@ async function main() {
       where: { slug: "sony" },
       update: {},
       create: { name: "Sony", slug: "sony" },
+    }),
+  ]);
+
+  const [lg, philips, tplink] = await Promise.all([
+    prisma.brand.upsert({
+      where: { slug: "lg" },
+      update: {},
+      create: { name: "LG", slug: "lg" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "philips" },
+      update: {},
+      create: { name: "Philips", slug: "philips" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "tp-link" },
+      update: {},
+      create: { name: "TP-Link", slug: "tp-link" },
     }),
   ]);
 
@@ -246,6 +303,153 @@ async function main() {
       imageUrl: "https://placehold.co/600x600.png?text=Sony+Bravia+43",
       attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "43 inch" }],
       variants: [{ sku: "SONY-BRAVIA-43", color: "Đen", storage: null, price: 9490000 }],
+    },
+    // 12 sản phẩm thêm cho 5 danh mục mới + làm phong phú thêm "Điện máy"
+    // (user báo "có mỗi điện thoại laptop với phụ kiện ít quá" — mở rộng
+    // độ phủ danh mục theo đúng ảnh sidebar "Danh mục" thật đã gửi).
+    {
+      name: "LG Tủ lạnh Inverter 375L",
+      slug: "lg-tu-lanh-inverter-375l",
+      description: "Tủ lạnh LG Inverter 375L ngăn đông trên, tiết kiệm điện.",
+      categoryId: dienMay.id,
+      brandId: lg.id,
+      basePrice: 10490000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=LG+Tu+Lanh+375L",
+      attributes: [{ groupName: "Dung tích", attrName: "Thể tích", attrValue: "375 lít" }],
+      variants: [{ sku: "LG-TL-375L", color: "Bạc", storage: null, price: 10490000 }],
+    },
+    {
+      name: "LG Máy giặt cửa trước Inverter 9kg",
+      slug: "lg-may-giat-inverter-9kg",
+      description: "Máy giặt LG Inverter 9kg cửa trước, công nghệ giặt hơi nước diệt khuẩn.",
+      categoryId: dienMay.id,
+      brandId: lg.id,
+      basePrice: 8290000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=LG+May+Giat+9kg",
+      attributes: [{ groupName: "Khối lượng giặt", attrName: "Trọng lượng", attrValue: "9 kg" }],
+      variants: [{ sku: "LG-MG-9KG", color: "Đen", storage: null, price: 8290000 }],
+    },
+    {
+      name: "Apple Watch Series 9",
+      slug: "apple-watch-series-9",
+      description: "Apple Watch Series 9 chip S9, màn hình sáng hơn, theo dõi sức khỏe toàn diện.",
+      categoryId: dongHoMayTinhBang.id,
+      brandId: apple.id,
+      basePrice: 10990000,
+      isFeatured: true,
+      imageUrl: "https://placehold.co/600x600.png?text=Apple+Watch+Series+9",
+      attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "45mm" }],
+      variants: [{ sku: "AWS9-45-BLK", color: "Đen", storage: null, price: 10990000 }],
+    },
+    {
+      name: "Samsung Galaxy Tab S9",
+      slug: "samsung-galaxy-tab-s9",
+      description: "Galaxy Tab S9 màn hình Dynamic AMOLED 2X, kèm bút S Pen.",
+      categoryId: dongHoMayTinhBang.id,
+      brandId: samsung.id,
+      basePrice: 15990000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Galaxy+Tab+S9",
+      attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "11 inch" }],
+      variants: [{ sku: "TABS9-128-GRY", color: "Xám", storage: "128GB", price: 15990000 }],
+    },
+    {
+      name: "Dell UltraSharp U2724D",
+      slug: "dell-ultrasharp-u2724d",
+      description: "Màn hình Dell UltraSharp 27 inch QHD, chuẩn màu chính xác cho dân thiết kế.",
+      categoryId: pcManHinh.id,
+      brandId: dell.id,
+      basePrice: 7990000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Dell+UltraSharp+27",
+      attributes: [{ groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "2560x1440 (QHD)" }],
+      variants: [{ sku: "DELL-U2724D", color: "Bạc", storage: null, price: 7990000 }],
+    },
+    {
+      name: "Asus TUF Gaming VG249Q3A",
+      slug: "asus-tuf-gaming-vg249q3a",
+      description: "Màn hình gaming Asus TUF 24 inch 165Hz, thời gian phản hồi 1ms.",
+      categoryId: pcManHinh.id,
+      brandId: asus.id,
+      basePrice: 4490000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Asus+TUF+Gaming+24",
+      attributes: [{ groupName: "Màn hình", attrName: "Tần số quét", attrValue: "165Hz" }],
+      variants: [{ sku: "ASUS-VG249Q3A", color: "Đen", storage: null, price: 4490000 }],
+    },
+    {
+      name: "Philips Nồi chiên không dầu",
+      slug: "philips-noi-chien-khong-dau",
+      description: "Nồi chiên không dầu Philips công nghệ Rapid Air, dung tích 4.1L.",
+      categoryId: dienGiaDungNhaBep.id,
+      brandId: philips.id,
+      basePrice: 1990000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Philips+Noi+Chien",
+      attributes: [{ groupName: "Dung tích", attrName: "Thể tích", attrValue: "4.1 lít" }],
+      variants: [{ sku: "PHILIPS-NC41", color: "Đen", storage: null, price: 1990000 }],
+    },
+    {
+      name: "Philips Nồi cơm điện tử",
+      slug: "philips-noi-com-dien-tu",
+      description: "Nồi cơm điện tử Philips lòng nồi chống dính cao cấp, nấu đa năng.",
+      categoryId: dienGiaDungNhaBep.id,
+      brandId: philips.id,
+      basePrice: 1290000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Philips+Noi+Com+Dien",
+      attributes: [{ groupName: "Dung tích", attrName: "Thể tích", attrValue: "1.8 lít" }],
+      variants: [{ sku: "PHILIPS-NCD18", color: "Đỏ", storage: null, price: 1290000 }],
+    },
+    {
+      name: "Xiaomi Robot hút bụi lau nhà",
+      slug: "xiaomi-robot-hut-bui-lau-nha",
+      description: "Robot hút bụi lau nhà Xiaomi, lực hút mạnh mẽ, điều khiển qua app.",
+      categoryId: chamSocNhaCua.id,
+      brandId: xiaomi.id,
+      basePrice: 5990000,
+      isFeatured: true,
+      imageUrl: "https://placehold.co/600x600.png?text=Xiaomi+Robot+Hut+Bui",
+      attributes: [{ groupName: "Tính năng", attrName: "Chức năng", attrValue: "Hút bụi + lau nhà" }],
+      variants: [{ sku: "XIAOMI-ROBOT-VAC", color: "Trắng", storage: null, price: 5990000 }],
+    },
+    {
+      name: "Philips Máy lọc không khí",
+      slug: "philips-may-loc-khong-khi",
+      description: "Máy lọc không khí Philips lọc bụi mịn PM2.5, khử mùi, kháng khuẩn.",
+      categoryId: chamSocNhaCua.id,
+      brandId: philips.id,
+      basePrice: 3990000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Philips+May+Loc+Khong+Khi",
+      attributes: [{ groupName: "Diện tích", attrName: "Phù hợp phòng", attrValue: "Đến 40m²" }],
+      variants: [{ sku: "PHILIPS-AC-40", color: "Trắng", storage: null, price: 3990000 }],
+    },
+    {
+      name: "TP-Link Archer AX55 WiFi 6",
+      slug: "tp-link-archer-ax55",
+      description: "Router WiFi 6 TP-Link Archer AX55, tốc độ cao, phủ sóng rộng.",
+      categoryId: cameraThietBiMang.id,
+      brandId: tplink.id,
+      basePrice: 1590000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=TP-Link+Archer+AX55",
+      attributes: [{ groupName: "Chuẩn WiFi", attrName: "Phiên bản", attrValue: "WiFi 6 (802.11ax)" }],
+      variants: [{ sku: "TPLINK-AX55", color: "Đen", storage: null, price: 1590000 }],
+    },
+    {
+      name: "Xiaomi Camera an ninh Mi 360",
+      slug: "xiaomi-camera-an-ninh-mi-360",
+      description: "Camera an ninh Xiaomi Mi 360, xoay 360 độ, đàm thoại 2 chiều, cảnh báo chuyển động.",
+      categoryId: cameraThietBiMang.id,
+      brandId: xiaomi.id,
+      basePrice: 590000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Xiaomi+Camera+Mi+360",
+      attributes: [{ groupName: "Độ phân giải", attrName: "Camera", attrValue: "2K" }],
+      variants: [{ sku: "XIAOMI-CAM-360", color: "Trắng", storage: null, price: 590000 }],
     },
   ];
 

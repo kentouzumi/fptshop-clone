@@ -1914,6 +1914,55 @@
       khi Vercel deploy xong, không cần chạy lại seed vì Vercel dùng CHUNG
       Supabase DB với local) xác nhận trực quan.
 
+- [x] Mở rộng từ 4 lên 9 danh mục + thêm 12 sản phẩm (user gửi tiếp 3 ảnh
+      chụp sidebar "Danh mục" thật của fptshop.com.vn — dài hơn nhiều so với
+      4 danh mục hiện có, và yêu cầu thẳng "làm thêm danh mục như trong ảnh
+      đi... tự thêm vào mỗi danh mục 1 số sản phẩm giúp tôi"). Vẫn qua
+      prisma/seed.ts (pattern upsert idempotent), đã chạy thật lên Supabase.
+
+      5 danh mục mới (sortOrder 5-9, nối tiếp Điện thoại/Laptop/Điện máy/Phụ
+      kiện cũ): "Đồng hồ, Máy tính bảng", "PC, Màn hình, Linh kiện", "Điện
+      gia dụng, Nhà bếp", "Chăm sóc nhà cửa & sức khỏe", "Camera, Thiết bị
+      mạng, Smart Home". QUYẾT ĐỊNH PHẠM VI: ảnh gốc có tới ~20 dòng danh
+      mục nhỏ lẻ (vd tách riêng "Nồi chiên không dầu, Lò vi sóng, Bếp nướng
+      điện" / "Nồi áp suất, Nồi lẩu điện, Bếp điện" / "Nồi, Chảo, Đồ dùng
+      nhà bếp" thành 3 dòng riêng biệt) — KHÔNG tạo đúng từng dòng vì sẽ
+      phải bịa thêm rất nhiều brand/sản phẩm giả chỉ để lấp đầy, không có
+      giá trị thật cho demo; đã GOM lại thành 5 danh mục rộng hơn nhưng vẫn
+      phủ đúng các mảng sản phẩm chính (thiết bị đeo, PC/màn hình, đồ gia
+      dụng bếp, chăm sóc nhà cửa, mạng/an ninh) — mỗi danh mục có 2 sản
+      phẩm thật đại diện thay vì để trống. "Chuyên trang thương hiệu" (Apple/
+      Samsung/LG/Xiaomi/Garmin ở ảnh) KHÔNG tạo riêng vì đó là trang
+      microsite theo brand của FPT thật, không phải category — chức năng
+      tương đương đã có sẵn qua brand chip trong mega menu.
+
+      Thêm 3 brand mới: LG (tủ lạnh/máy giặt, đưa vào "Điện máy" có sẵn —
+      cố tình KHÔNG tạo category "Tivi" riêng vì "Điện máy" vốn đã đúng là
+      tên umbrella FPT thật dùng cho cả nhóm tivi/tủ lạnh/máy giặt), Philips
+      (đồ gia dụng + máy lọc không khí), TP-Link (router mạng). 12 sản phẩm
+      mới: LG Tủ lạnh 375L + LG Máy giặt 9kg (Điện máy); Apple Watch Series
+      9 + Samsung Galaxy Tab S9 (Đồng hồ/Máy tính bảng); Dell UltraSharp
+      U2724D + Asus TUF Gaming VG249Q3A (PC/Màn hình — CHỦ Ý chọn màn hình
+      chứ không phải thêm laptop, tránh trùng vai trò với category Laptop
+      đã có); Philips Nồi chiên không dầu + Philips Nồi cơm điện tử (Điện
+      gia dụng); Xiaomi Robot hút bụi + Philips Máy lọc không khí (Chăm sóc
+      nhà cửa); TP-Link Archer AX55 + Xiaomi Camera an ninh Mi 360 (Camera/
+      Thiết bị mạng). Database giờ có 23 sản phẩm / 9 category / 11 brand.
+
+      Đã test qua dev server (xóa `.next` trước khi chạy lại — rút kinh
+      nghiệm từ lỗi cache stale ở mục ngay trên): `tsc --noEmit`/`eslint`/
+      `npm run build` sạch; script Node query trực tiếp DB xác nhận đúng cả
+      9 category (thứ tự sortOrder 1-9) và đúng brand-per-category (Điện
+      máy giờ có thêm LG bên cạnh Samsung/Sony, 5 category mới đều có brand
+      đúng, không lẫn brand sai category); trang chủ hiện đủ 9 thẻ danh mục;
+      gọi `/products?category=<slug>` và `?category=<slug>&brand=<slug>`
+      cho cả 5 category mới (kể cả kết hợp brand) đều 200 và trả đúng đúng
+      sản phẩm mong đợi (grep thấy tên sản phẩm thật + đúng categorySlug
+      trong JSON RSC payload). CHƯA tự xem qua trình duyệt thật — nhờ user
+      tự mở `npm run dev` hoặc xem trên production (Vercel dùng chung
+      Supabase DB, không cần chạy lại seed) để xác nhận trực quan mega menu
+      cuộn được với 9 mục và hiển thị đúng icon/brand cho từng mục.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
