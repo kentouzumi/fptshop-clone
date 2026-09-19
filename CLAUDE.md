@@ -1963,6 +1963,32 @@
       Supabase DB, không cần chạy lại seed) để xác nhận trực quan mega menu
       cuộn được với 9 mục và hiển thị đúng icon/brand cho từng mục.
 
+- [x] Sửa lỗi console "eval() is not supported... Content-Security-Policy...
+      unsafe-eval" (user báo lại khi chạy `npm run dev`). NGUYÊN NHÂN: CSP
+      thêm lúc vá bảo mật (mục "Rà soát bảo mật" ở trên) chỉ có `script-src
+      'self' 'unsafe-inline'`, không có `'unsafe-eval'` — React/Turbopack ở
+      chế độ DEV dùng `eval()` để dựng lại call stack phục vụ Fast Refresh/
+      debugging (dòng cảnh báo tự in "React will never use eval() in
+      production mode" xác nhận đây chỉ là hạn chế của dev, không phải lỗi
+      logic). CSP trong `next.config.ts` áp dụng cho MỌI môi trường
+      (`headers()` không tự phân biệt dev/production), nên bản CSP nghiêm
+      ngặt viết cho production vô tình chặn luôn tính năng debug của dev.
+
+      SỬA: next.config.ts giờ build CSP động theo `process.env.NODE_ENV`
+      (Next.js tự set `NODE_ENV=production` cho MỌI lần `next build` — kể
+      cả Vercel Preview deployments — chỉ `next dev` mới có
+      `NODE_ENV=development`, nên tách theo biến này không làm lỏng CSP
+      production dù chỉ 1 chút): CHỈ khi dev mới thêm `'unsafe-eval'` vào
+      script-src và `ws: wss:` vào connect-src (kênh WebSocket Hot Module
+      Reload của dev server, cũng bị `connect-src 'self'` chặn). Production
+      giữ NGUYÊN CSP nghiêm ngặt như cũ, không nới lỏng gì.
+
+      Đã test: `tsc --noEmit`/`eslint` sạch; chạy `npm run dev` xong `curl
+      -D` xác nhận header CSP có đủ `'unsafe-eval'` + `ws: wss:`; chạy
+      `npm run build` + `next start` (mô phỏng đúng production) xong `curl
+      -D` xác nhận CSP KHÔNG có 2 giá trị nới lỏng đó, `/` và `/products`
+      vẫn 200 — production không bị ảnh hưởng bởi thay đổi này.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
