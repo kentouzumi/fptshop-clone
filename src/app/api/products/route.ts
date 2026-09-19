@@ -13,10 +13,11 @@ export async function GET(request: NextRequest) {
 
   const minPrice = searchParams.get("minPrice");
   const maxPrice = searchParams.get("maxPrice");
+  const brandParam = searchParams.get("brand");
 
   const result = await getProducts({
     categorySlug: searchParams.get("category") ?? undefined,
-    brandSlug: searchParams.get("brand") ?? undefined,
+    brandSlugs: brandParam ? brandParam.split(",").filter(Boolean) : undefined,
     search: searchParams.get("search") ?? undefined,
     minPrice: minPrice ? Number(minPrice) : undefined,
     maxPrice: maxPrice ? Number(maxPrice) : undefined,

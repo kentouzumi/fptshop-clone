@@ -23,7 +23,9 @@ export type ProductSort = "newest" | "price_asc" | "price_desc";
 
 export interface GetProductsParams {
   categorySlug?: string;
-  brandSlug?: string;
+  /** Nhiều slug thương hiệu cùng lúc (OR với nhau) — bộ lọc "Hãng sản xuất" ở
+   * sidebar /products giờ cho chọn nhiều checkbox cùng lúc thay vì chỉ 1. */
+  brandSlugs?: string[];
   search?: string;
   featuredOnly?: boolean;
   minPrice?: number;
@@ -155,7 +157,7 @@ async function getProductsUncached(
   const where: Prisma.ProductWhereInput = {
     status: ProductStatus.ACTIVE,
     ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
-    ...(params.brandSlug ? { brand: { slug: params.brandSlug } } : {}),
+    ...(params.brandSlugs?.length ? { brand: { slug: { in: params.brandSlugs } } } : {}),
     ...(params.search
       ? { name: { contains: params.search, mode: "insensitive" } }
       : {}),

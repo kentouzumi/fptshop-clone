@@ -2122,6 +2122,68 @@
       tác (môi trường không có màn hình) — nhờ user tự mở `npm run dev` xác
       nhận.
 
+- [x] Thay bộ lọc dạng chip ngang ở /products bằng sidebar bên trái kiểu
+      fptshop.com.vn thật (user gửi 3 ảnh chụp "Bộ lọc tìm kiếm" thật — các
+      mục thu gọn/mở rộng, lưới hãng sản xuất, mức giá dạng checkbox + ô nhập
+      khoảng giá tùy chỉnh + thanh kéo, và một loạt bộ lọc rất đặc thù cho
+      điện thoại: Hệ điều hành/Dung lượng ROM/Kết nối/RAM/Thẻ nhớ/Màn hình/
+      Chuẩn màn hình/Tần số quét/Camera/Tính năng đặc biệt).
+
+      QUYẾT ĐỊNH PHẠM VI quan trọng (không làm đúng 100% ảnh): CHỈ dựng lại
+      layout sidebar + 3 nhóm lọc dùng được cho MỌI danh mục bằng dữ liệu
+      THẬT sẵn có (Danh mục, Hãng sản xuất, Mức giá) — KHÔNG bịa thêm các
+      facet đặc thù điện thoại (Hệ điều hành/RAM/ROM/Kết nối/Camera...) vì
+      dữ liệu `ProductAttribute` hiện tại (bảng thông số kỹ thuật) rất thưa
+      và không đồng nhất giữa các sản phẩm (mỗi sản phẩm chỉ có 1-2 attribute
+      với `groupName` khác nhau tùy tiện — vd TV chỉ có "Màn hình", máy giặt
+      chỉ có "Khối lượng giặt", không có sản phẩm nào có đủ bộ RAM+ROM+Hệ
+      điều hành+Camera... để lọc thật). Làm facet giả cho ~34 sản phẩm trải
+      khắp 75 category (điện thoại lẫn nồi chiên lẫn máy hút bụi) sẽ vô nghĩa
+      với đa số danh mục — không bịa thêm dữ liệu chỉ để lấp đầy giao diện,
+      đúng tinh thần các quyết định phạm vi trước đó trong dự án. Cũng bỏ
+      luôn thanh kéo (slider) 2 đầu mút mà ảnh có — ô nhập số "Từ/Đến" đã đủ
+      chức năng tương đương, kéo-thả cần thêm client JS phức tạp cho giá trị
+      thị giác không tương xứng.
+
+      src/app/products/FilterSidebar.tsx (mới, Server Component — toàn bộ
+      chỉ là `<Link>`/`<form method="GET">`, không cần JS): 3 nhóm lọc bọc
+      trong `<details open>`/`<summary>` (thu gọn/mở rộng thuần CSS qua biến
+      `group-open:rotate-180` cho mũi tên, không cần state/client component
+      nào) — "Danh mục" (list chọn 1, ô vuông kiểu checkbox nhưng hành vi
+      radio, tái dùng đúng logic category cũ), "Hãng sản xuất" (lưới 2 cột,
+      hiện 6 hãng đầu + `<details>` lồng bên trong cho "Xem thêm" các hãng
+      còn lại — vẫn thuần CSS, không JS), "Mức giá" (list mức giá cố định +
+      form nhập khoảng giá tùy chỉnh, có input ẩn giữ lại category/brand/
+      sort/search hiện tại khi submit).
+
+      NÂNG CẤP THẬT đi kèm (không chỉ đổi giao diện): "Hãng sản xuất" đổi từ
+      chọn ĐÚNG 1 hãng (như bộ lọc chip cũ) sang CHỌN ĐƯỢC NHIỀU HÃNG CÙNG
+      LÚC (đúng ý nghĩa ô checkbox trong ảnh) — lưu dạng
+      `?brand=apple,samsung` (nối bằng dấu phẩy) thay vì 1 slug. Sửa
+      `GetProductsParams.brandSlug: string` (lib/products.ts) thành
+      `brandSlugs?: string[]`, where-clause đổi từ `brand.slug` thành
+      `brand.slug: { in: brandSlugs } }` (OR nhiều hãng); mỗi checkbox hãng
+      trong sidebar là 1 `<Link>` tự tính href thêm/bớt đúng slug đó khỏi
+      danh sách đang chọn (không cần JS vẫn toggle được nhờ tính href phía
+      server dựa trên state hiện tại trong URL). `/api/products` (route.ts)
+      cũng parse `brand` thành mảng qua `split(",")` cho đồng bộ. Trang
+      /products/[slug] (sản phẩm liên quan) không đụng vì không dùng
+      brandSlug filter.
+
+      Đã test qua dev server (dùng DB thật, không mock): `tsc --noEmit`/
+      `eslint`/`npm run build` sạch (đủ 85 route, không route nào đổi); HTML
+      `/products` render đúng cả 3 tiêu đề nhóm "Bộ lọc tìm kiếm"/"Hãng sản
+      xuất"/"Mức giá"; gọi `/api/products?brand=apple` trả đúng 5 sản phẩm
+      toàn Apple, `/api/products?brand=apple,samsung` trả đúng hợp 8 sản
+      phẩm (Apple ∪ Samsung, không lẫn hãng khác) — xác nhận OR nhiều hãng
+      hoạt động đúng; kết hợp `category=dien-thoai&brand=apple,samsung` trả
+      đúng giao của cả 2 điều kiện; checkbox hãng đã chọn render đúng class
+      `border-accent bg-accent/10` (trạng thái "đã chọn" hiện rõ). CHƯA tự
+      xem qua trình duyệt thật bố cục sidebar/hiệu ứng thu gọn-mở rộng (môi
+      trường không có màn hình) — nhờ user tự mở `npm run dev` xác nhận thị
+      giác khớp ảnh mẫu đủ tốt, đặc biệt trên mobile (sidebar xếp trên lưới
+      sản phẩm, chưa test kỹ responsive ở màn hình rất nhỏ).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

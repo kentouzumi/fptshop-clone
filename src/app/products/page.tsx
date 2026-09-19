@@ -6,14 +6,7 @@ import { getActiveCategories } from "@/lib/categories";
 import { getActiveBrands } from "@/lib/brands";
 import ProductCard from "@/components/ProductCard";
 import SortSelect from "./SortSelect";
-
-const PRICE_RANGES: { key: string; label: string; min?: number; max?: number }[] = [
-  { key: "all", label: "Tất cả mức giá" },
-  { key: "under5", label: "Dưới 5 triệu", min: 0, max: 5_000_000 },
-  { key: "5-15", label: "5 - 15 triệu", min: 5_000_000, max: 15_000_000 },
-  { key: "15-30", label: "15 - 30 triệu", min: 15_000_000, max: 30_000_000 },
-  { key: "over30", label: "Trên 30 triệu", min: 30_000_000 },
-];
+import FilterSidebar, { PRICE_RANGES } from "./FilterSidebar";
 
 function buildHref(
   current: Record<string, string | undefined>,
@@ -55,12 +48,16 @@ export default async function ProductsPage({
     search: params.search,
   };
 
+  // Hãng sản xuất giờ chọn được nhiều cùng lúc (checkbox) — lưu dạng
+  // "apple,samsung" trong query "brand", tách ra mảng để filter OR nhiều hãng.
+  const selectedBrands = params.brand ? params.brand.split(",").filter(Boolean) : [];
+
   const [categories, brands, { products, totalPages }, currentUser] = await Promise.all([
     getActiveCategories(),
     getActiveBrands(),
     getProducts({
       categorySlug: params.category,
-      brandSlug: params.brand,
+      brandSlugs: selectedBrands.length ? selectedBrands : undefined,
       search: params.search,
       minPrice: params.minPrice ? Number(params.minPrice) : undefined,
       maxPrice: params.maxPrice ? Number(params.maxPrice) : undefined,
@@ -90,90 +87,46 @@ export default async function ProductsPage({
         <SortSelect current={sort} />
       </div>
 
-      <div className="card mb-8 flex flex-col gap-3 p-4">
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={buildHref(currentFilters, { category: undefined })}
-            className={`chip ${!params.category ? "chip-active" : "chip-inactive"}`}
-          >
-            Tất cả danh mục
-          </Link>
-          {categories.map((c) => (
-            <Link
-              key={c.id}
-              href={buildHref(currentFilters, { category: c.slug })}
-              className={`chip ${params.category === c.slug ? "chip-active" : "chip-inactive"}`}
-            >
-              {c.name}
-            </Link>
-          ))}
-        </div>
+      <div className="flex flex-col gap-8 md:flex-row md:items-start">
+        <FilterSidebar
+          categories={categories}
+          brands={brands}
+          selectedCategory={params.category}
+          selectedBrands={selectedBrands}
+          activePriceKey={activePriceKey}
+          currentFilters={currentFilters}
+        />
 
-        <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3">
-          <Link
-            href={buildHref(currentFilters, { brand: undefined })}
-            className={`chip !px-3 !py-1 text-xs ${!params.brand ? "chip-active" : "chip-inactive"}`}
-          >
-            Tất cả thương hiệu
-          </Link>
-          {brands.map((b) => (
-            <Link
-              key={b.id}
-              href={buildHref(currentFilters, { brand: b.slug })}
-              className={`chip !px-3 !py-1 text-xs ${
-                params.brand === b.slug ? "chip-active" : "chip-inactive"
-              }`}
-            >
-              {b.name}
-            </Link>
-          ))}
-        </div>
+        <div className="min-w-0 flex-1">
+          {products.length === 0 ? (
+            <p className="text-zinc-500">Không tìm thấy sản phẩm nào.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+              {products.map((p) => (
+                <ProductCard key={p.id} product={p} initialInWishlist={wishlistedIds.has(p.id)} />
+              ))}
+            </div>
+          )}
 
-        <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3">
-          {PRICE_RANGES.map((r) => (
-            <Link
-              key={r.key}
-              href={buildHref(currentFilters, {
-                minPrice: r.min !== undefined ? String(r.min) : undefined,
-                maxPrice: r.max !== undefined ? String(r.max) : undefined,
-              })}
-              className={`chip !px-3 !py-1 text-xs ${
-                activePriceKey === r.key ? "chip-active" : "chip-inactive"
-              }`}
-            >
-              {r.label}
-            </Link>
-          ))}
+          {totalPages > 1 && (
+            <div className="mt-10 flex justify-center gap-2">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <Link
+                  key={n}
+                  href={buildHref(currentFilters, { page: n === 1 ? undefined : String(n) })}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
+                    n === page
+                      ? "bg-zinc-900 text-white"
+                      : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                  }`}
+                >
+                  {n}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-
-      {products.length === 0 ? (
-        <p className="text-zinc-500">Không tìm thấy sản phẩm nào.</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-          {products.map((p) => (
-            <ProductCard key={p.id} product={p} initialInWishlist={wishlistedIds.has(p.id)} />
-          ))}
-        </div>
-      )}
-
-      {totalPages > 1 && (
-        <div className="mt-10 flex justify-center gap-2">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-            <Link
-              key={n}
-              href={buildHref(currentFilters, { page: n === 1 ? undefined : String(n) })}
-              className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
-                n === page
-                  ? "bg-zinc-900 text-white"
-                  : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
-              }`}
-            >
-              {n}
-            </Link>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
