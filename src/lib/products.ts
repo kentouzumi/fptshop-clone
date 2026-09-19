@@ -133,9 +133,28 @@ async function getProductsUncached(
   const page = Math.max(1, params.page ?? 1);
   const limit = Math.min(48, Math.max(1, params.limit ?? 12));
 
+  // Category cấp cao (vd "tivi-may-lanh-dieu-hoa") giờ chỉ là nhóm hiển thị
+  // cho mega menu — bản thân nó KHÔNG còn được gán sản phẩm trực tiếp nữa
+  // (xem prisma/seed.ts, mỗi tên tách thành 1 category con riêng: "Tivi",
+  // "Máy lạnh - Điều hòa"...). Nếu chỉ lọc đúng categoryId của category
+  // được truyền vào, bấm vào link category cấp cao ở lưới trang chủ (vẫn
+  // trỏ tới slug cấp cao như trước) sẽ luôn ra rỗng dù có sản phẩm ở các
+  // category con — nên khi lọc theo categorySlug, MỞ RỘNG thêm luôn id của
+  // mọi category con (nếu có) để trang /products?category=<slug-cha> hiện
+  // đúng TOÀN BỘ sản phẩm thuộc các nhóm con, giống hành vi duyệt danh mục
+  // thông thường (danh mục cha = union sản phẩm của các danh mục con).
+  let categoryIds: string[] | undefined;
+  if (params.categorySlug) {
+    const category = await prisma.category.findUnique({
+      where: { slug: params.categorySlug },
+      select: { id: true, children: { select: { id: true } } },
+    });
+    categoryIds = category ? [category.id, ...category.children.map((c) => c.id)] : [];
+  }
+
   const where: Prisma.ProductWhereInput = {
     status: ProductStatus.ACTIVE,
-    ...(params.categorySlug ? { category: { slug: params.categorySlug } } : {}),
+    ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
     ...(params.brandSlug ? { brand: { slug: params.brandSlug } } : {}),
     ...(params.search
       ? { name: { contains: params.search, mode: "insensitive" } }

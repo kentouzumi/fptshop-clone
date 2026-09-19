@@ -3,10 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 
-interface CategoryItem {
+interface LeafCategory {
   id: string;
   name: string;
   slug: string;
+}
+
+interface CategoryItem extends LeafCategory {
+  children: LeafCategory[];
 }
 
 interface BrandItem {
@@ -56,23 +60,25 @@ const DEFAULT_ICON = (
 
 // Mega menu kiểu FPT Shop thật: hiện khi di chuột vào (thuần CSS group-hover,
 // không cần state đóng/mở — tránh race condition mouseleave/mouseenter khi
-// chuột di chuyển giữa nút và panel). State duy nhất cần JS là category nào
-// đang được hover ở cột trái để đổi nội dung cột phải.
+// chuột di chuyển giữa nút và panel).
 //
-// KHÁC BẢN GỐC: FPT Shop thật nhóm sub-category theo TỪNG thương hiệu bên
-// trong từng danh mục (vd "Apple > iPhone 17/16/15 Series..."). Dữ liệu
-// project này không có sub-category theo brand — nên cột phải hiển thị brand
-// dạng chip link thẳng tới /products?category=...&brand=... (dùng đúng
-// filter đã có sẵn) thay vì bịa thêm sub-category giả không tồn tại trong
-// DB. `brandsByCategory` suy ra TỪ dữ liệu Product thật (xem
-// getBrandsByCategory() trong lib/products.ts) — mỗi danh mục chỉ hiện brand
-// THẬT SỰ có sản phẩm trong danh mục đó (vd Dell chỉ hiện ở Laptop).
+// User yêu cầu rõ: những dòng gộp nhiều tên (vd "Thiết bị bếp, Máy rửa bát,
+// Máy hút mùi") phải "vẫn giữ nguyên thế" (nhìn vẫn 1 dòng y hệt cũ) NHƯNG
+// "chỉ có thể chọn Thiết bị bếp HOẶC Máy rửa bát HOẶC Máy hút mùi" — tức
+// từng tên trong dòng đó phải là 1 lựa chọn ĐỘC LẬP, không phải cả dòng là
+// 1 link chung. Cách làm: mỗi category cấp cao nếu CÓ `children` (category
+// con, xem getActiveCategoriesWithChildren() ở lib/categories.ts — dùng
+// đúng quan hệ parentId đã có sẵn trong schema từ đầu dự án, seed.ts giờ
+// tạo category con cho mỗi tên tách riêng) thì render TỪNG TÊN CON như 1
+// <Link> riêng, nối nhau bằng ", " ngay trong CÙNG 1 dòng — không phải
+// wrap cả dòng trong 1 thẻ <a> như trước. Category KHÔNG có children (Điện
+// thoại, Laptop, Phụ kiện) vẫn render như cũ (cả dòng là 1 link).
 //
-// Cột trái giờ có 23 danh mục (đã tách đủ theo từng dòng trong ảnh sidebar
-// thật, xem prisma/seed.ts) nên cần `max-h` + `overflow-y-auto` để không
-// tràn quá chiều cao màn hình — đúng hành vi "Lăn chuột xuống để khám phá"
-// đã thấy trong ảnh mẫu (chỉ 3-4 icon đầu có SVG riêng, còn lại dùng
-// DEFAULT_ICON chung — không đáng công vẽ icon riêng cho từng dòng nhỏ lẻ).
+// `active` giờ luôn là 1 LEAF (category không con — hoặc category gốc nếu
+// nó không có con, hoặc 1 trong các con của nó) vì đó mới là category thật
+// sự có sản phẩm/brand — panel bên phải (brand chip) luôn tra theo leaf
+// đang active, không bao giờ tra theo category cha (cha không tự có sản
+// phẩm trực tiếp nữa sau khi tách).
 export default function CategoryMegaMenu({
   categories,
   brandsByCategory,
@@ -80,8 +86,11 @@ export default function CategoryMegaMenu({
   categories: CategoryItem[];
   brandsByCategory: Record<string, BrandItem[]>;
 }) {
-  const [activeSlug, setActiveSlug] = useState(categories[0]?.slug ?? "");
-  const active = categories.find((c) => c.slug === activeSlug) ?? categories[0];
+  const firstLeafSlug = categories[0]?.children[0]?.slug ?? categories[0]?.slug ?? "";
+  const [activeSlug, setActiveSlug] = useState(firstLeafSlug);
+
+  const allLeaves = categories.flatMap((c) => (c.children.length > 0 ? c.children : [c]));
+  const active = allLeaves.find((leaf) => leaf.slug === activeSlug) ?? allLeaves[0];
 
   if (!active) return null;
 
@@ -103,19 +112,43 @@ export default function CategoryMegaMenu({
         <div className="flex overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
           <div className="max-h-[420px] w-56 shrink-0 overflow-y-auto border-r border-zinc-100 bg-zinc-50 py-2">
             {categories.map((c) => (
-              <Link
-                key={c.id}
-                href={`/products?category=${c.slug}`}
-                onMouseEnter={() => setActiveSlug(c.slug)}
-                className={`flex items-center gap-3 px-4 py-2 text-sm transition ${
-                  c.slug === active.slug
-                    ? "bg-white font-semibold text-accent"
-                    : "text-zinc-600 hover:bg-white hover:text-zinc-900"
-                }`}
-              >
-                <span className="shrink-0">{CATEGORY_ICONS[c.slug] ?? DEFAULT_ICON}</span>
-                <span className="leading-tight">{c.name}</span>
-              </Link>
+              <div key={c.id} className="flex items-start gap-3 px-4 py-2 text-sm">
+                <span className="mt-0.5 shrink-0 text-zinc-500">
+                  {CATEGORY_ICONS[c.slug] ?? DEFAULT_ICON}
+                </span>
+                <span className="leading-tight">
+                  {c.children.length > 0
+                    ? c.children.map((child, i) => (
+                        <span key={child.id}>
+                          {i > 0 && <span className="text-zinc-400">, </span>}
+                          <Link
+                            href={`/products?category=${child.slug}`}
+                            onMouseEnter={() => setActiveSlug(child.slug)}
+                            className={
+                              child.slug === active.slug
+                                ? "font-semibold text-accent"
+                                : "text-zinc-600 hover:text-zinc-900 hover:underline"
+                            }
+                          >
+                            {child.name}
+                          </Link>
+                        </span>
+                      ))
+                    : (
+                        <Link
+                          href={`/products?category=${c.slug}`}
+                          onMouseEnter={() => setActiveSlug(c.slug)}
+                          className={
+                            c.slug === active.slug
+                              ? "font-semibold text-accent"
+                              : "text-zinc-600 hover:text-zinc-900"
+                          }
+                        >
+                          {c.name}
+                        </Link>
+                      )}
+                </span>
+              </div>
             ))}
           </div>
 

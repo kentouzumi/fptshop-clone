@@ -2053,6 +2053,75 @@
       mục (môi trường không có màn hình) — nhờ user tự mở `npm run dev` xác
       nhận cuộn mượt, icon hiển thị đúng, không bị vỡ layout ở màn hình nhỏ.
 
+- [x] Cho phép chọn RIÊNG từng tên trong 1 dòng danh mục gộp (user lấy ví dụ
+      "Thiết bị bếp, Máy rửa bát, Máy hút mùi" — yêu cầu "vẫn giữ nguyên thế
+      nhưng chỉ có thể chọn Thiết bị bếp hoặc Máy rửa bát hoặc máy hút
+      mùi"). Áp dụng chung cho TẤT CẢ 20/23 danh mục cấp cao có tên gộp
+      nhiều phần bằng dấu phẩy (chỉ 3 danh mục atomic Điện thoại/Laptop/Phụ
+      kiện là không đổi).
+
+      DÙNG ĐÚNG quan hệ `Category.parentId` đã có sẵn trong schema từ đầu
+      dự án nhưng CHƯA TỪNG dùng tới (mọi category trước giờ đều phẳng) —
+      đây là dịp đầu tiên thực sự cần tới nó. Mỗi danh mục gộp cũ (vd
+      "thiet-bi-bep-may-rua-bat-may-hut-mui") giờ là 1 category CHA thuần
+      tổ chức (KHÔNG tự gán sản phẩm trực tiếp nữa), chứa N category CON —
+      mỗi tên tách trong ngoặc phẩy là 1 con độc lập, CHỌN ĐƯỢC RIÊNG (có
+      slug/URL/brand-filter riêng, y hệt category thường). Tổng cộng 52
+      category con mới (prisma/seed.ts, định nghĩa qua mảng `CATEGORY_GROUPS`
+      thay vì viết tay từng upsert như 2 lần trước — code ngắn gọn hơn hẳn
+      cho 20×2-3 category con). 24 sản phẩm đã tồn tại được DI CHUYỂN sang
+      đúng category con phù hợp (vd Samsung Tivi + Sony Bravia -> con
+      "Tivi", không phải con "Máy lạnh - Điều hòa"). 28 category con còn lại
+      CHƯA có sản phẩm — CHỦ ĐỘNG CHẤP NHẬN (không bịa thêm ~28 sản phẩm/
+      brand giả chỉ để lấp đầy, vì lần này user CHỈ yêu cầu cơ chế CHỌN
+      ĐƯỢC RIÊNG, không yêu cầu "thêm sản phẩm cho mỗi danh mục" như lần
+      trước) — giống hệt cách 1 cửa hàng thật có category con chưa có hàng
+      lúc mới mở rộng danh mục, không phải bug.
+
+      lib/categories.ts: `getActiveCategories()` (dùng ở trang chủ +
+      /products, KHÔNG đổi hành vi với 2 trang này) thêm filter `parentId:
+      null` — nếu không sẽ hiện LẪN cả 52 category con vào lưới/chip vốn chỉ
+      nên có 23 mục cấp cao. Thêm hàm mới `getActiveCategoriesWithChildren()`
+      (cùng cache tag "categories" nên không cần thêm code revalidate mới)
+      CHỈ dùng cho mega menu — include quan hệ `children`.
+
+      CategoryMegaMenu.tsx: đổi hẳn cách render cột trái — category CÓ
+      children giờ render TỪNG TÊN CON như 1 `<Link>` riêng nối nhau bằng
+      ", " ngay trong CÙNG 1 dòng (không phải cả dòng là 1 link như trước) —
+      đúng yêu cầu "vẫn giữ nguyên thế" (nhìn vẫn 1 dòng y hệt) nhưng "chỉ
+      có thể chọn X hoặc Y hoặc Z" (từng tên là 1 lựa chọn riêng). Category
+      KHÔNG có children (Điện thoại/Laptop/Phụ kiện) vẫn render như cũ.
+      `active` (dùng để tra brand chip bên phải) giờ luôn là 1 category
+      LÁ (leaf — con nếu có, hoặc chính nó nếu không có con), không bao giờ
+      là category cha (cha không tự có sản phẩm/brand trực tiếp nữa).
+
+      LỖI THẬT tự phát hiện VÀ TỰ SỬA ngay khi test (không đợi user báo):
+      sau khi chuyển sản phẩm sang category con, category CHA (24 category
+      từng có sản phẩm trực tiếp) còn 0 sản phẩm — nghĩa là link category
+      cha cũ vẫn có ở LƯỚI TRANG CHỦ (không đổi, xem trên) giờ dẫn tới trang
+      RỖNG dù trước đó có sản phẩm, hồi quy thật so với trước khi sửa. Sửa
+      bằng cách đổi lib/products.ts `getProducts()`: khi lọc theo
+      `categorySlug`, tự tra thêm `children` của category đó và MỞ RỘNG
+      filter thành `categoryId IN [chính nó, ...toàn bộ id con]` — bấm vào
+      danh mục cha giờ hiện ĐÚNG hợp của mọi sản phẩm thuộc các con (đúng
+      hành vi duyệt danh mục thông thường trong thương mại điện tử: danh
+      mục cha = union sản phẩm các danh mục con), category LÁ (không con)
+      hành vi không đổi (chỉ 1 id trong mảng, y hệt trước).
+
+      Đã test qua dev server (xóa `.next` trước, dùng DB thật): `tsc
+      --noEmit`/`eslint`/`npm run build` sạch; script Node xác nhận cấu
+      trúc DB đúng (75 category = 23 cấp cao + 52 con, mỗi category cha
+      own:0 sản phẩm); trang chủ vẫn ĐÚNG 23 category cấp cao (grep chính
+      xác trong section "Danh mục sản phẩm", không lẫn category con); mega
+      menu hiện đúng 3 link riêng "Thiết bị bếp"/"Máy rửa bát"/"Máy hút mùi"
+      (đúng ví dụ user đưa ra) thay vì 1 link gộp; `/products?category=`
+      cho cả category cha (hiện union sản phẩm con), category con cụ thể
+      (hiện đúng riêng của con đó), và kết hợp thêm `&brand=` (lọc đúng,
+      không lẫn brand khác trong cùng union) đều test qua curl trả đúng kết
+      quả mong đợi. CHƯA tự xem qua trình duyệt thật hiệu ứng hover/tương
+      tác (môi trường không có màn hình) — nhờ user tự mở `npm run dev` xác
+      nhận.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

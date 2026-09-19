@@ -8,13 +8,38 @@ const CATEGORIES_TAG = "categories";
 // Data Cache, không cần Redis riêng) thay vì query lại DB mỗi request. Chỉ
 // dùng cho phần PUBLIC (isActive:true); trang admin (getAllCategoriesForAdmin)
 // vẫn query trực tiếp để luôn thấy dữ liệu mới nhất khi quản lý.
+//
+// CHỈ lấy category CẤP CAO NHẤT (parentId: null) — từ khi có category con
+// (xem prisma/seed.ts: các danh mục gộp kiểu "Thiết bị bếp, Máy rửa bát,
+// Máy hút mùi" giờ là 1 category cha chứa nhiều category con để mỗi tên
+// chọn được riêng), nếu không lọc thì trang chủ/trang /products sẽ hiện
+// LẪN cả ~50 category con vào lưới/chip vốn chỉ nên có 23 mục cấp cao.
 export const getActiveCategories = unstable_cache(
   async () =>
     prisma.category.findMany({
-      where: { isActive: true },
+      where: { isActive: true, parentId: null },
       orderBy: { sortOrder: "asc" },
     }),
   ["active-categories"],
+  { tags: [CATEGORIES_TAG] }
+);
+
+// Dành riêng cho mega menu "Danh mục" ở Header: cần thêm category con của
+// mỗi category cấp cao (nếu có) để hiện được từng tên tách riêng, mỗi tên
+// vẫn là 1 <Link> chọn được độc lập — xem CategoryMegaMenu.tsx.
+export const getActiveCategoriesWithChildren = unstable_cache(
+  async () =>
+    prisma.category.findMany({
+      where: { isActive: true, parentId: null },
+      orderBy: { sortOrder: "asc" },
+      include: {
+        children: {
+          where: { isActive: true },
+          orderBy: { sortOrder: "asc" },
+        },
+      },
+    }),
+  ["active-categories-with-children"],
   { tags: [CATEGORIES_TAG] }
 );
 
