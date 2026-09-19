@@ -9,7 +9,11 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  const [dienThoai, laptop, phuKien] = await Promise.all([
+  // sortOrder đặt lại theo đúng thứ tự 4 mục chính trong sidebar "Danh mục"
+  // thật của fptshop.com.vn (Điện thoại/Laptop/Điện máy/Phụ kiện) — dùng
+  // `update` thay vì `update: {}` cho dien-may/phu-kien để lần seed lại sau
+  // này (dữ liệu đã tồn tại từ trước) vẫn tự sửa đúng thứ tự nếu có lệch.
+  const [dienThoai, laptop, dienMay, phuKien] = await Promise.all([
     prisma.category.upsert({
       where: { slug: "dien-thoai" },
       update: {},
@@ -21,13 +25,18 @@ async function main() {
       create: { name: "Laptop", slug: "laptop", sortOrder: 2 },
     }),
     prisma.category.upsert({
+      where: { slug: "dien-may" },
+      update: { sortOrder: 3 },
+      create: { name: "Điện máy", slug: "dien-may", sortOrder: 3 },
+    }),
+    prisma.category.upsert({
       where: { slug: "phu-kien" },
-      update: {},
-      create: { name: "Phụ kiện", slug: "phu-kien", sortOrder: 3 },
+      update: { sortOrder: 4 },
+      create: { name: "Phụ kiện", slug: "phu-kien", sortOrder: 4 },
     }),
   ]);
 
-  const [apple, samsung, xiaomi, dell] = await Promise.all([
+  const [apple, samsung, xiaomi, dell, oppo, asus, jbl, sony] = await Promise.all([
     prisma.brand.upsert({
       where: { slug: "apple" },
       update: {},
@@ -47,6 +56,26 @@ async function main() {
       where: { slug: "dell" },
       update: {},
       create: { name: "Dell", slug: "dell" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "oppo" },
+      update: {},
+      create: { name: "OPPO", slug: "oppo" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "asus" },
+      update: {},
+      create: { name: "Asus", slug: "asus" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "jbl" },
+      update: {},
+      create: { name: "JBL", slug: "jbl" },
+    }),
+    prisma.brand.upsert({
+      where: { slug: "sony" },
+      update: {},
+      create: { name: "Sony", slug: "sony" },
     }),
   ]);
 
@@ -148,6 +177,75 @@ async function main() {
         { groupName: "Tính năng", attrName: "Chống ồn", attrValue: "Chủ động (ANC)" },
       ],
       variants: [{ sku: "APP2-WHT", color: "Trắng", storage: null, price: 5990000 }],
+    },
+    // 5 sản phẩm thêm để mega menu "Danh mục" ở Header có dữ liệu thật đủ
+    // phong phú (nhiều thương hiệu/danh mục hơn) thay vì chỉ 3 danh mục cũ —
+    // xem CategoryMegaMenu.tsx: cột thương hiệu bên phải suy ra TỪ chính dữ
+    // liệu Product thật (brand nào có sản phẩm trong danh mục nào), không
+    // phải danh sách brand cố định, nên cần sản phẩm thật để hiện đúng.
+    {
+      name: "OPPO Reno11 5G",
+      slug: "oppo-reno11-5g",
+      description: "OPPO Reno11 5G camera chân dung AI, thiết kế mỏng nhẹ.",
+      categoryId: dienThoai.id,
+      brandId: oppo.id,
+      basePrice: 9990000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=OPPO+Reno11+5G",
+      attributes: [
+        { groupName: "Camera", attrName: "Camera sau", attrValue: "50MP + 8MP + 2MP" },
+      ],
+      variants: [{ sku: "OPPO-RENO11-256-GRN", color: "Xanh Ngọc", storage: "256GB", price: 9990000 }],
+    },
+    {
+      name: "Asus Zenbook 14 OLED",
+      slug: "asus-zenbook-14-oled",
+      description: "Asus Zenbook 14 OLED màn hình OLED sắc nét, mỏng nhẹ cho dân văn phòng.",
+      categoryId: laptop.id,
+      brandId: asus.id,
+      basePrice: 22990000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Asus+Zenbook+14",
+      attributes: [
+        { groupName: "Vi xử lý", attrName: "CPU", attrValue: "Intel Core Ultra 5" },
+      ],
+      variants: [{ sku: "ASUS-ZB14-16-512", color: "Đen", storage: "16GB/512GB", price: 22990000 }],
+    },
+    {
+      name: "JBL Tune 510BT",
+      slug: "jbl-tune-510bt",
+      description: "Tai nghe không dây JBL Tune 510BT, âm bass mạnh mẽ, pin 40 giờ.",
+      categoryId: phuKien.id,
+      brandId: jbl.id,
+      basePrice: 1290000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=JBL+Tune+510BT",
+      attributes: [{ groupName: "Pin", attrName: "Thời lượng", attrValue: "40 giờ" }],
+      variants: [{ sku: "JBL-T510BT-BLK", color: "Đen", storage: null, price: 1290000 }],
+    },
+    {
+      name: "Samsung Smart Tivi Crystal UHD 55 inch",
+      slug: "samsung-crystal-uhd-55-inch",
+      description: "Smart Tivi Samsung Crystal UHD 55 inch 4K, hệ điều hành Tizen.",
+      categoryId: dienMay.id,
+      brandId: samsung.id,
+      basePrice: 11990000,
+      isFeatured: true,
+      imageUrl: "https://placehold.co/600x600.png?text=Samsung+Crystal+UHD+55",
+      attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "55 inch" }],
+      variants: [{ sku: "SS-UHD55-2024", color: "Đen", storage: null, price: 11990000 }],
+    },
+    {
+      name: "Sony Bravia 43 inch Google TV",
+      slug: "sony-bravia-43-inch-google-tv",
+      description: "Sony Bravia 43 inch Google TV, xử lý hình ảnh X1, âm thanh sống động.",
+      categoryId: dienMay.id,
+      brandId: sony.id,
+      basePrice: 9490000,
+      isFeatured: false,
+      imageUrl: "https://placehold.co/600x600.png?text=Sony+Bravia+43",
+      attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "43 inch" }],
+      variants: [{ sku: "SONY-BRAVIA-43", color: "Đen", storage: null, price: 9490000 }],
     },
   ];
 

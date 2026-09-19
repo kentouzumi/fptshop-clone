@@ -1836,6 +1836,84 @@
       user tự mở `npm run dev` di chuột thử, báo lại nếu panel bị giật/đóng
       sai lúc di chuột từ nút xuống panel.
 
+- [x] Nâng cấp mega menu "Danh mục" cho giống ảnh chụp fptshop.com.vn thật
+      hơn + chèn thêm dữ liệu thật vào DB (user yêu cầu rõ "sửa code và
+      database... chèn data vào database luôn"). 2 phần việc:
+
+      1. THÊM DỮ LIỆU THẬT qua prisma/seed.ts (giữ nguyên pattern upsert
+         idempotent có sẵn, không viết script rời): thêm category "Điện máy"
+         (slug dien-may, sortOrder 3 — đổi lại thứ tự 4 category thành Điện
+         thoại/Laptop/Điện máy/Phụ kiện đúng như 4 mục đầu trong sidebar
+         "Danh mục" thật của FPT Shop mà ảnh user gửi cho thấy); thêm 4 brand
+         mới (OPPO, Asus, JBL, Sony); thêm 5 sản phẩm mới để mỗi category có
+         nhiều brand thật: OPPO Reno11 5G (Điện thoại), Asus Zenbook 14 OLED
+         (Laptop), JBL Tune 510BT (Phụ kiện), Samsung Smart Tivi Crystal UHD
+         55" + Sony Bravia 43" (Điện máy — cố tình dùng LẠI brand Samsung có
+         sẵn thay vì tạo brand mới, vì Samsung thật ngoài đời cũng làm cả
+         điện thoại lẫn tivi, nhân tiện dùng để test logic ở mục 2 xử lý
+         đúng 1 brand xuất hiện ở NHIỀU category). Đã chạy
+         `npx prisma db seed --config prisma7.config.ts` áp thật vào Supabase
+         (không phải chỉ sửa code) — xác nhận qua query trực tiếp DB thấy
+         đủ 4 category/12 sản phẩm.
+
+      2. SỬA LOGIC brand hiển thị dưới mỗi category trong mega menu — bản
+         trước (mục "Nút Danh mục dạng mega menu" ở trên) có 1 lỗ hổng thực
+         tế đã lường trước nhưng chưa sửa: hiện TOÀN BỘ brand đang active
+         dưới MỌI category (vd Dell — brand chỉ làm laptop — vẫn hiện dưới
+         "Điện thoại", sai thực tế). Thêm `getBrandsByCategory()`
+         (lib/products.ts) — query toàn bộ Product ACTIVE, group theo
+         category.slug -> Set<brand> trong JS, trả về brand THẬT SỰ có sản
+         phẩm trong từng category (không phải danh sách Brand cố định toàn
+         hệ thống). Cache bằng `unstable_cache` DÙNG CHUNG PRODUCTS_TAG (không
+         tạo tag riêng) vì mọi nơi tạo/sửa/xóa sản phẩm đã tự
+         `revalidateTag(PRODUCTS_TAG, ...)` từ trước — không cần thêm code
+         invalidate mới. CategoryMegaMenu.tsx đổi prop `brands: BrandItem[]`
+         (danh sách phẳng) thành `brandsByCategory: Record<string,
+         BrandItem[]>`, tra theo `active.slug`. Header.tsx đổi từ gọi
+         `getActiveBrands()` (danh sách toàn cục, vẫn giữ nguyên dùng ở
+         /products cho chip lọc brand — đúng chỗ vì filter đó không phụ
+         thuộc category đang chọn) sang `getBrandsByCategory()`.
+
+         NHÂN TIỆN thêm icon SVG inline (phone/laptop/tivi/tai nghe) cạnh
+         tên từng category ở cột trái mega menu — khớp phong cách ảnh mẫu
+         (mỗi mục sidebar có icon riêng), không cần tải asset ảnh ngoài.
+
+      LỖI THẬT phát hiện lúc test (không phải bug code, là đặc tính của
+      `unstable_cache` trong dev): sau khi chạy seed script (ghi thẳng vào
+      DB qua Prisma, KHÔNG đi qua createCategory()/createProduct() của app)
+      và load lại trang, category "Điện máy" mới KHÔNG xuất hiện dù DB đã
+      đúng — vì seed script bỏ qua hoàn toàn lệnh `revalidateTag(...)` (nó
+      chỉ được gọi bên trong các hàm mutation của app, không có lý do gì để
+      seed script biết mà gọi). Cụ thể trong dev: xóa riêng
+      `.next/cache/fetch-cache` KHÔNG đủ, phải xóa toàn bộ thư mục `.next`
+      (bao gồm cache Turbopack) rồi khởi động lại mới thấy dữ liệu mới. RÚT
+      RA QUY TẮC (ghi vào mục "Lưu ý quan trọng" bên dưới): bất cứ khi nào
+      sửa dữ liệu TRỰC TIẾP qua script/Prisma Studio (bỏ qua các hàm
+      mutation có gọi revalidateTag của app) cho model đã có cache, phải tự
+      xóa `.next` (local) hoặc đợi hết TTL/redeploy (Vercel) thì thay đổi
+      mới hiện ra — không phải bug, là hệ quả tất yếu của cache tag-based.
+
+      KHÁC BẢN GỐC (vẫn còn, đã ghi ở mục trước, không lặp lại): không có
+      sub-category thật theo từng brand (vd "Apple > iPhone 17/16/15
+      Series") — cột phải mega menu vẫn dừng ở mức brand chip, KHÔNG bịa
+      thêm tầng phân cấp sản phẩm/model cụ thể không tồn tại trong DB.
+
+      Đã test qua dev server (sau khi xóa cache stale, dùng DB thật, không
+      tạo dữ liệu test tạm nào — toàn bộ là dữ liệu seed thật, giữ nguyên):
+      `tsc --noEmit`/`eslint`/`npm run build` sạch; trang chủ hiện đủ 4
+      category theo đúng thứ tự Điện thoại/Laptop/Điện máy/Phụ kiện; gọi
+      trực tiếp script Node group brand theo category từ DB thật xác nhận
+      ĐÚNG logic cách ly: dien-thoai→[Apple,OPPO,Samsung,Xiaomi] (không có
+      Dell), laptop→[Apple,Asus,Dell] (không có OPPO), dien-may→
+      [Samsung,Sony], phu-kien→[Apple,JBL]; `/products?category=dien-may`,
+      `?category=dien-may&brand=sony`, `?category=laptop&brand=asus`,
+      `?category=phu-kien&brand=jbl` đều 200 và trả đúng đúng sản phẩm mong
+      đợi (grep thấy tên sản phẩm thật trong HTML). CHƯA tự xem qua trình
+      duyệt thật hiệu ứng hover 4 category + icon (môi trường không có màn
+      hình) — nhờ user tự mở `npm run dev` (hoặc xem trên production sau
+      khi Vercel deploy xong, không cần chạy lại seed vì Vercel dùng CHUNG
+      Supabase DB với local) xác nhận trực quan.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -1907,3 +1985,13 @@
   `revalidateTag` nhận ĐỦ 2 tham số (thiếu tham số 2 lỗi biên dịch ngay, xem
   chi tiết ở mục trên) — khác hành vi 1 tham số quen thuộc ở Next 14/15, nhớ
   điều này nếu sau này thêm cache mới cho model khác.
+- Sửa dữ liệu TRỰC TIẾP qua seed script/Prisma Studio (bỏ qua các hàm
+  mutation của app như createCategory()/createProduct() — những hàm DUY
+  NHẤT có gọi revalidateTag) sẽ KHÔNG tự làm mới cache của category/brand/
+  store/promotion/FAQ/sản phẩm — trang vẫn hiện dữ liệu cũ dù DB đã đúng
+  (đã gặp thật: seed thêm category "Điện máy" xong không hiện ra, phải xóa
+  hẳn thư mục `.next` rồi restart `npm run dev` mới thấy). Local thì xóa
+  `.next` là xong; trên Vercel thì cứ đợi hết TTL (`revalidate: 60` ở
+  getProducts/getActivePromotions) hoặc deploy lại (build mới luôn sạch
+  cache) — không cần và không nên cố gọi revalidateTag thủ công từ ngoài
+  app cho việc này.

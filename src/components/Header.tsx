@@ -4,7 +4,7 @@ import { getCartItemCount } from "@/lib/cart";
 import { getWishlistCount } from "@/lib/wishlist";
 import { getUnreadNotificationCount } from "@/lib/notifications";
 import { getActiveCategories } from "@/lib/categories";
-import { getActiveBrands } from "@/lib/brands";
+import { getBrandsByCategory } from "@/lib/products";
 import LogoutButton from "@/components/LogoutButton";
 import SearchAutocomplete from "@/app/products/SearchAutocomplete";
 import CategoryMegaMenu from "@/components/CategoryMegaMenu";
@@ -60,10 +60,10 @@ const ICON_LINK_CLASS =
 export default async function Header() {
   // user và categories/brands hoàn toàn độc lập (categories/brands đã cache
   // qua unstable_cache nên gần như miễn phí) — chạy song song thay vì tuần tự.
-  const [user, categories, brands] = await Promise.all([
+  const [user, categories, brandsByCategory] = await Promise.all([
     getCurrentUser(),
     getActiveCategories(),
-    getActiveBrands(),
+    getBrandsByCategory(),
   ]);
   // Header render trên MỌI trang (nhúng ở layout.tsx) nên 3 query này cộng dồn
   // độ trễ ở MỌI lần chuyển trang nếu chạy tuần tự — độc lập với nhau (chỉ cùng
@@ -85,7 +85,7 @@ export default async function Header() {
         </Link>
 
         <div className="hidden shrink-0 md:block">
-          <CategoryMegaMenu categories={categories} brands={brands} />
+          <CategoryMegaMenu categories={categories} brandsByCategory={brandsByCategory} />
         </div>
 
         <form action="/products" method="GET" className="hidden flex-1 max-w-md sm:flex">

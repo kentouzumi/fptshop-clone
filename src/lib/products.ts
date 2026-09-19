@@ -186,6 +186,46 @@ async function getProductsUncached(
   };
 }
 
+export interface CategoryBrandItem {
+  name: string;
+  slug: string;
+}
+
+// Dùng cho mega menu "Danh mục" ở Header: brand hiện dưới mỗi danh mục PHẢI
+// là brand THẬT SỰ có sản phẩm active trong danh mục đó (vd Dell chỉ hiện ở
+// Laptop, không hiện ở Điện thoại) — suy ra trực tiếp từ Product thay vì
+// dùng nguyên danh sách Brand toàn hệ thống (sai thực tế, brand nào cũng
+// hiện dưới mọi danh mục). Cache chung PRODUCTS_TAG vì phụ thuộc dữ liệu
+// Product (categoryId+brandId) — mọi chỗ đã tự revalidateTag(PRODUCTS_TAG)
+// khi tạo/sửa/xóa sản phẩm nên không cần thêm tag riêng.
+export const getBrandsByCategory = unstable_cache(
+  async (): Promise<Record<string, CategoryBrandItem[]>> => {
+    const rows = await prisma.product.findMany({
+      where: { status: ProductStatus.ACTIVE, brandId: { not: null } },
+      select: {
+        category: { select: { slug: true } },
+        brand: { select: { name: true, slug: true } },
+      },
+    });
+
+    const result: Record<string, Map<string, CategoryBrandItem>> = {};
+    for (const row of rows) {
+      if (!row.brand) continue;
+      const catSlug = row.category.slug;
+      const brandMap = result[catSlug] ?? (result[catSlug] = new Map());
+      brandMap.set(row.brand.slug, row.brand);
+    }
+
+    const sorted: Record<string, CategoryBrandItem[]> = {};
+    for (const [catSlug, brandMap] of Object.entries(result)) {
+      sorted[catSlug] = [...brandMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return sorted;
+  },
+  ["brands-by-category"],
+  { tags: [PRODUCTS_TAG], revalidate: 60 }
+);
+
 export interface CompareAttributeGroup {
   groupName: string;
   attrs: { name: string; value: string }[];
