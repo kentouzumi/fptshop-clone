@@ -2501,6 +2501,42 @@
       hình) — nhờ user tự mở `npm run dev` bấm thử qua lại giữa 2 màu trên
       trang Xiaomi Redmi Note 13 để xác nhận ảnh đổi đúng.
 
+- [x] Nâng "Màu sắc"/"Dung lượng" lên ĐỘC LẬP HOÀN TOÀN về giao diện (user
+      hỏi lại ngay sau mục trên: "có thể sửa code để chọn màu riêng và chọn
+      dung lượng riêng không"). Bản vừa làm ở trên vẫn còn 1 điểm chưa thật
+      "riêng": danh sách dung lượng bị ẨN BỚT tùy theo màu đang chọn (màu
+      "Đen" chỉ hiện đúng 1 nút "128GB", không thấy "256GB" đâu cả) — nhìn
+      như 2 chiều vẫn còn ràng buộc nhau. Đổi cách làm đúng theo UX chuẩn
+      của các trang bán điện thoại thật (Apple/Samsung...): CẢ 2 danh sách
+      màu và dung lượng đều LUÔN hiện ĐỦ toàn bộ lựa chọn có trong dữ liệu
+      (không ẩn/bớt nút nào cả) — người dùng bấm vào bên nào trước cũng
+      được, không có thứ tự bắt buộc.
+
+      Cái duy nhất còn "phụ thuộc" là TRẠNG THÁI của từng nút dung lượng:
+      nút nào tạo thành tổ hợp (màu đang chọn, dung lượng đó) mà KHÔNG khớp
+      variant thật nào trong DB sẽ tự động hiện mờ + gạch ngang +
+      `disabled` (không bấm được, có `title` giải thích lý do khi rê chuột)
+      — bắt buộc phải giữ lại ràng buộc này vì dữ liệu thật không phải ma
+      trận đầy đủ (Xiaomi Redmi Note 13 chỉ có đúng 2 variant thật: "Đen/
+      128GB" và "Xanh Dương/256GB", không hề có "Đen/256GB" hay "Xanh
+      Dương/128GB" — cho chọn được các tổ hợp đó sẽ dẫn tới việc thêm vào
+      giỏ hàng 1 SKU không tồn tại). `handleSelectColor()` vẫn tự tính lại
+      xem dung lượng đang chọn còn hợp lệ với màu mới không, không hợp lệ
+      thì tự chuyển sang dung lượng hợp lệ đầu tiên của màu đó — đảm bảo
+      luôn có đúng 1 variant thật được chọn ngầm định, ngay cả khi người
+      dùng chưa kịp bấm gì thêm sau khi đổi màu.
+
+      Đã test qua dev server (dùng DB thật, không mock): `tsc --noEmit`/
+      `eslint`/`npm run build` sạch; `/products/xiaomi-redmi-note-13` xác
+      nhận CẢ 2 nút "128GB" và "256GB" cùng hiện ra dù đang chọn màu "Đen"
+      (trước đó "256GB" bị ẩn hẳn) — nút "256GB" có đủ `disabled`, class mờ
+      + gạch ngang, và `title="Không có màu Đen cho dung lượng này"` (grep
+      thấy đúng trong HTML render thật, không chỉ đọc code nguồn). CHƯA tự
+      xem qua trình duyệt thật hiệu ứng mờ/gạch ngang có rõ ràng dễ hiểu
+      không (môi trường không có màn hình) — nhờ user tự mở `npm run dev`
+      xác nhận trực quan đủ rõ để người dùng hiểu vì sao nút đó không bấm
+      được.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

@@ -43,10 +43,18 @@ export default function ProductGalleryAndBuy({
 }) {
   const router = useRouter();
 
-  // Tách 2 chiều lựa chọn ĐỘC LẬP (màu sắc / dung lượng) thay vì gộp chung
-  // 1 nút "Titan Xanh / 256GB" như trước — người dùng chọn màu trước, dung
-  // lượng sau (hoặc ngược lại), giống đúng UX các trang bán điện thoại thật.
+  // 2 bộ chọn HOÀN TOÀN ĐỘC LẬP về mặt giao diện: cả "Màu sắc" lẫn "Dung
+  // lượng" đều luôn hiện ĐỦ danh sách toàn cục (không ẩn bớt tùy theo lựa
+  // chọn còn lại đang là gì) — người dùng bấm vào bên nào trước cũng được.
+  // Cái duy nhất phụ thuộc là TRẠNG THÁI của từng nút: 1 dung lượng bị mờ +
+  // không bấm được (disabled) nếu tổ hợp (màu đang chọn, dung lượng đó)
+  // không khớp variant thật nào trong DB — vì dữ liệu thật không phải ma
+  // trận đầy đủ (vd chỉ có "Đen/128GB" và "Xanh Dương/256GB", không có
+  // "Đen/256GB"), không thể cho chọn được 1 SKU không tồn tại. Đây đúng
+  // kiểu UX các trang bán điện thoại thật (Apple/Samsung...) hay dùng: hiện
+  // đủ mọi lựa chọn, chỉ làm mờ ô nào không có hàng thay vì giấu hẳn đi.
   const colors = [...new Set(variants.map((v) => v.color).filter((c): c is string => Boolean(c)))];
+  const storages = [...new Set(variants.map((v) => v.storage).filter((s): s is string => Boolean(s)))];
 
   const [selectedColor, setSelectedColor] = useState<string | null>(variants[0]?.color ?? null);
   const [selectedStorage, setSelectedStorage] = useState<string | null>(variants[0]?.storage ?? null);
@@ -56,29 +64,26 @@ export default function ProductGalleryAndBuy({
     null
   );
 
-  // Dung lượng hiển thị PHỤ THUỘC màu đang chọn — vì trong dữ liệu thật,
-  // không phải màu nào cũng có đủ mọi dung lượng (vd chỉ có "Đen/128GB" và
-  // "Xanh Dương/256GB", không có "Đen/256GB"). Hiện đúng dung lượng nào THẬT
-  // SỰ tồn tại cho màu đang chọn, tránh chọn được tổ hợp không có thật.
-  const storagesForColor = [
-    ...new Set(
-      variants
-        .filter((v) => v.color === selectedColor)
-        .map((v) => v.storage)
-        .filter((s): s is string => Boolean(s))
-    ),
-  ];
+  function isStorageAvailable(storage: string) {
+    return variants.some((v) => v.color === selectedColor && v.storage === storage);
+  }
 
   function handleSelectColor(color: string) {
     setSelectedColor(color);
     setActiveImageIndex(0);
-    const validStorages = variants.filter((v) => v.color === color).map((v) => v.storage);
-    if (!validStorages.includes(selectedStorage)) {
-      setSelectedStorage(validStorages[0] ?? null);
+    // Dung lượng đang chọn có thể không còn hợp lệ với màu mới — tự chuyển
+    // sang dung lượng hợp lệ đầu tiên của màu đó để luôn có 1 variant thật
+    // được chọn (không để rơi vào trạng thái "không có hàng" ngay sau khi
+    // đổi màu).
+    const stillValid = variants.some((v) => v.color === color && v.storage === selectedStorage);
+    if (!stillValid) {
+      const firstValidStorage = variants.find((v) => v.color === color)?.storage ?? null;
+      setSelectedStorage(firstValidStorage);
     }
   }
 
   function handleSelectStorage(storage: string) {
+    if (!isStorageAvailable(storage)) return;
     setSelectedStorage(storage);
   }
 
@@ -197,24 +202,31 @@ export default function ProductGalleryAndBuy({
           </div>
         )}
 
-        {storagesForColor.length > 0 && (
+        {storages.length > 0 && (
           <div className="mb-6">
             <p className="mb-2 text-sm font-medium text-zinc-700">Dung lượng</p>
             <div className="flex flex-wrap gap-2">
-              {storagesForColor.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => handleSelectStorage(s)}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                    s === selectedStorage
-                      ? "border-zinc-900 bg-zinc-900 text-white"
-                      : "border-zinc-300 text-zinc-700 hover:border-zinc-900"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
+              {storages.map((s) => {
+                const available = isStorageAvailable(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => handleSelectStorage(s)}
+                    disabled={!available}
+                    title={available ? undefined : `Không có màu ${selectedColor ?? ""} cho dung lượng này`}
+                    className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                      !available
+                        ? "cursor-not-allowed border-zinc-200 text-zinc-300 line-through"
+                        : s === selectedStorage
+                          ? "border-zinc-900 bg-zinc-900 text-white"
+                          : "border-zinc-300 text-zinc-700 hover:border-zinc-900"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
