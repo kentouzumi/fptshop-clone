@@ -105,8 +105,8 @@ export default function ProductGalleryAndBuy({
   // ảnh chung của sản phẩm thay vì để trống.
   const colorVariantIds = new Set(variants.filter((v) => v.color === selectedColor).map((v) => v.id));
   const colorImages = images.filter((img) => img.variantId && colorVariantIds.has(img.variantId));
-  const displayImages = colorImages.length > 0 ? colorImages : images.filter((img) => !img.variantId);
-  const activeImage = displayImages[activeImageIndex] ?? displayImages[0] ?? images[0];
+  const genericImages = images.filter((img) => !img.variantId);
+  const displayImages = colorImages.length > 0 ? colorImages : genericImages.length > 0 ? genericImages : images;
 
   // Nút mũi tên trái/phải để chuyển ảnh (giống gallery sản phẩm thật) —
   // vòng lại đầu/cuối danh sách thay vì dừng khựng ở 2 đầu.
@@ -150,16 +150,25 @@ export default function ProductGalleryAndBuy({
     <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
       <div>
         <div className="relative mb-3 aspect-square overflow-hidden rounded-2xl bg-zinc-100 shadow-sm">
-          {activeImage && (
+          {/* Xếp chồng TẤT CẢ ảnh (cùng absolute nhờ `fill`), chỉ đổi opacity
+              theo ảnh đang active — mượt hơn hẳn so với thay thẳng `src` của
+              1 thẻ Image duy nhất (kiểu đó đổi ảnh "khựng" 1 nhịp, không có
+              hiệu ứng chuyển tiếp). Đánh đổi: cả displayImages đều được tải
+              ngay từ đầu (không lazy-load từng ảnh khi lướt tới) — chấp nhận
+              được vì gallery 1 sản phẩm thường chỉ vài ảnh, không đáng kể. */}
+          {displayImages.map((img, i) => (
             <Image
-              src={activeImage.url}
-              alt={activeImage.altText ?? productName}
+              key={img.url}
+              src={img.url}
+              alt={img.altText ?? productName}
               fill
               sizes="(max-width: 768px) 100vw, 50vw"
-              className="object-cover"
-              priority
+              className={`object-cover transition-opacity duration-300 ease-in-out ${
+                i === activeImageIndex ? "opacity-100" : "opacity-0"
+              }`}
+              priority={i === 0}
             />
-          )}
+          ))}
 
           {displayImages.length > 1 && (
             <>

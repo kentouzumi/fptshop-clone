@@ -2579,6 +2579,42 @@
       mở `npm run dev` bấm thử qua lại 2 nút trên trang Samsung Galaxy S24
       Ultra để xác nhận.
 
+- [x] Thêm hiệu ứng chuyển ảnh mượt cho gallery (user thấy nút mũi tên ở
+      mục trên chuyển ảnh "khựng" ngay lập tức, muốn mượt hơn). NGUYÊN NHÂN:
+      bản trước chỉ dùng ĐÚNG 1 thẻ `<Image>`, đổi thẳng prop `src` mỗi lần
+      bấm nút — trình duyệt phải tải/vẽ lại ảnh mới ngay lập tức, không có
+      trạng thái chuyển tiếp nào để CSS transition bám vào.
+
+      SỬA: xếp CHỒNG toàn bộ `displayImages` thành nhiều thẻ `<Image fill>`
+      (mỗi ảnh tự động `position: absolute` phủ kín khung nhờ prop `fill`,
+      nằm chồng lên nhau đúng vị trí), chỉ ảnh có index trùng
+      `activeImageIndex` được `opacity-100`, còn lại `opacity-0` — kèm
+      `transition-opacity duration-300 ease-in-out` nên đổi ảnh giờ là 1
+      cú crossfade (mờ dần ảnh cũ + hiện dần ảnh mới trong 300ms) thay vì
+      cắt khựng. Chỉ ảnh đầu tiên (`i === 0`) được đánh dấu `priority`
+      (React/Next.js chỉ nên ưu tiên tải trước 1 ảnh, không phải tất cả).
+
+      ĐÁNH ĐỔI CÓ CHỦ Ý: vì mọi ảnh trong `displayImages` đều được render
+      (chỉ ẩn bằng opacity, không unmount) nên trình duyệt tải HẾT toàn bộ
+      ảnh của gallery ngay từ đầu thay vì tải dần từng ảnh khi lướt tới —
+      chấp nhận được vì gallery 1 sản phẩm thường chỉ vài ảnh (không đáng kể
+      so với lợi ích không bị giật khi chuyển ảnh). KHÔNG làm hiệu ứng trượt
+      ngang (slide theo hướng bấm trái/phải) vì cần theo dõi thêm chiều
+      chuyển động + có thể cần thư viện animation riêng (Framer Motion...)
+      để mượt thật sự — chỉ dùng CSS thuần (`transition-opacity` có sẵn của
+      Tailwind) cho hiệu ứng mờ dần, đúng tinh thần dự án ưu tiên không thêm
+      dependency mới khi chưa thật cần thiết.
+
+      Đã test qua dev server (dùng DB thật, không mock, tái sử dụng đúng 5
+      ảnh demo "Ảnh 1".."Ảnh 5" đã thêm ở mục trên): `tsc --noEmit`/
+      `eslint`/`npm run build` sạch; `/products/samsung-galaxy-s24-ultra`
+      xác nhận có đủ 2 class `opacity-100`/`opacity-0` xuất hiện trong HTML
+      thật (đúng 1 ảnh active, còn lại ẩn) và class
+      `transition-opacity duration-300 ease-in-out` có mặt đúng trên từng
+      thẻ ảnh. CHƯA tự xem qua trình duyệt thật hiệu ứng mờ dần có mượt/rõ
+      ràng không (môi trường không có màn hình) — nhờ user tự mở
+      `npm run dev` bấm nút chuyển ảnh để cảm nhận trực tiếp.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
