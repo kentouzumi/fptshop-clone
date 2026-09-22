@@ -11,6 +11,7 @@ import { validateCoupon } from "@/lib/coupons";
 import { awardPointsForOrder } from "@/lib/loyalty";
 import { createWarrantiesForOrder } from "@/lib/warranty";
 import { createMomoPaymentUrl, verifyMomoCallback } from "@/lib/momo";
+import { reserveStockOrThrow, releaseStock } from "@/lib/inventory";
 
 export const SHIPPING_FEE = 30000;
 
@@ -176,6 +177,20 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
       throw new Error("Vui lòng chọn hoặc nhập địa chỉ giao hàng.");
     }
 
+    // Kiểm tra VÀ trừ tồn kho — phải làm SAU khi đã biết chắc pickupStoreId
+    // (STORE_PICKUP cần trừ đúng kho của cửa hàng khách chọn) và TRƯỚC khi
+    // tạo đơn, để nếu thiếu hàng thì toàn bộ transaction rollback (không tạo
+    // đơn dở dang, không trừ lượt coupon oan).
+    await reserveStockOrThrow(
+      tx,
+      cart.items.map((item) => ({
+        variantId: item.variantId,
+        quantity: item.quantity,
+        productName: item.variant.product.name,
+      })),
+      { isStorePickup, pickupStoreId }
+    );
+
     const created = await tx.order.create({
       data: {
         code: orderCode,
@@ -308,7 +323,10 @@ export async function getOrderDetailForAdmin(orderId: string) {
 
 export async function updateOrderStatus(orderId: string, newStatus: OrderStatus, note?: string) {
   return prisma.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({ where: { id: orderId }, include: { payments: true } });
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true, items: true },
+    });
     if (!order) {
       throw new Error("Không tìm thấy đơn hàng.");
     }
@@ -340,6 +358,21 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderStatus,
       // Giao thành công: tích điểm thành viên + phát hành phiếu bảo hành cho từng sản phẩm
       await awardPointsForOrder(tx, order.userId, order.id, Number(order.grandTotal));
       await createWarrantiesForOrder(tx, order.id);
+    }
+
+    // Đơn bị hủy: hoàn lại đúng số lượng đã trừ kho lúc tạo đơn (xem
+    // reserveStockOrThrow trong createOrderFromCart) — nếu không, kho sẽ bị
+    // "mất" vĩnh viễn mỗi lần có đơn hủy dù hàng chưa hề rời khỏi cửa hàng.
+    if (newStatus === OrderStatus.CANCELLED) {
+      await releaseStock(
+        tx,
+        order.items.map((item) => ({
+          variantId: item.variantId,
+          quantity: item.quantity,
+          productName: item.productName,
+        })),
+        { isStorePickup: order.deliveryMethod === DeliveryMethod.STORE_PICKUP, pickupStoreId: order.pickupStoreId }
+      );
     }
 
     await tx.notification.create({

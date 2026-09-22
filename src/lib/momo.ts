@@ -23,6 +23,27 @@ export function isMomoConfigured() {
   return Boolean(MOMO_PARTNER_CODE && MOMO_ACCESS_KEY && MOMO_SECRET_KEY);
 }
 
+// CẢNH BÁO BẢO MẬT (rà soát nghiệp vụ phát hiện — xem CLAUDE.md): 3 biến
+// MOMO_ACCESS_KEY/MOMO_SECRET_KEY/MOMO_PARTNER_CODE mặc định ở trên là bộ
+// TEST CREDENTIALS CÔNG KHAI do chính MoMo công bố trong tài liệu dev — bất
+// kỳ ai đọc tài liệu MoMo cũng biết được, nên có thể TỰ TÍNH được chữ ký hợp
+// lệ và gọi thẳng /api/payments/momo/ipn để đánh dấu 1 đơn hàng của họ thành
+// "đã thanh toán" mà không cần trả tiền thật. Đây KHÔNG phải lỗi có thể sửa
+// bằng code (code đang làm đúng theo tài liệu MoMo) — chỉ hết khi nào deploy
+// với 1 tài khoản merchant MoMo THẬT có secret riêng không công bố (đặt qua
+// biến môi trường MOMO_SECRET_KEY, KHÔNG dùng giá trị mặc định này). Dùng
+// hàm này để hiện cảnh báo rõ ràng ở admin (xem admin/orders/[id]/page.tsx)
+// mỗi khi có 1 thanh toán MoMo "thành công" trong lúc vẫn đang dùng secret
+// công khai, tránh admin nhầm tưởng đó là tiền thật.
+export function isUsingPublicMomoTestCredentials() {
+  return (
+    !process.env.MOMO_ACCESS_KEY ||
+    process.env.MOMO_ACCESS_KEY === "F8BBA842ECF85" ||
+    !process.env.MOMO_SECRET_KEY ||
+    process.env.MOMO_SECRET_KEY === "K951B6PE1waDMi640xX08PD3vg6EkVlz"
+  );
+}
+
 function signHmac(raw: string) {
   return crypto.createHmac("sha256", MOMO_SECRET_KEY).update(raw).digest("hex");
 }
@@ -112,7 +133,14 @@ export function verifyMomoCallback(query: Record<string, string>): MomoCallbackR
     `&responseTime=${responseTime}&resultCode=${resultCode}&transId=${transId}`;
 
   const expected = signHmac(rawSignature);
-  const isValidSignature = Boolean(signature) && expected === signature;
+  // So sánh bằng crypto.timingSafeEqual thay vì `===` — chống timing attack
+  // (đo thời gian phản hồi để dò dần từng ký tự của chữ ký đúng). Phải kiểm
+  // tra ĐỘ DÀI bằng nhau trước vì timingSafeEqual throw nếu 2 buffer khác
+  // độ dài, thay vì trả false như mong đợi.
+  const isValidSignature =
+    Boolean(signature) &&
+    signature.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
 
   return {
     isValidSignature,

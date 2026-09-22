@@ -695,7 +695,31 @@ async function main() {
     });
   }
 
-  console.log(`Seed xong: ${products.length} sản phẩm, 4 danh mục (Điện thoại/Laptop/Điện máy/Phụ kiện).`);
+  // Tồn kho MVP (xem lib/inventory.ts — chặn bán vượt tồn kho lúc đặt hàng):
+  // mỗi biến thể có 1 dòng Inventory tại MỖI cửa hàng đang hoạt động, số
+  // lượng mặc định đủ dùng để demo. Dùng `update: {}` (không phải ghi đè
+  // `quantity`) để chạy lại seed nhiều lần KHÔNG làm mất số lượng admin đã
+  // tự chỉnh tay qua Prisma Studio sau lần seed trước — chỉ tạo mới dòng nào
+  // còn thiếu (vd biến thể mới thêm sau này chưa có tồn kho ở cửa hàng nào).
+  const [allVariants, activeStores] = await Promise.all([
+    prisma.productVariant.findMany({ select: { id: true } }),
+    prisma.store.findMany({ where: { isActive: true }, select: { id: true } }),
+  ]);
+  const DEFAULT_STOCK_PER_STORE = 20;
+  for (const store of activeStores) {
+    for (const variant of allVariants) {
+      await prisma.inventory.upsert({
+        where: { storeId_variantId: { storeId: store.id, variantId: variant.id } },
+        update: {},
+        create: { storeId: store.id, variantId: variant.id, quantity: DEFAULT_STOCK_PER_STORE },
+      });
+    }
+  }
+
+  console.log(
+    `Seed xong: ${products.length} sản phẩm, 4 danh mục (Điện thoại/Laptop/Điện máy/Phụ kiện), ` +
+      `tồn kho cho ${allVariants.length} biến thể x ${activeStores.length} cửa hàng.`
+  );
 }
 
 main()

@@ -5,6 +5,7 @@ import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_TRANSITIONS,
 } from "@/lib/orders";
+import { isUsingPublicMomoTestCredentials } from "@/lib/momo";
 import OrderStatusUpdateForm from "../OrderStatusUpdateForm";
 
 function formatPrice(value: number) {
@@ -122,6 +123,20 @@ export default async function AdminOrderDetailPage({
             </span>
           </p>
         ))}
+        {/* Rà soát nghiệp vụ phát hiện: secret ký chữ ký MoMo hiện là bộ test
+            CÔNG KHAI do MoMo tự công bố (xem lib/momo.ts) — bất kỳ ai đọc tài
+            liệu MoMo cũng tự tạo được 1 callback giả đánh dấu PAID mà không
+            trả tiền thật. Hiện cảnh báo rõ để admin không nhầm đây là tiền
+            thật đã về, cho tới khi nào deploy với secret merchant thật riêng. */}
+        {order.payments.some((p) => p.method === "MOMO" && p.status === "PAID") &&
+          isUsingPublicMomoTestCredentials() && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              ⚠️ Thanh toán MoMo này được xác thực bằng secret TEST CÔNG KHAI
+              (chưa cấu hình tài khoản merchant thật) — bất kỳ ai cũng có thể
+              tự tạo callback giả để đánh dấu PAID, KHÔNG đảm bảo đã nhận
+              được tiền thật.
+            </p>
+          )}
       </div>
 
       <div className="card mb-6 divide-y divide-zinc-100">

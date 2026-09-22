@@ -2700,6 +2700,103 @@
 
       `tsc --noEmit`/`eslint`/`npm run build` sạch sau cả 2 sửa.
 
+- [x] Làm tiếp #1 (MoMo secret công khai) và #3 (không kiểm soát tồn kho) từ
+      danh sách 6 lỗ hổng nghiệp vụ đã rà soát ở mục trên — user xác nhận bỏ
+      qua #4 (hoàn điểm/bảo hành khi trả hàng, cần quyết định chính sách).
+
+      **#1 — MoMo dùng secret công khai (KHÔNG "sửa" được hoàn toàn, chỉ hạ
+      thấp rủi ro):**
+      1. `lib/momo.ts`: đổi so sánh chữ ký từ `===` sang
+         `crypto.timingSafeEqual` (chống timing attack — đo thời gian phản
+         hồi để dò dần từng ký tự chữ ký đúng), kèm check độ dài bằng nhau
+         trước (bắt buộc vì `timingSafeEqual` throw nếu 2 buffer khác độ
+         dài thay vì trả `false`).
+      2. Thêm `isUsingPublicMomoTestCredentials()` — nhận diện đang chạy
+         bằng bộ secret mặc định công khai (không phải merchant thật).
+      3. `src/lib/rateLimit.ts` (mới): rate limit kiểu sliding-window đơn
+         giản lưu trong bộ nhớ tiến trình (không dùng Redis) — áp cho CẢ 2
+         route `/api/payments/momo/{return,ipn}` (30 request/5 phút/IP) để
+         tăng chi phí cho việc dò brute-force `transactionRef` (thứ duy
+         nhất một kẻ tấn công còn thiếu để giả mạo callback thành công, vì
+         secret đã công khai). GIỚI HẠN ĐÃ BIẾT: trên Vercel serverless
+         nhiều instance, mỗi instance giữ bộ đếm riêng nên KHÔNG chặn tuyệt
+         đối — chỉ tăng đáng kể chi phí tấn công so với không có gì.
+      4. `admin/orders/[id]/page.tsx`: thêm banner cảnh báo màu vàng khi có
+         thanh toán MoMo đã PAID TRONG LÚC vẫn đang dùng secret công khai —
+         admin không bị nhầm tưởng đó là tiền thật đã về tài khoản.
+
+      Đã CHỦ ĐỘNG tự giả mạo 1 callback MoMo thành công bằng đúng secret
+      công khai (viết script Node độc lập tự tính lại chữ ký HMAC-SHA256
+      y hệt thuật toán trong lib/momo.ts) để CHỨNG MINH lỗ hổng vẫn tồn tại
+      về bản chất đúng như đã báo cáo (không thể "vá hết" bằng code khi vẫn
+      dùng secret công khai) — gọi thẳng `/api/payments/momo/return` với
+      chữ ký tự tính, xác nhận: (1) callback giả VẪN được chấp nhận (redirect
+      `?payment=success`, đúng dự đoán — timingSafeEqual chỉ chống dò kiểu
+      timing-attack, không chặn được người đã BIẾT trước toàn bộ secret),
+      (2) banner cảnh báo hiện đúng ở trang admin sau đó. Đồng thời xác nhận
+      rate limit hoạt động: gọi liên tiếp 35 lần `/api/payments/momo/ipn` —
+      30 lần đầu trả 400 (chữ ký rỗng không hợp lệ, đúng), từ lần thứ 31 trở
+      đi tự động chuyển sang 429 đúng như thiết kế.
+
+      **#3 — Kiểm soát tồn kho (feature mới, dùng model `Inventory` có sẵn
+      trong schema nhưng chưa từng được dùng):**
+
+      src/lib/inventory.ts (mới): tồn kho MVP — mỗi biến thể có 1 dòng
+      Inventory RIÊNG tại MỖI cửa hàng, trừ kho NGAY LÚC TẠO ĐƠN (không tách
+      2 bước "giữ chỗ rồi mới xuất kho thật" — field `reserved` có sẵn trong
+      schema CỐ Ý không dùng tới, giữ nguyên = 0, đơn giản hóa cho quy mô
+      demo). `reserveStockOrThrow()`: STORE_PICKUP trừ ĐÚNG kho của cửa hàng
+      khách chọn nhận hàng (rõ ràng, không mơ hồ); HOME_DELIVERY thì dự án
+      không có khái niệm "kho trung tâm" riêng nên coi CỬA HÀNG ĐẦU TIÊN
+      (sort theo `id` để LUÔN ra cùng 1 cửa hàng mỗi lần gọi, không phụ
+      thuộc thứ tự trả về ngẫu nhiên của DB) trong số cửa hàng đang hoạt
+      động là kho tổng dùng chung — nếu không còn cửa hàng active nào thì
+      BỎ QUA kiểm tra tồn kho (fail-open) thay vì chặn cứng toàn bộ
+      HOME_DELIVERY, tránh 1 cấu hình thiếu sót làm sập cả luồng đặt hàng.
+      `releaseStock()`: hoàn kho khi hủy đơn, tính lại ĐÚNG cùng 1 cửa hàng
+      bằng lại đúng hàm suy luận trên (không cần lưu thêm field nào mới vì
+      kết quả suy luận luôn ổn định — deliveryMethod/pickupStoreId của đơn
+      không đổi sau khi tạo, nên luôn ra đúng lại cửa hàng đã trừ ban đầu).
+
+      lib/orders.ts: `createOrderFromCart()` gọi `reserveStockOrThrow()`
+      NGAY TRONG transaction tạo đơn, SAU KHI đã biết chắc `pickupStoreId`
+      (STORE_PICKUP) và TRƯỚC khi tạo đơn — thiếu hàng thì throw, cả
+      transaction rollback (không tạo đơn dở dang, không trừ lượt coupon
+      oan). `updateOrderStatus()` thêm nhánh mới: khi `newStatus ===
+      CANCELLED` thì gọi `releaseStock()` hoàn lại đúng số lượng đã trừ.
+
+      prisma/seed.ts: thêm bước seed Inventory — mỗi biến thể × mỗi cửa hàng
+      ĐANG HOẠT ĐỘNG = 1 dòng, mặc định 20 (dùng `update: {}` khi upsert để
+      KHÔNG ghi đè số lượng nếu admin đã tự chỉnh tay qua Prisma Studio sau
+      lần seed trước — chỉ tạo mới dòng nào còn thiếu). BẮT BUỘC phải làm
+      bước này TRƯỚC KHI bật kiểm tra tồn kho ở lib/orders.ts, vì DB TRƯỚC
+      ĐÓ CÓ ĐÚNG 0 dòng Inventory (model có trong schema từ đầu dự án nhưng
+      CHƯA TỪNG được seed hay dùng tới) — nếu bật kiểm tra mà không seed
+      trước, MỌI đơn hàng sẽ lập tức bị chặn "chỉ còn 0 trong kho", sập toàn
+      bộ luồng đặt hàng. Đã chạy `npx prisma db seed --config
+      prisma7.config.ts` áp thật lên Supabase — tạo đủ 37 biến thể × 2 cửa
+      hàng = 74 dòng Inventory.
+
+      QUYẾT ĐỊNH PHẠM VI: KHÔNG làm thêm UI admin quản lý tồn kho (CRUD số
+      lượng theo từng biến thể/cửa hàng) và KHÔNG hiện "còn X sản phẩm"/"hết
+      hàng" ở trang sản phẩm — user chỉ yêu cầu "kiểm soát tồn kho" (chặn
+      bán vượt), chưa yêu cầu giao diện quản lý riêng; muốn chỉnh số lượng
+      hiện tại phải qua Prisma Studio. Đây là điểm có thể làm tiếp nếu cần.
+
+      Đã test toàn bộ qua dev server bằng DB thật (tạo 1 customer + 1
+      SUPER_ADMIN test riêng, dọn sạch + khôi phục tồn kho về 20 sau khi
+      xong): đặt tồn kho biến thể test = 2 tại kho tổng (Cầu Giấy), thêm 5
+      vào giỏ rồi đặt HOME_DELIVERY → chặn đúng 400 "chỉ còn 2... đặt (5)";
+      sửa còn 2 trong giỏ → đặt hàng thành công (201), kiểm tra DB xác nhận
+      kho Cầu Giấy trừ đúng về 0 (kho Quận 1 không đổi); admin hủy đơn đó
+      (PATCH .../CANCELLED) → kiểm tra DB xác nhận kho Cầu Giấy hoàn lại
+      đúng về 2; test riêng nhánh STORE_PICKUP: đặt tồn kho Quận 1 = 0, chọn
+      nhận tại Quận 1 → chặn đúng 400 (dù kho tổng Cầu Giấy vẫn còn 2, xác
+      nhận STORE_PICKUP chỉ tra ĐÚNG kho cửa hàng được chọn, không lẫn kho
+      tổng); đổi sang chọn nhận tại Cầu Giấy (còn 2) → thành công, kiểm tra
+      DB xác nhận CHỈ kho Cầu Giấy giảm (2→1), Quận 1 giữ nguyên 0.
+      `tsc --noEmit`/`eslint`/`npm run build` sạch cho cả 2 phần #1 và #3.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
