@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma, PaymentMethod, PaymentStatus, OrderStatus, DeliveryMethod } from "@prisma/client";
+import {
+  Prisma,
+  PaymentMethod,
+  PaymentStatus,
+  OrderStatus,
+  DeliveryMethod,
+  ProductStatus,
+} from "@prisma/client";
 import { validateCoupon } from "@/lib/coupons";
 import { awardPointsForOrder } from "@/lib/loyalty";
 import { createWarrantiesForOrder } from "@/lib/warranty";
@@ -78,6 +85,32 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
   const isStorePickup = input.deliveryMethod === "STORE_PICKUP";
 
   const order = await prisma.$transaction(async (tx) => {
+    // Kiểm tra lại TÌNH TRẠNG sản phẩm ngay trong transaction — không tin dữ
+    // liệu giỏ hàng đọc trước đó (`cart.items` ở trên). `addToCart()` chỉ
+    // chặn thêm sản phẩm đã ẩn/ngừng bán TẠI LÚC THÊM VÀO GIỎ; nếu admin ẩn
+    // biến thể hoặc ngừng bán cả sản phẩm SAU KHI khách đã bỏ vào giỏ, nếu
+    // không kiểm tra lại ở đây khách vẫn đặt được đơn cho sản phẩm không còn
+    // bán nữa. Đọc lại qua `tx` (không phải `prisma`) để nằm trong cùng
+    // transaction, tránh còn hở giữa lúc kiểm tra và lúc tạo đơn.
+    const variantIds = cart.items.map((item) => item.variantId);
+    const currentVariants = await tx.productVariant.findMany({
+      where: { id: { in: variantIds } },
+      include: { product: { select: { status: true } } },
+    });
+    const currentVariantById = new Map(currentVariants.map((v) => [v.id, v]));
+    for (const item of cart.items) {
+      const current = currentVariantById.get(item.variantId);
+      if (!current || !current.isActive || current.product.status !== ProductStatus.ACTIVE) {
+        throw new Error(
+          `Sản phẩm "${item.variant.product.name}"${
+            item.variant.color || item.variant.storage
+              ? ` (${[item.variant.color, item.variant.storage].filter(Boolean).join(" / ")})`
+              : ""
+          } hiện không còn khả dụng. Vui lòng xóa khỏi giỏ hàng và thử lại.`
+        );
+      }
+    }
+
     let couponId: string | null = null;
     let discountTotal = 0;
     let shippingFee = SHIPPING_FEE;

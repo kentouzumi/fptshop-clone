@@ -25,7 +25,7 @@ export default async function OrderDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ payment?: string }>;
+  searchParams: Promise<{ payment?: "success" | "failed" | "link_failed" }>;
 }) {
   const user = await getCurrentUser();
   if (!user) {
@@ -51,6 +51,14 @@ export default async function OrderDetailPage({
       {paymentQuery === "failed" && (
         <div className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">
           Thanh toán MoMo không thành công. Bạn có thể thử thanh toán lại bên dưới.
+        </div>
+      )}
+      {paymentQuery === "link_failed" && (
+        <div className="mb-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+          Đơn hàng đã được tạo thành công, nhưng hệ thống chưa kết nối được tới
+          MoMo để tạo liên kết thanh toán (có thể do lỗi mạng tạm thời). Bạn
+          chưa mất đơn hàng này — hãy bấm &quot;Thanh toán lại&quot; bên dưới
+          để thử lại.
         </div>
       )}
 

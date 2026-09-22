@@ -167,6 +167,16 @@ export default function CheckoutForm({
         return;
       }
 
+      // Đơn đã tạo thành công nhưng bước lấy paymentUrl từ MoMo thất bại
+      // (xem /api/orders) — vẫn điều hướng sang trang chi tiết đơn kèm cờ
+      // riêng để hiện đúng thông báo, tránh nhầm với trường hợp thanh toán
+      // thật sự thất bại (?payment=failed, dùng khi MoMo trả về kết quả
+      // thất bại rõ ràng, khác với "chưa kịp tạo được link thanh toán").
+      if (data.paymentUrlError) {
+        router.push(`/orders/${data.id}?payment=link_failed`);
+        return;
+      }
+
       router.push(`/orders/${data.id}`);
     } finally {
       setSubmitting(false);

@@ -2615,6 +2615,91 @@
       ràng không (môi trường không có màn hình) — nhờ user tự mở
       `npm run dev` bấm nút chuyển ảnh để cảm nhận trực tiếp.
 
+- [x] Rà soát lỗ hổng NGHIỆP VỤ (user yêu cầu chủ động) — tìm được 6 vấn đề,
+      user chọn sửa 2 cái sau (còn lại ghi nhận, chưa sửa vì cần quyết định
+      chính sách hoặc không có "fix code" thật sự):
+
+      1. [Nghiêm trọng, KHÔNG sửa được bằng code] `lib/momo.ts` dùng bộ test
+         credentials CÔNG KHAI do MoMo tự công bố — ai đọc tài liệu MoMo
+         cũng tính được chữ ký hợp lệ, có thể tự gọi thẳng
+         `/api/payments/momo/ipn` đánh dấu bất kỳ đơn MoMo nào của họ thành
+         PAID mà không cần trả tiền. Không phải bug code (code làm đúng
+         theo tài liệu MoMo) — chỉ hết khi nào có tài khoản merchant MoMo
+         thật với secret riêng không công bố. CHƯA sửa.
+      2. **[Đã sửa]** Không kiểm tra lại `variant.isActive`/`product.status`
+         lúc tạo đơn — chỉ chặn lúc thêm vào giỏ.
+      3. [Cao, CHƯA sửa] Không có kiểm soát tồn kho — model `Inventory` có
+         sẵn trong schema nhưng chưa từng dùng, cần quyết định chính sách
+         trước khi làm (có tồn kho theo cửa hàng hay theo tổng? trừ lúc đặt
+         hay lúc giao?).
+      4. [Trung bình, CHƯA sửa] Trả hàng (RETURNED) không hoàn tác điểm
+         thành viên/vô hiệu hóa bảo hành đã cấp — cần quyết định chính sách.
+      5. **[Đã sửa]** Đơn hàng "mồ côi" nếu tạo `paymentUrl` MoMo thất bại.
+      6. [Thấp, CHƯA sửa] Giá đọc trước khi mở transaction lúc tạo đơn — cửa
+         sổ race rất hẹp, rủi ro thực tế thấp.
+
+      CHI TIẾT 2 CÁI ĐÃ SỬA:
+
+      **Sửa #2 — kiểm tra lại tình trạng sản phẩm NGAY TRONG transaction tạo
+      đơn** (lib/orders.ts, `createOrderFromCart`): thêm bước đọc lại
+      `tx.productVariant.findMany(...)` (qua `tx`, không phải `prisma`, để
+      nằm trong CÙNG transaction, không hở giữa lúc kiểm tra và lúc ghi đơn)
+      ngay đầu transaction — nếu bất kỳ item nào trong giỏ có variant đã bị
+      ẩn (`isActive: false`) HOẶC sản phẩm đã ngừng bán
+      (`product.status !== ACTIVE`), ném lỗi rõ ràng nêu tên + màu/dung
+      lượng sản phẩm, chặn tạo đơn ngay từ đầu (rollback toàn bộ transaction
+      — giỏ hàng không bị xóa, coupon không bị trừ lượt).
+
+      **Sửa #5 — không để "mất dấu" đơn hàng nếu bước lấy `paymentUrl` MoMo
+      thất bại**: trước đó `POST /api/orders` gọi `createOrderFromCart()`
+      (transaction ĐÃ commit: đơn+payment+lịch sử tạo xong, giỏ đã xóa) rồi
+      NGAY SAU ĐÓ gọi `generatePaymentUrlForOrder()` (1 lệnh gọi HTTP riêng
+      sang MoMo) — nếu bước 2 lỗi (mạng, MoMo tạm gián đoạn), route cũ trả
+      thẳng lỗi 400 như thể CẢ VIỆC ĐẶT HÀNG thất bại, trong khi thực ra đơn
+      đã nằm trong DB và giỏ đã trống — khách hoang mang tưởng chưa đặt
+      được, mất dấu đơn hàng vừa tạo. Đã tách `try/catch` riêng cho từng
+      bước: lỗi ở bước 1 (tạo đơn) mới trả 400 thật; lỗi ở bước 2 (lấy
+      paymentUrl) trả **201** kèm `id`/`code` đơn hàng + `paymentUrl: null` +
+      `paymentUrlError` — CheckoutForm.tsx nhận diện `paymentUrlError` để
+      điều hướng sang `/orders/[id]?payment=link_failed` (cờ MỚI, tách biệt
+      với `?payment=failed` cũ — cờ cũ dùng khi MoMo trả kết quả THẤT BẠI rõ
+      ràng, còn cờ mới dùng khi CHƯA KỊP tạo được link thanh toán, ý nghĩa
+      khác nhau) thay vì chỉ hiện lỗi rồi dừng. orders/[id]/page.tsx thêm
+      banner riêng cho `link_failed` giải thích rõ "đơn đã tạo, chưa mất,
+      bấm Thanh toán lại bên dưới" — nút "Thanh toán lại" (RetryPaymentButton,
+      có sẵn từ trước cho Payment PENDING/FAILED) tự động hoạt động đúng vì
+      Payment vẫn ở trạng thái PENDING sau lỗi này.
+
+      Đã test qua dev server bằng DB thật (tạo 1 customer + session test
+      riêng, không đụng dữ liệu thật, xóa sạch sau khi xong):
+      - Sửa #2: thêm sản phẩm thật vào giỏ, ẩn variant (`isActive: false`)
+        qua script mô phỏng admin thao tác sau khi khách đã bỏ vào giỏ —
+        đặt hàng bị chặn đúng 400 kèm đúng tên sản phẩm; bật lại variant —
+        đặt hàng thành công (201, kiểm chứng KHÔNG bị chặn oan); lặp lại với
+        `product.status = DISCONTINUED` thay vì ẩn variant — cũng bị chặn
+        đúng 400. Cả 2 nhánh đều đã khôi phục lại ACTIVE sau khi test.
+      - Sửa #5: dùng `.env.local` tạm trỏ `MOMO_ENDPOINT` sang địa chỉ không
+        tồn tại (mô phỏng MoMo sập/mất mạng — cách đáng tin cậy hơn hẳn so
+        với thử export biến môi trường qua shell, vốn KHÔNG propagate được
+        vào tiến trình `next dev` chạy nền trong lần thử đầu) — đặt hàng
+        MOMO trả đúng 201 kèm `paymentUrl: null` + `paymentUrlError:"fetch
+        failed"`; kiểm tra thẳng DB xác nhận Order status PENDING, Payment
+        MOMO status PENDING (không bị kẹt ở trạng thái lạ), giỏ hàng đã
+        trống; tải `/orders/[id]?payment=link_failed` xác nhận đúng banner
+        cảnh báo + nút "Thanh toán lại" cùng hiện; xóa `.env.local` khôi
+        phục MoMo endpoint thật, bấm "Thanh toán lại"
+        (`POST /api/orders/[id]/pay`) cho ĐÚNG đơn hàng "mồ côi" đó — nhận
+        đúng `paymentUrl` thật lần này, xác nhận toàn bộ luồng khép kín
+        không mất đơn. (Gặp 1 trục trặc lúc test không liên quan tới code:
+        `pkill -f "next dev"` trên Git Bash/Windows không kill được tiến
+        trình Next.js thật — server cũ vẫn chạy ngầm giữ nguyên
+        MOMO_ENDPOINT hỏng trong bộ nhớ khiến lần thử lại đầu tiên vẫn thấy
+        lỗi cũ; phải dùng `taskkill //PID <pid> //F` mới dứt điểm — ghi chú
+        lại vì có thể gặp lại khi cần restart dev server nhiều lần trên máy
+        Windows này).
+
+      `tsc --noEmit`/`eslint`/`npm run build` sạch sau cả 2 sửa.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -2650,6 +2735,13 @@
       đơn hàng, xem mục "Làm đẹp giao diện toàn site" ở trên
 
 ## Lưu ý quan trọng
+- Trên máy Windows này, `pkill -f "next dev"` (Git Bash) KHÔNG kill được tiến
+  trình `next dev` thật — process vẫn chạy ngầm giữ nguyên biến môi trường cũ
+  trong bộ nhớ dù terminal tưởng đã tắt (đã gặp thật lúc test override
+  MOMO_ENDPOINT). Nếu cần chắc chắn tắt hẳn dev server đang chạy, dùng
+  `taskkill //PID <pid> //F` (lấy PID qua `ps aux | grep node` hoặc từ dòng
+  "Port 3000 is in use by process <pid>" mà `next dev` tự in ra khi phát
+  hiện cổng đã bị chiếm).
 - Không chạy `npm audit fix --force` — dễ đổi version Prisma linh tinh
 - Mật khẩu Supabase có ký tự đặc biệt phải URL-encode trong DATABASE_URL
 - Đăng nhập DUY NHẤT qua Google OAuth (lib/googleOAuth.ts) — không còn SĐT/

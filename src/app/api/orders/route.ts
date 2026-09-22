@@ -49,8 +49,9 @@ export async function POST(request: Request) {
     newAddress = { recipientName, phone, province, district, ward, streetDetail };
   }
 
+  let order;
   try {
-    const order = await createOrderFromCart(user.id, {
+    order = await createOrderFromCart(user.id, {
       addressId,
       newAddress,
       note,
@@ -59,14 +60,28 @@ export async function POST(request: Request) {
       deliveryMethod,
       pickupStoreId,
     });
-
-    if (paymentMethod === "MOMO") {
-      const paymentUrl = await generatePaymentUrlForOrder(order.id, user.id);
-      return NextResponse.json({ id: order.id, code: order.code, paymentUrl }, { status: 201 });
-    }
-
-    return NextResponse.json({ id: order.id, code: order.code }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
+
+  if (paymentMethod !== "MOMO") {
+    return NextResponse.json({ id: order.id, code: order.code }, { status: 201 });
+  }
+
+  try {
+    const paymentUrl = await generatePaymentUrlForOrder(order.id, user.id);
+    return NextResponse.json({ id: order.id, code: order.code, paymentUrl }, { status: 201 });
+  } catch (e) {
+    // Đơn hàng ĐÃ được tạo thành công ở bước trên (transaction đã commit,
+    // giỏ hàng đã bị xóa) — lỗi ở đây chỉ là bước gọi API MoMo để lấy
+    // paymentUrl thất bại (mạng, MoMo tạm gián đoạn...). KHÔNG được trả lỗi
+    // 400 như thể cả việc đặt hàng thất bại, vì khách sẽ tưởng chưa đặt
+    // được trong khi đơn đã nằm trong DB và giỏ đã trống — mất dấu đơn hàng
+    // vừa tạo. Trả 201 kèm id đơn để client tự điều hướng sang trang chi
+    // tiết đơn (đã có sẵn nút "Thanh toán lại" cho Payment PENDING/FAILED).
+    return NextResponse.json(
+      { id: order.id, code: order.code, paymentUrl: null, paymentUrlError: (e as Error).message },
+      { status: 201 }
+    );
   }
 }
