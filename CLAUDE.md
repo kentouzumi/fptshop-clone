@@ -2433,6 +2433,74 @@
       hình) — nhờ user tự mở `npm run dev` xác nhận thị giác/thao tác chọn
       nhiều checkbox cùng lúc mượt mà.
 
+- [x] Tách bộ chọn "Phiên bản" (gộp chung màu+dung lượng thành 1 nút kiểu
+      "Titan Xanh / 256GB") thành 2 bộ chọn ĐỘC LẬP "Màu sắc" và "Dung
+      lượng", và cho ảnh sản phẩm đổi theo màu đang chọn (user yêu cầu sau
+      khi được demo thêm variant ở mục "Admin tạo/sửa/xóa variant sản phẩm").
+      Trước khi làm, đã thêm 1 variant demo trực tiếp vào DB thật cho Xiaomi
+      Redmi Note 13 (biến thể thứ 2 "Xanh Dương/256GB", bên cạnh "Đen/128GB"
+      có sẵn) để user xem trước UI cũ, giờ nâng cấp tiếp lên UI mới trên
+      cùng sản phẩm này.
+
+      KHÔNG cần đổi schema — `ProductImage.variantId` (optional) đã có sẵn
+      từ đầu dự án nhưng CHƯA TỪNG được dùng tới (mọi ảnh sản phẩm trước giờ
+      đều gắn `variantId: null`, tức ảnh chung cho cả sản phẩm bất kể chọn
+      biến thể nào) — đây là lần đầu tiên tận dụng field này.
+
+      src/app/products/[slug]/ProductGalleryAndBuy.tsx (viết lại phần chọn
+      biến thể):
+      - `colors` = danh sách màu KHÁC NHAU suy từ toàn bộ variant (không phụ
+        thuộc dung lượng).
+      - `storagesForColor` = danh sách dung lượng CHỈ tính trong số variant
+        thuộc ĐÚNG màu đang chọn — vì dữ liệu thật thường không phải ma
+        trận đầy đủ (vd chỉ có "Đen/128GB" và "Xanh Dương/256GB", KHÔNG có
+        "Đen/256GB") — nếu hiện tất cả dung lượng toàn cục sẽ cho chọn được
+        tổ hợp không tồn tại. Bấm đổi màu (`handleSelectColor`) tự kiểm tra
+        dung lượng đang chọn có còn hợp lệ với màu mới không, nếu không thì
+        tự chuyển sang dung lượng đầu tiên hợp lệ của màu đó — đảm bảo LUÔN
+        có 1 variant khớp, không bao giờ rơi vào trạng thái "không tìm thấy
+        biến thể nào khớp".
+      - `selectedVariant` suy ra từ cặp (màu, dung lượng) đang chọn thay vì
+        là 1 state độc lập như bản cũ (chọn thẳng theo variant.id) — đơn
+        giản hóa: chỉ còn 2 nguồn sự thật (màu, dung lượng), variant luôn
+        là kết quả TÍNH RA từ 2 cái đó, không thể lệch pha.
+      - Ảnh hiển thị: lọc `images` theo `variantId` thuộc bất kỳ variant nào
+        CÙNG MÀU đang chọn (không cứng nhắc chỉ đúng 1 variant/dung lượng cụ
+        thể — vì ảnh sản phẩm thực tế đổi theo màu, không đổi theo dung
+        lượng); nếu màu đó chưa có ảnh riêng nào (variantId toàn null), rơi
+        về đúng bộ ảnh chung của sản phẩm như hành vi cũ (không vỡ hiển thị
+        với 32/34 sản phẩm còn lại chưa có ảnh gắn theo variant).
+
+      src/app/products/[slug]/page.tsx: thêm `variantId: img.variantId` khi
+      map `product.images` truyền xuống component (trước đó chỉ truyền
+      `url`/`altText`).
+
+      DEMO TRỰC QUAN: đã thêm 2 `ProductImage` mới cho 2 variant của Xiaomi
+      Redmi Note 13 qua script (ảnh placehold.co nền đen chữ "Redmi Note 13
+      Đen" cho variant Đen, nền xanh dương chữ "...Xanh Dương" cho variant
+      Xanh Dương) để user thấy rõ ảnh đổi thật khi bấm đổi màu — 32 sản phẩm
+      còn lại KHÔNG có ảnh theo variant (giữ nguyên ảnh chung như trước, chỉ
+      đổi UI thành 2 mục chọn tách riêng, không có gì để "đổi ảnh" vì chưa
+      gán ảnh riêng cho biến thể nào của chúng — đây không phải thiếu sót,
+      admin có thể tự gán sau này qua tính năng upload ảnh có sẵn nếu muốn
+      cho biến thể nào đó ảnh riêng, hiện ProductForm.tsx admin chưa có ô
+      chọn "gắn ảnh này cho biến thể nào" nên phải làm qua script/Prisma
+      Studio như demo này).
+
+      Đã test qua dev server (xóa `.next` trước vì thêm dữ liệu trực tiếp
+      qua script, dùng DB thật): `tsc --noEmit`/`eslint`/`npm run build`
+      sạch; `/products/xiaomi-redmi-note-13` hiện đúng 2 mục "Màu sắc"
+      (Đen/Xanh Dương) và "Dung lượng" (chỉ hiện "128GB" khi đang chọn màu
+      Đen — đúng lọc theo màu, không lộ "256GB" của màu khác); ảnh mặc định
+      đúng là ảnh riêng của màu Đen; `/products/airpods-pro-2` (sản phẩm chỉ
+      có 1 biến thể, dung lượng null) hiện đúng CHỈ mục "Màu sắc" (1 nút
+      "Trắng"), KHÔNG hiện mục "Dung lượng" thừa; `/products/iphone-15-pro-max`
+      (2 biến thể, mỗi màu có dung lượng khác nhau y hệt Xiaomi) vẫn 200 và
+      dữ liệu cả 2 tổ hợp đều đúng. CHƯA tự xem qua trình duyệt thật việc
+      bấm đổi màu có chuyển ảnh mượt/đúng lúc không (môi trường không có màn
+      hình) — nhờ user tự mở `npm run dev` bấm thử qua lại giữa 2 màu trên
+      trang Xiaomi Redmi Note 13 để xác nhận ảnh đổi đúng.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

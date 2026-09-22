@@ -85,7 +85,11 @@ export default async function ProductDetailPage({
 
       <ProductGalleryAndBuy
         productName={product.name}
-        images={product.images.map((img) => ({ url: img.url, altText: img.altText }))}
+        images={product.images.map((img) => ({
+          url: img.url,
+          altText: img.altText,
+          variantId: img.variantId,
+        }))}
         variants={product.variants.map((v) => ({
           id: v.id,
           color: v.color,

@@ -15,14 +15,15 @@ interface VariantOption {
 interface ImageOption {
   url: string;
   altText: string | null;
+  // ProductImage.variantId — ảnh nào gắn riêng cho 1 variant cụ thể (thường
+  // dùng để phân biệt theo MÀU, vì ảnh sản phẩm thực tế đổi theo màu chứ
+  // không đổi theo dung lượng). null = ảnh chung, hiện khi màu đang chọn
+  // không có ảnh riêng nào.
+  variantId: string | null;
 }
 
 function formatPrice(value: number) {
   return value.toLocaleString("vi-VN") + "₫";
-}
-
-function variantLabel(v: VariantOption) {
-  return [v.color, v.storage].filter(Boolean).join(" / ") || v.id;
 }
 
 export default function ProductGalleryAndBuy({
@@ -41,17 +42,66 @@ export default function ProductGalleryAndBuy({
   compareButton?: React.ReactNode;
 }) {
   const router = useRouter();
-  const [selectedVariantId, setSelectedVariantId] = useState(variants[0]?.id ?? null);
+
+  // Tách 2 chiều lựa chọn ĐỘC LẬP (màu sắc / dung lượng) thay vì gộp chung
+  // 1 nút "Titan Xanh / 256GB" như trước — người dùng chọn màu trước, dung
+  // lượng sau (hoặc ngược lại), giống đúng UX các trang bán điện thoại thật.
+  const colors = [...new Set(variants.map((v) => v.color).filter((c): c is string => Boolean(c)))];
+
+  const [selectedColor, setSelectedColor] = useState<string | null>(variants[0]?.color ?? null);
+  const [selectedStorage, setSelectedStorage] = useState<string | null>(variants[0]?.storage ?? null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
 
-  const selectedVariant = variants.find((v) => v.id === selectedVariantId) ?? null;
+  // Dung lượng hiển thị PHỤ THUỘC màu đang chọn — vì trong dữ liệu thật,
+  // không phải màu nào cũng có đủ mọi dung lượng (vd chỉ có "Đen/128GB" và
+  // "Xanh Dương/256GB", không có "Đen/256GB"). Hiện đúng dung lượng nào THẬT
+  // SỰ tồn tại cho màu đang chọn, tránh chọn được tổ hợp không có thật.
+  const storagesForColor = [
+    ...new Set(
+      variants
+        .filter((v) => v.color === selectedColor)
+        .map((v) => v.storage)
+        .filter((s): s is string => Boolean(s))
+    ),
+  ];
+
+  function handleSelectColor(color: string) {
+    setSelectedColor(color);
+    setActiveImageIndex(0);
+    const validStorages = variants.filter((v) => v.color === color).map((v) => v.storage);
+    if (!validStorages.includes(selectedStorage)) {
+      setSelectedStorage(validStorages[0] ?? null);
+    }
+  }
+
+  function handleSelectStorage(storage: string) {
+    setSelectedStorage(storage);
+  }
+
+  // Tìm variant khớp cả màu lẫn dung lượng đang chọn; rơi về variant đầu
+  // tiên khớp màu (trường hợp sản phẩm không có trường dung lượng) rồi mới
+  // tới variant đầu tiên nếu vẫn không khớp gì (không nên xảy ra vì
+  // handleSelectColor luôn tự điều chỉnh dung lượng về giá trị hợp lệ).
+  const selectedVariant =
+    variants.find((v) => v.color === selectedColor && v.storage === selectedStorage) ??
+    variants.find((v) => v.color === selectedColor) ??
+    variants[0] ??
+    null;
+  const selectedVariantId = selectedVariant?.id ?? null;
   const price = selectedVariant?.price ?? basePrice;
   const compareAtPrice = selectedVariant?.compareAtPrice ?? null;
-  const activeImage = images[activeImageIndex] ?? images[0];
+
+  // Ảnh gắn riêng cho variant của MÀU đang chọn (bất kể dung lượng nào của
+  // màu đó) — nếu màu này chưa có ảnh riêng (variantId null hết), rơi về bộ
+  // ảnh chung của sản phẩm thay vì để trống.
+  const colorVariantIds = new Set(variants.filter((v) => v.color === selectedColor).map((v) => v.id));
+  const colorImages = images.filter((img) => img.variantId && colorVariantIds.has(img.variantId));
+  const displayImages = colorImages.length > 0 ? colorImages : images.filter((img) => !img.variantId);
+  const activeImage = displayImages[activeImageIndex] ?? displayImages[0] ?? images[0];
 
   async function handleAddToCart() {
     if (!selectedVariantId) return;
@@ -97,9 +147,9 @@ export default function ProductGalleryAndBuy({
             />
           )}
         </div>
-        {images.length > 1 && (
+        {displayImages.length > 1 && (
           <div className="flex gap-2">
-            {images.map((img, i) => (
+            {displayImages.map((img, i) => (
               <button
                 key={img.url}
                 type="button"
@@ -125,22 +175,44 @@ export default function ProductGalleryAndBuy({
           )}
         </div>
 
-        {variants.length > 0 && (
-          <div className="mb-6">
-            <p className="mb-2 text-sm font-medium text-zinc-700">Phiên bản</p>
+        {colors.length > 0 && (
+          <div className="mb-5">
+            <p className="mb-2 text-sm font-medium text-zinc-700">Màu sắc</p>
             <div className="flex flex-wrap gap-2">
-              {variants.map((v) => (
+              {colors.map((c) => (
                 <button
-                  key={v.id}
+                  key={c}
                   type="button"
-                  onClick={() => setSelectedVariantId(v.id)}
+                  onClick={() => handleSelectColor(c)}
                   className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                    v.id === selectedVariantId
+                    c === selectedColor
                       ? "border-zinc-900 bg-zinc-900 text-white"
                       : "border-zinc-300 text-zinc-700 hover:border-zinc-900"
                   }`}
                 >
-                  {variantLabel(v)}
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {storagesForColor.length > 0 && (
+          <div className="mb-6">
+            <p className="mb-2 text-sm font-medium text-zinc-700">Dung lượng</p>
+            <div className="flex flex-wrap gap-2">
+              {storagesForColor.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => handleSelectStorage(s)}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                    s === selectedStorage
+                      ? "border-zinc-900 bg-zinc-900 text-white"
+                      : "border-zinc-300 text-zinc-700 hover:border-zinc-900"
+                  }`}
+                >
+                  {s}
                 </button>
               ))}
             </div>
