@@ -108,6 +108,15 @@ export default function ProductGalleryAndBuy({
   const displayImages = colorImages.length > 0 ? colorImages : images.filter((img) => !img.variantId);
   const activeImage = displayImages[activeImageIndex] ?? displayImages[0] ?? images[0];
 
+  // Nút mũi tên trái/phải để chuyển ảnh (giống gallery sản phẩm thật) —
+  // vòng lại đầu/cuối danh sách thay vì dừng khựng ở 2 đầu.
+  function goToPrevImage() {
+    setActiveImageIndex((i) => (i - 1 + displayImages.length) % displayImages.length);
+  }
+  function goToNextImage() {
+    setActiveImageIndex((i) => (i + 1) % displayImages.length);
+  }
+
   async function handleAddToCart() {
     if (!selectedVariantId) return;
     setAdding(true);
@@ -150,6 +159,34 @@ export default function ProductGalleryAndBuy({
               className="object-cover"
               priority
             />
+          )}
+
+          {displayImages.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={goToPrevImage}
+                aria-label="Ảnh trước"
+                className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow-md transition hover:bg-white"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={goToNextImage}
+                aria-label="Ảnh tiếp theo"
+                className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow-md transition hover:bg-white"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              <span className="absolute bottom-3 left-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white">
+                {activeImageIndex + 1}/{displayImages.length}
+              </span>
+            </>
           )}
         </div>
         {displayImages.length > 1 && (

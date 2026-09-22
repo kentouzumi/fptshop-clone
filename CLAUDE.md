@@ -2537,6 +2537,48 @@
       xác nhận trực quan đủ rõ để người dùng hiểu vì sao nút đó không bấm
       được.
 
+- [x] Thêm nút mũi tên trái/phải để chuyển ảnh trên gallery sản phẩm (user
+      gửi ảnh chụp gallery thật của fptshop.com.vn có 2 nút tròn "‹"/"›" 2
+      bên ảnh chính + số đếm "7/8" + dải thumbnail dưới). TRƯỚC ĐÓ CHƯA CÓ —
+      gallery cũ chỉ chọn ảnh được qua bấm thumbnail phía dưới, không có nút
+      điều hướng ngay trên ảnh chính.
+
+      src/app/products/[slug]/ProductGalleryAndBuy.tsx: thêm
+      `goToPrevImage()`/`goToNextImage()` (lùi/tiến 1 ảnh trong
+      `displayImages`, tự vòng lại đầu/cuối danh sách bằng phép modulo thay
+      vì dừng khựng ở 2 đầu), 2 nút tròn nền trắng mờ (`bg-white/90`) đặt
+      `absolute` 2 bên mép ảnh chính (giữa theo chiều dọc), và 1 badge đếm
+      "hiện tại/tổng" (`bg-black/60`, góc dưới-trái) — bố cục phỏng theo
+      đúng ảnh mẫu, CHỈ hiện khi `displayImages.length > 1` (sản phẩm 1 ảnh
+      không cần nút điều hướng). KHÔNG làm thêm các phần tử khác trong ảnh
+      mẫu không thuộc phạm vi "ảnh sản phẩm" — tab "Video"/"Nổi bật"/"Mở
+      hộp"/"Thực tế" và badge "360°" trong ảnh gốc là các LOẠI NỘI DUNG khác
+      hẳn ảnh tĩnh thường (video quay sản phẩm, ảnh chụp thực tế người dùng
+      gửi lên, mô hình xoay 360°...), không có model DB nào tương ứng và
+      không phải điều user hỏi ("hiển thị nhiều ảnh... chuyển bằng nút") —
+      không bịa thêm tính năng ngoài phạm vi được hỏi.
+
+      DEMO: thêm 5 `ProductImage` mới (ảnh chung, `variantId: null`) cho
+      Samsung Galaxy S24 Ultra qua script — đặt `altText` đúng "Ảnh 1".."Ảnh
+      5" như user yêu cầu, dùng placehold.co 5 sắc độ tím khác nhau để phân
+      biệt được từng ảnh khi bấm chuyển qua script/kiểm tra (không cần ảnh
+      thật, chỉ cần thấy rõ ảnh có đổi hay không). Chọn sản phẩm này (thay
+      vì Xiaomi Redmi Note 13 đã dùng demo màu/ảnh-theo-variant trước đó) vì
+      nó CHƯA có ảnh gắn riêng theo variant nào — đảm bảo 5 ảnh demo luôn
+      hiện đủ bất kể đang chọn màu "Đen" hay "Xám" (nếu dùng lại sản phẩm cũ,
+      ảnh riêng-theo-màu đã gán trước đó sẽ ĐÈ MẤT 5 ảnh demo này theo đúng
+      logic ưu tiên ảnh-theo-variant đã làm ở mục trước).
+
+      Đã test qua dev server (xóa `.next` trước vì thêm dữ liệu qua script,
+      dùng DB thật): `tsc --noEmit`/`eslint`/`npm run build` sạch;
+      `/products/samsung-galaxy-s24-ultra` render đủ cả 5 ảnh demo, badge
+      đếm hiện đúng "1/5" lúc mới vào trang, 2 nút mũi tên có đủ
+      `aria-label="Ảnh trước"`/`"Ảnh tiếp theo"` trong HTML thật. CHƯA tự
+      xem qua trình duyệt thật việc bấm nút có chuyển ảnh mượt + số đếm tăng
+      giảm đúng vòng lặp không (môi trường không có màn hình) — nhờ user tự
+      mở `npm run dev` bấm thử qua lại 2 nút trên trang Samsung Galaxy S24
+      Ultra để xác nhận.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
