@@ -2958,6 +2958,45 @@
       bất kỳ để thử upload ảnh riêng và xác nhận ảnh đổi đúng khi chọn màu
       đó ở trang chi tiết sản phẩm.
 
+- [x] Thêm 3 ô "SKU/Màu/Dung lượng" cho BIẾN THỂ ĐẦU TIÊN ngay trong form
+      TẠO sản phẩm (user yêu cầu sau khi trải nghiệm luồng 2 bước cũ: tạo
+      sản phẩm với ảnh chung -> qua trang Sửa bấm "+ Thêm biến thể" -> nếu
+      lỡ gắn luôn ảnh riêng cho biến thể đó thì ảnh riêng ĐÈ lên ảnh chung
+      (đúng theo thiết kế "ưu tiên ảnh theo màu" ở ProductGalleryAndBuy.tsx —
+      xem mục "Tách bộ chọn Phiên bản...") — nhìn như bị mất ảnh ban đầu).
+
+      KHÔNG sửa logic hiển thị ảnh (không phải bug — code cũ vẫn đúng: biến
+      thể không có ảnh riêng thì tự rơi về ảnh chung). Thay vào đó rút ngắn
+      luồng: ProductForm.tsx thêm khối "Biến thể đầu tiên" (CHỈ hiện khi
+      `!isEdit` — trang Sửa đã có VariantsManager đầy đủ hơn nhiều, không
+      lặp lại) gồm SKU/Màu/Dung lượng, KHÔNG bắt buộc (để trống SKU thì tạo
+      sản phẩm y hệt hành vi cũ, không có variant nào, thêm sau ở trang
+      Sửa). Biến thể này dùng chung giá (`basePrice`) và KHÔNG gắn ảnh riêng
+      — cố tình để trống ảnh riêng của biến thể trong bước này, đảm bảo ảnh
+      chung vừa upload luôn hiển thị đúng ngay từ đầu.
+
+      Submit giờ chia 2 bước tuần tự (không chung 1 transaction — 2 API
+      route riêng biệt đã có sẵn từ trước, không thêm route mới): (1) POST
+      tạo sản phẩm như cũ; (2) nếu có SKU, POST tiếp sang
+      `/api/admin/products/{id}/variants` (route tạo variant đã có, không
+      đổi gì ở server). Nếu bước (2) lỗi (vd trùng SKU) thì KHÔNG coi là
+      thất bại toàn bộ — sản phẩm đã tạo xong ở bước (1) rồi — báo lỗi qua
+      `alert()` rồi điều hướng sang trang Sửa để admin tự thêm lại biến thể,
+      cùng triết lý "không mất phần đã làm được chỉ vì bước sau lỗi" đã áp
+      dụng cho luồng tạo đơn hàng + paymentUrl MoMo trước đây.
+
+      Đã test qua dev server bằng DB thật (tạo 1 ADMIN test tạm, dọn sạch
+      sau khi xong): xác nhận HTML `/admin/products/new` có đủ 3 field SKU/
+      Màu/Dung lượng, còn `/admin/products/[id]/edit` (sản phẩm có sẵn)
+      KHÔNG hiện khối này; gọi tuần tự đúng 2 API như luồng thật sẽ làm (tạo
+      sản phẩm kèm 2 ảnh chung, rồi tạo variant đầu tiên) — DB xác nhận 2
+      ảnh chung vẫn nguyên (`variantId: null`), variant tạo đúng màu/dung
+      lượng/giá, KHÔNG có ảnh riêng nào gắn vào nó. `tsc --noEmit`/`eslint`/
+      `npm run build` sạch. CHƯA tự xem qua trình duyệt thật (môi trường
+      không có màn hình) — nhờ user tự mở `npm run dev` vào
+      `/admin/products/new` thử điền đủ SKU/Màu/Dung lượng lúc tạo sản phẩm
+      để xác nhận không còn phải qua bước riêng ở trang Sửa nữa.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

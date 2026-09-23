@@ -60,6 +60,17 @@ export default function ProductForm({
   const [images, setImages] = useState<string[]>(initial?.images ?? []);
   const [manualImageUrl, setManualImageUrl] = useState("");
   const [attributes, setAttributes] = useState<ProductAttributeRow[]>(initial?.attributes ?? []);
+  // Biến thể ĐẦU TIÊN — chỉ hỏi lúc TẠO MỚI (isEdit dùng VariantsManager
+  // riêng, đầy đủ hơn nhiều, không lặp lại ở đây). Lý do thêm: trước đây
+  // sản phẩm mới tạo không có variant nào, ảnh chung (variantId null) hiện
+  // đúng, nhưng đến khi admin qua trang Sửa bấm "+ Thêm biến thể" và lỡ gắn
+  // luôn ảnh riêng cho biến thể đó, ảnh riêng sẽ ĐÈ lên ảnh chung theo đúng
+  // thiết kế "ưu tiên ảnh theo màu" — nhìn như bị mất ảnh ban đầu. Cho nhập
+  // Màu/Dung lượng/SKU ngay lúc tạo sản phẩm giúp biến thể đầu tiên có sẵn,
+  // dùng chung ảnh vừa upload (không gắn riêng), tránh luồng 2 bước dễ nhầm.
+  const [variantSku, setVariantSku] = useState("");
+  const [variantColor, setVariantColor] = useState("");
+  const [variantStorage, setVariantStorage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -160,6 +171,38 @@ export default function ProductForm({
         return;
       }
 
+      // Sản phẩm đã tạo xong ở bước trên — nếu admin có nhập SKU cho biến
+      // thể đầu tiên, tạo luôn NGAY SAU (request riêng, không cùng
+      // transaction với việc tạo sản phẩm) để dùng chung ảnh vừa upload.
+      if (!isEdit && variantSku.trim()) {
+        const variantRes = await fetch(`/api/admin/products/${data.id}/variants`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sku: variantSku.trim(),
+            color: variantColor.trim() || null,
+            storage: variantStorage.trim() || null,
+            price: Number(basePrice),
+            isActive: true,
+          }),
+        });
+        if (!variantRes.ok) {
+          const variantData = await variantRes.json().catch(() => null);
+          // Sản phẩm vẫn đã tạo thành công — KHÔNG chặn ở đây, chỉ báo lỗi
+          // và đưa admin sang trang Sửa để tự thêm lại biến thể (giống cách
+          // xử lý "đơn hàng đã tạo nhưng paymentUrl lỗi" ở lib/orders.ts:
+          // không để mất phần đã làm được chỉ vì bước sau thất bại).
+          alert(
+            `Đã tạo sản phẩm nhưng tạo biến thể thất bại: ${
+              variantData?.error ?? "Lỗi không xác định."
+            }\nBạn có thể thêm lại biến thể ở trang Sửa sản phẩm.`
+          );
+          router.push(`/admin/products/${data.id}/edit`);
+          router.refresh();
+          return;
+        }
+      }
+
       router.push("/admin/products");
       router.refresh();
     } finally {
@@ -248,6 +291,46 @@ export default function ProductForm({
           </select>
         </div>
       </div>
+
+      {!isEdit && (
+        <div className="rounded-lg border border-zinc-200 p-3">
+          <p className="mb-2 text-sm font-medium">
+            Biến thể đầu tiên (không bắt buộc — để trống SKU nếu muốn thêm
+            biến thể sau ở trang Sửa)
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">SKU</label>
+              <input
+                className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                value={variantSku}
+                onChange={(e) => setVariantSku(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">Màu</label>
+              <input
+                className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                value={variantColor}
+                onChange={(e) => setVariantColor(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">Dung lượng</label>
+              <input
+                className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                value={variantStorage}
+                onChange={(e) => setVariantStorage(e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-zinc-500">
+            Biến thể này dùng chung giá (ở trên) và ảnh chung của sản phẩm
+            (không gắn ảnh riêng) — vào trang Sửa nếu cần đổi giá riêng hoặc
+            gắn ảnh riêng theo màu.
+          </p>
+        </div>
+      )}
 
       <label className="flex items-center gap-2 text-sm">
         <input
