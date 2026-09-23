@@ -3766,6 +3766,68 @@
       cầu; nếu muốn dọn thì lọc các file trong `catalog/` không xuất hiện
       trong bảng ProductImage/Banner.
 
+- [x] Rà lại THÔNG SỐ KỸ THUẬT của toàn bộ 13 sản phẩm và sửa 8 chỗ SAI THẬT
+      (user yêu cầu "kiểm tra lại thông số kĩ thuật của tất cả sản phẩm xem
+      có sai gì không"). Cách làm: đối chiếu từng dòng thông số với NGUỒN
+      CHÍNH HÃNG (trang spec của Apple/OPPO/Samsung/LG/TCL/Xiaomi/Philips),
+      không tin trí nhớ — và đúng là phần lớn lỗi nằm ở những con số "nghe
+      hợp lý" nên nếu chỉ đọc lướt sẽ không thấy gì bất thường.
+
+      LỖI NGHIÊM TRỌNG NHẤT — iPhone 15 Pro Max bán bản 128GB: **iPhone 15
+      Pro Max KHÔNG HỀ có bản 128GB** (chỉ bản iPhone 15 Pro 6.1 inch mới
+      có, bản Pro Max khởi điểm 256GB). Sai ở cả thông số "Dung lượng ROM"
+      LẪN biến thể đang bán (SKU `IP15PM-128-TN`, storage 128GB). Đã đổi 2
+      biến thể thành 256GB (29.990.000đ) và 512GB (32.990.000đ) + đổi SKU
+      tương ứng — giữ đúng quy tắc "giá chỉ đổi theo dung lượng, không đổi
+      theo màu" mà user đặt ra từ trước. Đã kiểm tra trước khi đổi: 0
+      OrderItem/CartItem tham chiếu 2 biến thể này nên đổi an toàn.
+
+      7 lỗi còn lại:
+      + OPPO Reno11 5G camera sau ghi "50MP + 8MP + 2MP" — đó là thông số
+        của bản Reno11 **F**; bản Reno11 5G là 50MP + 32MP tele + 8MP siêu
+        rộng (xác nhận ở trang spec OPPO Global).
+      + Samsung Q60D: tần số quét 50Hz -> 60Hz; "Dolby Digital Plus" ->
+        "Dolby Atmos" (đọc đúng từ trang Samsung VN).
+      + LG UQ8000: tần số quét 50Hz -> "60Hz Native"; tên bộ xử lý đổi theo
+        đúng cách LG VN ghi ("Bộ xử lý α5 AI 4K Gen5"); bổ sung chuẩn HDR
+        "HDR10, HLG" — 3 giá trị này lấy thẳng từ khối JSON thông số nhúng
+        trong trang sản phẩm LG VN.
+      + Xiaomi A Pro 43: loa "2 x 12W" -> "2 x 8W"; chuẩn HDR "Dolby Vision,
+        HDR10+" -> "HDR10, HLG".
+      + Xiaomi A Pro 55: loa "2 x 12W" -> "2 x 10W"; chuẩn HDR như trên.
+        (Trang mi.com/vn ghi rõ "Hỗ trợ HDR10, HLG" — bản bán ở VN KHÔNG có
+        Dolby Vision, và công suất loa khác nhau giữa bản 43 và 55 inch.)
+      + Philips 6900: bộ xử lý "Pixel Precise HD" -> "Pixel Plus HD"; loa
+        "2 x 10W" -> "8W (2 loa)".
+      + TCL C655: bỏ "Công suất loa 2 x 10W (Onkyo)" (số W tự suy, TCL không
+        công bố cho bản 50 inch) — đổi thành "Hệ thống loa: 2.1 kênh
+        (Onkyo)", đúng thứ TCL công bố. KHÔNG sửa "Dolby Vision, HDR10+" của
+        TCL vì cái này ĐÚNG (C655 thật sự có cả 2 chuẩn).
+
+      LỖI THÊM phát hiện lúc verify lại sau khi sửa (nhờ quét lại HTML thật
+      của cả 13 trang chi tiết để tìm giá trị cũ còn sót, thay vì tin là đã
+      sửa xong): mô tả sản phẩm (`Product.description`) CŨNG chứa thông số —
+      Philips vẫn ghi "Pixel Precise HD" và Xiaomi 55 vẫn ghi "hỗ trợ Dolby
+      Vision" trong phần mô tả dù bảng thông số đã sửa đúng. Nguyên nhân:
+      vòng upsert sản phẩm trong seed KHÔNG đồng bộ `description` (chỉ đồng
+      bộ categoryId/brandId/basePrice/isFeatured) nên sửa mô tả trong code
+      không có tác dụng với sản phẩm đã tồn tại — cùng lớp lỗi `update: {}`
+      no-op đã gặp vài lần trước đây. Đã thêm `description` vào khối `update`
+      để seed là nguồn chân lý cho cả mô tả, và sửa lại 3 mô tả (Philips,
+      Xiaomi 55, LG).
+
+      KHÔNG SỬA (đã kiểm tra và xác nhận ĐÚNG): toàn bộ thông số 3 laptop
+      (MacBook Air M3, Dell XPS 13, Asus Zenbook 14 OLED), Samsung S24 Ultra,
+      Xiaomi Redmi Note 13, và các dòng còn lại của iPhone (A17 Pro, 8GB RAM,
+      pin 4441mAh, camera 48MP+12MP+12MP, IP68, khung titanium).
+
+      Đã test: chạy lại seed (seed tự xóa-tạo-lại attributes nên thông số
+      trong DB luôn khớp code), xóa `.next` + restart dev server, quét lại
+      HTML thật của cả 13 trang chi tiết xác nhận không còn giá trị sai nào
+      sót; bộ lọc "Dung lượng ROM" cập nhật đúng theo dung lượng mới
+      (128GB(1)/256GB(3)/512GB(2)) và lọc `spec_dung-luong-rom=512gb` trả
+      đúng iPhone + S24 Ultra. `tsc`/`eslint`/`npm run build` sạch.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
