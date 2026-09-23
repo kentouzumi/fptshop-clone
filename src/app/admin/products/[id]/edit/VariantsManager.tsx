@@ -117,7 +117,7 @@ function VariantEditRow({
       <td colSpan={7} className="p-3">
         <div className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs text-zinc-500">SKU</label>
+            <label className="mb-1 block text-xs text-zinc-500">SKU (để trống sẽ tự tạo)</label>
             <input
               className="bg-white text-zinc-900 w-32 rounded border border-zinc-300 px-2 py-1 text-sm"
               value={form.sku}

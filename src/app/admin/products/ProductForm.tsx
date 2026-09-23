@@ -171,10 +171,12 @@ export default function ProductForm({
         return;
       }
 
-      // Sản phẩm đã tạo xong ở bước trên — nếu admin có nhập SKU cho biến
-      // thể đầu tiên, tạo luôn NGAY SAU (request riêng, không cùng
-      // transaction với việc tạo sản phẩm) để dùng chung ảnh vừa upload.
-      if (!isEdit && variantSku.trim()) {
+      // Sản phẩm đã tạo xong ở bước trên — LUÔN tạo kèm 1 biến thể đầu tiên
+      // ngay sau đó (request riêng, không cùng transaction với việc tạo sản
+      // phẩm) để dùng chung ảnh vừa upload — sản phẩm cần ít nhất 1 biến
+      // thể mới bán được nên không cần hỏi admin có muốn tạo hay không.
+      // SKU để trống thì server tự sinh (xem generateSku() ở lib/variants.ts).
+      if (!isEdit) {
         const variantRes = await fetch(`/api/admin/products/${data.id}/variants`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -294,21 +296,21 @@ export default function ProductForm({
 
       {!isEdit && (
         <div className="rounded-lg border border-zinc-200 p-3">
-          <p className="mb-2 text-sm font-medium">
-            Biến thể đầu tiên (không bắt buộc — để trống SKU nếu muốn thêm
-            biến thể sau ở trang Sửa)
-          </p>
+          <p className="mb-2 text-sm font-medium">Biến thể đầu tiên</p>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">SKU</label>
+              <label className="mb-1 block text-xs text-zinc-500">
+                SKU (không bắt buộc)
+              </label>
               <input
                 className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                placeholder="Để trống sẽ tự tạo"
                 value={variantSku}
                 onChange={(e) => setVariantSku(e.target.value)}
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">Màu</label>
+              <label className="mb-1 block text-xs text-zinc-500">Màu (không bắt buộc)</label>
               <input
                 className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 value={variantColor}
@@ -316,7 +318,9 @@ export default function ProductForm({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-zinc-500">Dung lượng</label>
+              <label className="mb-1 block text-xs text-zinc-500">
+                Dung lượng (không bắt buộc)
+              </label>
               <input
                 className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
                 value={variantStorage}
@@ -325,9 +329,11 @@ export default function ProductForm({
             </div>
           </div>
           <p className="mt-2 text-xs text-zinc-500">
-            Biến thể này dùng chung giá (ở trên) và ảnh chung của sản phẩm
-            (không gắn ảnh riêng) — vào trang Sửa nếu cần đổi giá riêng hoặc
-            gắn ảnh riêng theo màu.
+            SKU là mã quản lý kho nội bộ, không hiện cho khách xem — để trống
+            sẽ được tự tạo, không cần quan tâm nếu không rành khái niệm này.
+            Biến thể dùng chung giá (ở trên) và ảnh chung của sản phẩm (không
+            gắn ảnh riêng) — vào trang Sửa nếu cần đổi giá riêng hoặc gắn ảnh
+            riêng theo màu.
           </p>
         </div>
       )}

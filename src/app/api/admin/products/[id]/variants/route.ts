@@ -16,7 +16,7 @@ export async function POST(
   const input = parseVariantInput(body);
   if (!input) {
     return NextResponse.json(
-      { error: "Vui lòng nhập SKU và giá (>= 0) hợp lệ." },
+      { error: "Vui lòng nhập giá (>= 0) hợp lệ." },
       { status: 400 }
     );
   }

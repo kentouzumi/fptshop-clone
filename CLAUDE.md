@@ -2997,6 +2997,50 @@
       `/admin/products/new` thử điền đủ SKU/Màu/Dung lượng lúc tạo sản phẩm
       để xác nhận không còn phải qua bước riêng ở trang Sửa nữa.
 
+- [x] Cho SKU tự sinh nếu để trống (user hỏi thẳng "SKU có thể tự tạo không
+      tôi không biết nó là gì" — SKU là khái niệm quản lý kho nội bộ, không
+      nên bắt admin phổ thông phải hiểu để tạo được biến thể).
+
+      lib/variants.ts: bỏ điều kiện `sku.length > 0` khỏi `parseVariantInput`
+      (giờ SKU rỗng vẫn hợp lệ). Thêm `skuPart()` (chuẩn hóa 1 đoạn text
+      thành SKU-safe: viết hoa, bỏ dấu tiếng Việt qua NFD + tự thay `Đ`→`D`
+      riêng vì NFD không tách được ký tự này, chỉ giữ A-Z0-9, cùng cách làm
+      với `slugifyAttr()` ở lib/products.ts) và `generateSku(productName,
+      color, storage)` — ghép `TÊNSP-MÀU-DUNGLUONG-XXXXX` (5 ký tự ngẫu
+      nhiên cuối để đảm bảo không trùng, vì SKU là unique toàn hệ thống).
+      `resolveSku()`: nếu SKU client gửi lên rỗng thì tự gọi
+      `generateSku()`, thử lại tối đa 5 lần nếu trùng (xác suất trùng với
+      hậu tố ngẫu nhiên gần như bằng 0 nhưng vẫn tự kiểm tra lại DB thay vì
+      tin suông, đúng nguyên tắc "không tin ràng buộc DB tự chặn" áp dụng
+      xuyên suốt dự án). `createVariant()`/`updateVariant()` đều gọi qua
+      `resolveSku()` trước khi ghi — CHỈ check trùng SKU thủ công (throw 409)
+      khi SKU KHÔNG rỗng (SKU tự sinh thì `resolveSku()` đã tự đảm bảo không
+      trùng nên bỏ qua bước check thừa).
+
+      UI: ProductForm.tsx — bỏ hẳn điều kiện "chỉ tạo biến thể đầu tiên nếu
+      có nhập SKU" (trước đó để trống SKU = bỏ qua cả bước tạo biến thể) vì
+      giờ để trống SKU vẫn tạo được biến thể bình thường — ĐƠN GIẢN HÓA
+      thành LUÔN tạo biến thể đầu tiên ngay khi tạo sản phẩm (không cần hỏi
+      admin có muốn hay không, vì sản phẩm vốn cần >=1 biến thể mới bán
+      được). Đổi nhãn ô SKU thành "SKU (không bắt buộc)" + placeholder "Để
+      trống sẽ tự tạo" + ghi chú giải thích SKU là gì (mã quản lý kho nội
+      bộ, khách không nhìn thấy). VariantsManager.tsx (trang Sửa, "+ Thêm
+      biến thể") cũng đổi nhãn tương tự. Đổi thông báo lỗi ở 2 route liên
+      quan từ "Vui lòng nhập SKU và giá..." thành "Vui lòng nhập giá..."
+      (không còn nhắc SKU vì hết bắt buộc).
+
+      Đã test qua dev server bằng DB thật (tạo 1 ADMIN test tạm, dọn sạch
+      sau khi xong): tạo variant với SKU rỗng + màu "Đỏ" — server tự sinh
+      đúng `TESTAUTOSKUPRODU-DO-XZQMR` (xác nhận bỏ dấu "Đỏ"→"DO" đúng);
+      PATCH cùng variant với SKU rỗng lần nữa — tự sinh SKU MỚI khác lần
+      trước (không lỗi trùng với chính nó nhờ tham số `excludeId`); tạo
+      thêm 1 variant khác không có cả màu lẫn dung lượng (mọi field đều
+      trống ngoài giá) — vẫn tự sinh SKU thành công, không lỗi. `tsc
+      --noEmit`/`eslint`/`npm run build` sạch. CHƯA tự xem qua trình duyệt
+      thật (môi trường không có màn hình) — nhờ user tự mở `npm run dev`
+      vào `/admin/products/new` để trống ô SKU khi tạo sản phẩm để xác nhận
+      luồng chạy trơn tru.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
