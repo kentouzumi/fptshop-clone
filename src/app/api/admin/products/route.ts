@@ -36,7 +36,12 @@ export async function POST(request: Request) {
       basePrice: values.basePrice,
       status: values.status,
       isFeatured: values.isFeatured,
-      images: values.imageUrl ? { create: [{ url: values.imageUrl, sortOrder: 0 }] } : undefined,
+      images: values.images.length
+        ? { create: values.images.map((url, i) => ({ url, sortOrder: i })) }
+        : undefined,
+      attributes: values.attributes.length
+        ? { create: values.attributes.map((a, i) => ({ ...a, sortOrder: i })) }
+        : undefined,
     },
   });
 

@@ -2841,6 +2841,57 @@
       `npm run build` sạch (route `/admin/inventory` và `/api/admin/
       inventory` đều xuất hiện đúng trong danh sách route sau build).
 
+- [x] Cho admin thêm NHIỀU ảnh + bảng thông số kỹ thuật khi tạo/sửa sản phẩm
+      (user báo ProductForm cũ chỉ có đúng 1 ô ảnh và không có chỗ nào nhập
+      thông số — đúng vậy, `imageUrl` trước giờ là 1 string đơn, còn
+      `ProductAttribute` chỉ từng được ghi qua prisma/seed.ts, chưa có UI).
+
+      lib/productInput.ts: đổi `imageUrl: string` thành `images: string[]`
+      (lọc bỏ chuỗi rỗng) và thêm `attributes: {groupName, attrName,
+      attrValue}[]` (lọc bỏ dòng thiếu bất kỳ trường nào). API
+      `POST /api/admin/products`: tạo kèm `images`/`attributes` qua nested
+      `create` (sortOrder = index trong mảng). `PATCH /api/admin/products/
+      [id]`: đồng bộ lại danh sách ảnh/thông số bằng cách XÓA HẾT rồi TẠO LẠI
+      theo đúng mảng mới gửi lên — bắt buộc vì `ProductAttribute` không có
+      unique key tự nhiên để upsert từng dòng (cùng pattern đã dùng ở
+      prisma/seed.ts). RIÊNG ẢNH: chỉ xóa/tạo lại ảnh có `variantId: null`
+      (ảnh cấp sản phẩm) — CHỦ ĐỘNG KHÔNG đụng tới ảnh đã gắn riêng theo
+      từng biến thể (variantId khác null, hiện chỉ gán được qua script/
+      Prisma Studio, xem mục "Tách bộ chọn Phiên bản..." — nếu xóa nhầm sẽ
+      làm mất tính năng ảnh-đổi-theo-màu vừa làm trước đó). Đã tự viết script
+      test PATCH lại đúng Xiaomi Redmi Note 13 (sản phẩm có sẵn 2 ảnh gắn
+      variant) để xác nhận điều này — sau PATCH, 2 ảnh variant vẫn nguyên,
+      chỉ ảnh chung bị thay.
+
+      ProductForm.tsx: đổi ô ảnh đơn thành 2 cách thêm ảnh (giống hệt pattern
+      đã dùng ở ReviewForm.tsx — input `multiple` upload tuần tự từng file
+      qua `/api/admin/upload`, HOẶC dán URL thủ công qua ô nhập + nút
+      "+ Thêm") kèm lưới thumbnail có thể xóa từng ảnh, ảnh ĐẦU TIÊN trong
+      mảng luôn là ảnh đại diện (có nhãn "Đại diện", khớp đúng quy ước
+      `sortOrder` đã dùng ở trang chi tiết sản phẩm) — giới hạn 8 ảnh/sản
+      phẩm (`MAX_IMAGES`). Thêm section "Thông số kỹ thuật": danh sách dòng
+      động (Nhóm/Tên thông số/Giá trị), nút "+ Thêm thông số" thêm dòng
+      trống, mỗi dòng có nút xóa riêng — không validate chặt ở client (dòng
+      thiếu ô nào sẽ tự bị bỏ qua ở server, đã ghi rõ trong UI) vì đây là
+      form nhập tự do, không cần chặn cứng.
+
+      admin/products/[id]/edit/page.tsx: include thêm `images` (lọc
+      `variantId: null`, đủ toàn bộ chứ không `take:1` như cũ) và
+      `attributes` (sort theo `sortOrder`) để nạp đúng dữ liệu có sẵn vào
+      form khi sửa.
+
+      Đã test qua dev server bằng DB thật (tạo 1 ADMIN test tạm qua script,
+      không đụng dữ liệu thật, xóa sạch sau khi xong): tạo sản phẩm mới kèm
+      3 ảnh + 3 thông số (2 nhóm khác nhau) qua API — DB xác nhận đủ cả 3
+      ảnh đúng thứ tự và 3 dòng attribute đúng nhóm/tên/giá trị; PATCH lại
+      với 1 ảnh + 1 thông số khác — DB xác nhận đã THAY THẾ đúng (không cộng
+      dồn); PATCH thật lên sản phẩm Xiaomi Redmi Note 13 (đã có 2 ảnh gắn
+      variant từ trước) để xác nhận ảnh variant không bị xóa nhầm như mô tả
+      trên. `tsc --noEmit`/`eslint`/`npm run build` sạch. CHƯA tự xem qua
+      trình duyệt thật (môi trường không có màn hình) — nhờ user tự mở
+      `npm run dev` vào `/admin/products/new` hoặc sửa 1 sản phẩm để xác
+      nhận UI thêm nhiều ảnh + thông số hoạt động thuận tay.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 
 type Option = { id: string; name: string };
 
+export interface ProductAttributeRow {
+  groupName: string;
+  attrName: string;
+  attrValue: string;
+}
+
 export interface ProductFormValues {
   id?: string;
   name: string;
@@ -15,8 +21,11 @@ export interface ProductFormValues {
   basePrice: string;
   status: string;
   isFeatured: boolean;
-  imageUrl: string;
+  images: string[];
+  attributes: ProductAttributeRow[];
 }
+
+const MAX_IMAGES = 8;
 
 function slugify(text: string) {
   return text
@@ -48,7 +57,9 @@ export default function ProductForm({
   const [basePrice, setBasePrice] = useState(initial?.basePrice ?? "");
   const [status, setStatus] = useState(initial?.status ?? "ACTIVE");
   const [isFeatured, setIsFeatured] = useState(initial?.isFeatured ?? false);
-  const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? "");
+  const [images, setImages] = useState<string[]>(initial?.images ?? []);
+  const [manualImageUrl, setManualImageUrl] = useState("");
+  const [attributes, setAttributes] = useState<ProductAttributeRow[]>(initial?.attributes ?? []);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -58,26 +69,61 @@ export default function ProductForm({
     if (!isEdit) setSlug(slugify(value));
   }
 
-  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function handleFilesChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    const remaining = MAX_IMAGES - images.length;
+    if (remaining <= 0) {
+      setError(`Tối đa ${MAX_IMAGES} ảnh cho mỗi sản phẩm.`);
+      return;
+    }
 
     setUploading(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/admin/upload", { method: "POST", body: formData });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error ?? "Upload ảnh thất bại.");
-        return;
+      for (const file of files.slice(0, remaining)) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/admin/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "Upload ảnh thất bại.");
+          break;
+        }
+        setImages((prev) => [...prev, data.url]);
       }
-      setImageUrl(data.url);
     } finally {
       setUploading(false);
     }
+  }
+
+  function addManualImageUrl() {
+    const url = manualImageUrl.trim();
+    if (!url) return;
+    if (images.length >= MAX_IMAGES) {
+      setError(`Tối đa ${MAX_IMAGES} ảnh cho mỗi sản phẩm.`);
+      return;
+    }
+    setImages((prev) => [...prev, url]);
+    setManualImageUrl("");
+  }
+
+  function removeImage(index: number) {
+    setImages((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addAttributeRow() {
+    setAttributes((prev) => [...prev, { groupName: "", attrName: "", attrValue: "" }]);
+  }
+
+  function updateAttributeRow(index: number, field: keyof ProductAttributeRow, value: string) {
+    setAttributes((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
+  }
+
+  function removeAttributeRow(index: number) {
+    setAttributes((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -95,7 +141,8 @@ export default function ProductForm({
         basePrice: Number(basePrice),
         status,
         isFeatured,
-        imageUrl,
+        images,
+        attributes,
       };
 
       const res = await fetch(
@@ -212,28 +259,121 @@ export default function ProductForm({
       </label>
 
       <div>
-        <label className="mb-1 block text-sm font-medium">Ảnh sản phẩm</label>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          disabled={uploading}
-          className="file-input"
-        />
-        <p className="mt-1 text-xs text-zinc-500">
+        <label className="mb-1 block text-sm font-medium">
+          Ảnh sản phẩm (tối đa {MAX_IMAGES} ảnh, ảnh đầu tiên là ảnh đại diện)
+        </label>
+        {images.length < MAX_IMAGES && (
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFilesChange}
+            disabled={uploading}
+            className="file-input"
+          />
+        )}
+        <p className="mt-2 text-xs text-zinc-500">
           Hoặc dán trực tiếp URL ảnh (dùng khi chưa cấu hình Supabase Storage):
         </p>
-        <input
-          className="bg-white text-zinc-900 mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-          placeholder="https://..."
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-        />
+        <div className="mt-1 flex gap-2">
+          <input
+            className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            placeholder="https://..."
+            value={manualImageUrl}
+            onChange={(e) => setManualImageUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addManualImageUrl();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={addManualImageUrl}
+            className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium transition hover:bg-zinc-100"
+          >
+            + Thêm
+          </button>
+        </div>
         {uploading && <p className="mt-1 text-xs text-zinc-500">Đang tải ảnh lên...</p>}
-        {imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageUrl} alt="Xem trước" className="mt-2 h-24 w-24 rounded object-cover" />
+        {images.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {images.map((url, i) => (
+              <div key={`${url}-${i}`} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt={`Ảnh ${i + 1}`} className="h-20 w-20 rounded object-cover" />
+                {i === 0 && (
+                  <span className="absolute bottom-0 left-0 rounded-tr bg-black/70 px-1 text-[10px] text-white">
+                    Đại diện
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeImage(i)}
+                  className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black text-xs text-white"
+                  aria-label="Xóa ảnh"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
         )}
+      </div>
+
+      <div>
+        <div className="mb-1 flex items-center justify-between">
+          <label className="block text-sm font-medium">Thông số kỹ thuật</label>
+          <button
+            type="button"
+            onClick={addAttributeRow}
+            className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium transition hover:bg-zinc-100"
+          >
+            + Thêm thông số
+          </button>
+        </div>
+        {attributes.length === 0 && (
+          <p className="text-xs text-zinc-500">Chưa có thông số nào. Bấm &quot;+ Thêm thông số&quot; để thêm.</p>
+        )}
+        {attributes.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {attributes.map((attr, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2">
+                <input
+                  className="bg-white text-zinc-900 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+                  placeholder="Nhóm (vd: Màn hình)"
+                  value={attr.groupName}
+                  onChange={(e) => updateAttributeRow(i, "groupName", e.target.value)}
+                />
+                <input
+                  className="bg-white text-zinc-900 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+                  placeholder="Tên thông số (vd: Kích thước)"
+                  value={attr.attrName}
+                  onChange={(e) => updateAttributeRow(i, "attrName", e.target.value)}
+                />
+                <input
+                  className="bg-white text-zinc-900 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+                  placeholder="Giá trị (vd: 6.7 inch)"
+                  value={attr.attrValue}
+                  onChange={(e) => updateAttributeRow(i, "attrValue", e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeAttributeRow(i)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-red-600"
+                  aria-label="Xóa thông số"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-1 text-xs text-zinc-500">
+          Thông số cùng &quot;Nhóm&quot; sẽ được gộp chung khi hiển thị ở trang chi tiết sản phẩm.
+          Dòng thiếu bất kỳ ô nào sẽ tự bị bỏ qua khi lưu.
+        </p>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

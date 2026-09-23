@@ -46,10 +46,23 @@ export async function PATCH(
     },
   });
 
-  if (values.imageUrl) {
-    await prisma.productImage.deleteMany({ where: { productId: id, sortOrder: 0 } });
-    await prisma.productImage.create({
-      data: { productId: id, url: values.imageUrl, sortOrder: 0 },
+  // Chỉ thay thế ảnh CẤP SẢN PHẨM (variantId: null) — không đụng tới ảnh đã
+  // gắn riêng cho từng biến thể (variantId khác null, hiện chỉ gán được qua
+  // script/Prisma Studio, xem ProductGalleryAndBuy.tsx).
+  await prisma.productImage.deleteMany({ where: { productId: id, variantId: null } });
+  if (values.images.length) {
+    await prisma.productImage.createMany({
+      data: values.images.map((url, i) => ({ productId: id, url, sortOrder: i })),
+    });
+  }
+
+  // ProductAttribute không có unique key tự nhiên để upsert từng dòng nên
+  // đồng bộ bằng cách xóa hết rồi tạo lại theo đúng danh sách mới gửi lên
+  // (cùng pattern đã dùng ở prisma/seed.ts).
+  await prisma.productAttribute.deleteMany({ where: { productId: id } });
+  if (values.attributes.length) {
+    await prisma.productAttribute.createMany({
+      data: values.attributes.map((a, i) => ({ productId: id, ...a, sortOrder: i })),
     });
   }
 

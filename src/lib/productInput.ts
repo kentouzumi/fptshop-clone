@@ -1,5 +1,33 @@
 import { ProductStatus } from "@prisma/client";
 
+export interface ProductAttributeInput {
+  groupName: string;
+  attrName: string;
+  attrValue: string;
+}
+
+function parseImages(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function parseAttributes(raw: unknown): ProductAttributeInput[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      const r = item as Record<string, unknown>;
+      return {
+        groupName: typeof r?.groupName === "string" ? r.groupName.trim() : "",
+        attrName: typeof r?.attrName === "string" ? r.attrName.trim() : "",
+        attrValue: typeof r?.attrValue === "string" ? r.attrValue.trim() : "",
+      };
+    })
+    .filter((a) => a.groupName && a.attrName && a.attrValue);
+}
+
 export function parseProductInput(body: unknown) {
   const b = body as Record<string, unknown>;
   const name = typeof b?.name === "string" ? b.name.trim() : "";
@@ -12,7 +40,8 @@ export function parseProductInput(body: unknown) {
     ? (b.status as ProductStatus)
     : ProductStatus.DRAFT;
   const isFeatured = Boolean(b?.isFeatured);
-  const imageUrl = typeof b?.imageUrl === "string" ? b.imageUrl.trim() : "";
+  const images = parseImages(b?.images);
+  const attributes = parseAttributes(b?.attributes);
 
   const isValid =
     name.length >= 2 &&
@@ -24,6 +53,6 @@ export function parseProductInput(body: unknown) {
 
   return {
     isValid,
-    values: { name, slug, description, categoryId, brandId, basePrice, status, isFeatured, imageUrl },
+    values: { name, slug, description, categoryId, brandId, basePrice, status, isFeatured, images, attributes },
   };
 }
