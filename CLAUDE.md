@@ -3828,6 +3828,49 @@
       (128GB(1)/256GB(3)/512GB(2)) và lọc `spec_dung-luong-rom=512gb` trả
       đúng iPhone + S24 Ultra. `tsc`/`eslint`/`npm run build` sạch.
 
+- [x] Rút gọn bảng thông số: mỗi sản phẩm CHỈ còn đúng các thông số được dùng
+      làm BỘ LỌC của danh mục đó, bỏ hết phần còn lại (user yêu cầu rõ danh
+      sách giữ lại cho từng danh mục, "những cái khác bỏ đi"). Thêm "Tần số
+      quét" vào bộ lọc của Tivi (trước đó tivi chỉ có Loại tivi/Kích thước/Độ
+      phân giải) — sửa ở `CATEGORY_FILTER_SPECS` (src/lib/products.ts).
+
+      Số thông số mỗi sản phẩm giảm mạnh: điện thoại 15-17 dòng -> 4 thông số
+      (Hiệu năng và Pin, Dung lượng ROM, RAM, Tần số quét), laptop 11-12 ->
+      6 (CPU, RAM, Card đồ họa, Ổ cứng, Kích thước màn hình, Tần số quét),
+      tivi 10-11 -> 4 (Loại tivi, Kích thước màn hình, Độ phân giải, Tần số
+      quét). Bỏ hẳn camera, dung lượng pin, công suất sạc, chip xử lý, hệ
+      điều hành, chất liệu khung, kháng nước, độ phân giải laptop, công nghệ
+      màn hình, chuẩn HDR, công suất loa, cổng kết nối, trọng lượng, bộ xử lý
+      tivi... KẾT QUẢ: bảng thông số ở trang chi tiết và bộ lọc ở sidebar giờ
+      khớp nhau 1-1 — thấy dòng nào trong bảng là lọc được theo dòng đó, không
+      còn dòng "chỉ để đọc".
+
+      LƯU Ý cho lần sau: thêm/bớt thông số phải sửa ĐỒNG THỜI 2 nơi —
+      `CATEGORY_FILTER_SPECS` (danh sách bộ lọc) và mảng `attributes` của
+      từng sản phẩm trong prisma/seed.ts (dữ liệu). Sửa 1 bên thì hoặc bộ lọc
+      rỗng (khai báo tên thông số không có dữ liệu), hoặc thông số hiện trong
+      bảng mà không lọc được. Đã viết script audit đối chiếu 2 chiều cho cả
+      13 sản phẩm (thừa/thiếu so với danh sách bộ lọc) — 0 sai lệch.
+
+      SỬA THÊM 1 chỗ dễ bỏ sót: LG UQ8000 trước ghi tần số quét là "60Hz
+      Native" (đúng theo cách LG ghi) — nhưng khi "Tần số quét" trở thành bộ
+      lọc của Tivi thì chuỗi này tách thành MỘT MỨC RIÊNG bên cạnh "60Hz",
+      khiến bộ lọc có 2 dòng cùng nghĩa (60Hz và 60Hz Native) và lọc "60Hz"
+      sẽ bỏ sót LG. Đã chuẩn hóa về "60Hz". Đây là rủi ro chung khi biến 1
+      thông số mô tả tự do thành bộ lọc: giá trị phải VIẾT GIỐNG HỆT NHAU
+      giữa các sản phẩm mới gộp đúng nhóm.
+
+      Đã test: chạy lại seed, xóa `.next` + restart, xác nhận cả 3 danh mục
+      hiện đúng bộ lọc yêu cầu (grep thẻ `<summary>` trong phần `<aside>` của
+      HTML thật), bảng thông số trang chi tiết chỉ còn đúng các dòng đó, lọc
+      `spec_tan-so-quet=60hz` ở tivi trả đúng 6/6 máy. `tsc`/`eslint`/
+      `npm run build` sạch, dev server không còn cảnh báo trùng key.
+
+      GHI NHẬN (không phải lỗi): bộ lọc "Tần số quét" của Tivi hiện chỉ có 1
+      giá trị 60Hz vì cả 6 tivi đều 60Hz thật — giống tình trạng "Tần số quét"
+      của điện thoại (cả 4 máy đều 120Hz). Lọc theo nó không thu hẹp được gì
+      cho tới khi thêm máy có tần số khác (tivi 120Hz, điện thoại 90/60Hz).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

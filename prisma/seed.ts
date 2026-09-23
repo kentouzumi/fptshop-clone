@@ -67,6 +67,12 @@ async function main() {
   // dùng khi tạo mới (nhánh `create`), nên chạy lại seed không ghi đè ảnh cũ.
   // Riêng 6 tivi là sản phẩm mới, ảnh thật lấy từ trang chính hãng (LG, TCL,
   // Xiaomi, Samsung, Philips) rồi tải lên Supabase Storage.
+  // THÔNG SỐ KỸ THUẬT: mỗi sản phẩm CHỈ giữ đúng những thông số được dùng làm
+  // BỘ LỌC của danh mục đó (xem CATEGORY_FILTER_SPECS trong src/lib/products.ts)
+  // — không còn các thông số chỉ để tham khảo (camera, pin, cổng kết nối, công
+  // suất loa, hệ điều hành...). Nhờ vậy bảng thông số ở trang chi tiết và bộ
+  // lọc ở sidebar luôn khớp nhau 1-1: thấy dòng nào trong bảng là lọc được
+  // theo dòng đó. Thêm/bớt thông số thì phải sửa ĐỒNG THỜI cả 2 nơi.
   const products = [
     // ===================== ĐIỆN THOẠI =====================
     // Bộ lọc: Hiệu năng và Pin / Dung lượng ROM / RAM / Tần số quét.
@@ -85,23 +91,13 @@ async function main() {
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=iPhone+15+Pro+Max",
       attributes: [
-        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Chip cao cấp (flagship)" },
-        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "6.7 inch" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "Super Retina XDR OLED" },
-        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
-        { groupName: "Cấu hình", attrName: "Chip xử lý", attrValue: "Apple A17 Pro" },
-        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Chip cao cấp (flagship)" },
         // iPhone 15 Pro Max KHÔNG có bản 128GB (chỉ bản Pro 6.1 inch mới có),
         // khởi điểm từ 256GB — xem Apple Tech Specs.
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "512GB" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "iOS 17" },
-        { groupName: "Camera", attrName: "Camera sau", attrValue: "48MP + 12MP + 12MP" },
-        { groupName: "Camera", attrName: "Camera trước", attrValue: "12MP" },
-        { groupName: "Pin & Sạc", attrName: "Dung lượng pin", attrValue: "4441 mAh" },
-        { groupName: "Pin & Sạc", attrName: "Công suất sạc", attrValue: "20W" },
-        { groupName: "Thiết kế", attrName: "Chất liệu khung", attrValue: "Titanium" },
-        { groupName: "Thiết kế", attrName: "Kháng nước, bụi", attrValue: "IP68" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
         { sku: "IP15PM-256-TN", color: "Titan Tự Nhiên", storage: "256GB", price: 29990000 },
@@ -118,22 +114,11 @@ async function main() {
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=Galaxy+S24+Ultra",
       attributes: [
-        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Chip cao cấp (flagship)" },
-        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
-        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "6.8 inch" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "Dynamic AMOLED 2X" },
-        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
-        { groupName: "Cấu hình", attrName: "Chip xử lý", attrValue: "Snapdragon 8 Gen 3 for Galaxy" },
-        { groupName: "Cấu hình", attrName: "RAM", attrValue: "12GB" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Chip cao cấp (flagship)" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "512GB" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 14, One UI 6.1" },
-        { groupName: "Camera", attrName: "Camera sau", attrValue: "200MP + 12MP + 50MP + 10MP" },
-        { groupName: "Camera", attrName: "Camera trước", attrValue: "12MP" },
-        { groupName: "Pin & Sạc", attrName: "Dung lượng pin", attrValue: "5000 mAh" },
-        { groupName: "Pin & Sạc", attrName: "Công suất sạc", attrValue: "45W" },
-        { groupName: "Thiết kế", attrName: "Chất liệu khung", attrValue: "Titanium" },
-        { groupName: "Thiết kế", attrName: "Kháng nước, bụi", attrValue: "IP68" },
-        { groupName: "Phụ kiện", attrName: "Bút cảm ứng", attrValue: "S Pen đi kèm" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "12GB" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
         { sku: "S24U-256-BLK", color: "Đen", storage: "512GB", price: 26990000 },
@@ -150,21 +135,12 @@ async function main() {
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Redmi+Note+13",
       attributes: [
-        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Chip tầm trung" },
-        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
-        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "6.67 inch" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "AMOLED" },
-        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
-        { groupName: "Cấu hình", attrName: "Chip xử lý", attrValue: "Snapdragon 685" },
-        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Chip tầm trung" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "128GB" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 13, MIUI 14" },
-        { groupName: "Camera", attrName: "Camera sau", attrValue: "108MP + 8MP + 2MP" },
-        { groupName: "Camera", attrName: "Camera trước", attrValue: "16MP" },
-        { groupName: "Pin & Sạc", attrName: "Dung lượng pin", attrValue: "5000 mAh" },
-        { groupName: "Pin & Sạc", attrName: "Công suất sạc", attrValue: "33W" },
-        { groupName: "Thiết kế", attrName: "Kháng nước, bụi", attrValue: "IP54" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
         { sku: "RN13-128-BLK", color: "Đen", storage: "128GB", price: 4990000 },
@@ -181,22 +157,12 @@ async function main() {
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=OPPO+Reno11+5G",
       attributes: [
-        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Chip tầm trung" },
-        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
-        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Sạc nhanh từ 60W" },
-        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "6.7 inch" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "AMOLED" },
-        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
-        { groupName: "Cấu hình", attrName: "Chip xử lý", attrValue: "MediaTek Dimensity 7050" },
-        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Chip tầm trung" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Sạc nhanh từ 60W" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 14, ColorOS 14" },
-        // Reno11 5G dùng cụm 50MP + 32MP tele + 8MP siêu rộng (bản Reno11 F
-        // mới là 64MP + 8MP + 2MP macro) — xem trang thông số OPPO Global.
-        { groupName: "Camera", attrName: "Camera sau", attrValue: "50MP chính + 32MP tele + 8MP góc siêu rộng" },
-        { groupName: "Camera", attrName: "Camera trước", attrValue: "32MP" },
-        { groupName: "Pin & Sạc", attrName: "Dung lượng pin", attrValue: "5000 mAh" },
-        { groupName: "Pin & Sạc", attrName: "Công suất sạc", attrValue: "SUPERVOOC 67W" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
         { sku: "OPPO-RENO11-256-GRN", color: "Xanh Ngọc", storage: "256GB", price: 9990000 },
@@ -207,8 +173,7 @@ async function main() {
     // Bộ lọc: CPU / RAM / Card đồ họa / Ổ cứng / Kích thước màn hình / Tần số quét.
     // "Card đồ họa" cố ý dùng giá trị ở mức PHÂN LOẠI ("Card tích hợp" /
     // "Card rời ...") chứ không phải tên chip cụ thể — lọc theo tên chip thì
-    // mỗi giá trị chỉ ứng với đúng 1 máy, không thu hẹp được gì. Tên chip cụ
-    // thể vẫn hiển thị ở dòng "Chip đồ họa" (không dùng làm bộ lọc).
+    // mỗi giá trị chỉ ứng với đúng 1 máy, không thu hẹp được gì.
     {
       name: "MacBook Air M3",
       slug: "macbook-air-m3",
@@ -219,18 +184,12 @@ async function main() {
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=MacBook+Air+M3",
       attributes: [
-        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "13.6 inch" },
-        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "2560 x 1664 (Liquid Retina)" },
-        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
         { groupName: "Cấu hình", attrName: "CPU", attrValue: "Apple M3" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
-        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "256GB SSD" },
         { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card tích hợp" },
-        { groupName: "Cấu hình", attrName: "Chip đồ họa", attrValue: "GPU 8 nhân (Apple M3)" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "macOS" },
-        { groupName: "Pin & Sạc", attrName: "Thời lượng pin", attrValue: "Tới 18 giờ" },
-        { groupName: "Kết nối", attrName: "Cổng giao tiếp", attrValue: "2x Thunderbolt/USB 4, MagSafe 3, jack 3.5mm" },
-        { groupName: "Thiết kế", attrName: "Trọng lượng", attrValue: "1.24 kg" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "256GB SSD" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "13.6 inch" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
       variants: [{ sku: "MBA-M3-8-256", color: "Bạc", storage: "8GB/256GB", price: 27990000 }],
     },
@@ -244,17 +203,12 @@ async function main() {
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Dell+XPS+13",
       attributes: [
-        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "13.4 inch" },
-        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "1920 x 1200 (FHD+)" },
-        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
         { groupName: "Cấu hình", attrName: "CPU", attrValue: "Intel Core i7" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "16GB" },
-        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
         { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card tích hợp" },
-        { groupName: "Cấu hình", attrName: "Chip đồ họa", attrValue: "Intel Iris Xe Graphics" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Windows 11" },
-        { groupName: "Pin & Sạc", attrName: "Thời lượng pin", attrValue: "Tới 12 giờ" },
-        { groupName: "Thiết kế", attrName: "Trọng lượng", attrValue: "1.2 kg" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "13.4 inch" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
       variants: [{ sku: "XPS13-16-512", color: "Bạc", storage: "16GB/512GB", price: 32990000 }],
     },
@@ -268,23 +222,18 @@ async function main() {
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Asus+Zenbook+14+OLED",
       attributes: [
-        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "14 inch" },
-        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "2880 x 1800 (2.8K OLED)" },
-        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
         { groupName: "Cấu hình", attrName: "CPU", attrValue: "Intel Core Ultra 7" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "16GB" },
-        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
         { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card tích hợp" },
-        { groupName: "Cấu hình", attrName: "Chip đồ họa", attrValue: "Intel Arc Graphics" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Windows 11" },
-        { groupName: "Pin & Sạc", attrName: "Thời lượng pin", attrValue: "75Wh, tới 14 giờ" },
-        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "2x Thunderbolt 4, USB-A, HDMI 2.1" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "14 inch" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [{ sku: "ASUS-ZB14-16-512", color: "Đen", storage: "16GB/512GB", price: 22990000 }],
     },
 
     // ===================== TIVI =====================
-    // Bộ lọc: Loại tivi / Kích thước màn hình / Độ phân giải.
+    // Bộ lọc: Loại tivi / Kích thước màn hình / Độ phân giải / Tần số quét.
     // "Loại tivi" phân biệt Smart Tivi (hệ điều hành riêng của hãng: Tizen của
     // Samsung, webOS của LG) với Google Tivi (chạy Google TV) — đúng cách các
     // siêu thị điện máy VN phân loại, và là thứ người mua hỏi đầu tiên.
@@ -303,13 +252,7 @@ async function main() {
         { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Smart Tivi" },
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "65 inch" },
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "QLED" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
-        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Tizen OS" },
-        { groupName: "Tổng quan", attrName: "Bộ xử lý", attrValue: "Quantum Processor Lite 4K" },
-        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "20W (2.0 kênh)" },
-        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Atmos, OTS Lite" },
-        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
       ],
       variants: [{ sku: "TV-SS-Q60D-65", color: "Đen", storage: null, price: 18990000 }],
     },
@@ -328,14 +271,10 @@ async function main() {
         { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Smart Tivi" },
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "55 inch" },
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "LED" },
-        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz Native" },
-        { groupName: "Màn hình", attrName: "Chuẩn HDR", attrValue: "HDR10, HLG" },
-        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "webOS 22" },
-        { groupName: "Tổng quan", attrName: "Bộ xử lý", attrValue: "Bộ xử lý α5 AI 4K Gen5" },
-        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "20W (2.0 kênh)" },
-        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "AI Sound (Virtual Surround)" },
-        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
+        // LG ghi "60Hz Native" trên trang hãng, nhưng để nguyên chữ "Native"
+        // thì bộ lọc tách thành 2 mức riêng ("60Hz" và "60Hz Native") dù cùng
+        // là 60Hz — chuẩn hóa về "60Hz" cho gộp đúng nhóm.
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
       variants: [{ sku: "TV-LG-UQ8000-55", color: "Đen", storage: null, price: 11490000 }],
     },
@@ -354,16 +293,7 @@ async function main() {
         { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Google Tivi" },
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "50 inch" },
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "QLED" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
-        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Google TV" },
-        { groupName: "Tổng quan", attrName: "Bộ xử lý", attrValue: "AiPQ Processor" },
-        { groupName: "Màn hình", attrName: "Chuẩn HDR", attrValue: "Dolby Vision, HDR10+" },
-        // TCL công bố hệ loa "ONKYO 2.1 CH Hi-Fi" nhưng không công bố số W cụ
-        // thể cho bản 50 inch — ghi đúng cấu hình kênh, không đoán công suất.
-        { groupName: "Âm thanh", attrName: "Hệ thống loa", attrValue: "2.1 kênh (Onkyo)" },
-        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Atmos, DTS Virtual:X" },
-        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
       ],
       variants: [{ sku: "TV-TCL-C655-50", color: "Đen", storage: null, price: 10490000 }],
     },
@@ -382,14 +312,7 @@ async function main() {
         { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Google Tivi" },
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "43 inch" },
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "LED" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
-        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Google TV" },
-        // Bản Xiaomi bán ở VN chỉ hỗ trợ HDR10/HLG (không có Dolby Vision).
-        { groupName: "Màn hình", attrName: "Chuẩn HDR", attrValue: "HDR10, HLG" },
-        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "2 x 8W" },
-        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Audio, DTS:X" },
-        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
       ],
       variants: [{ sku: "TV-MI-APRO-43", color: "Đen", storage: null, price: 6490000 }],
     },
@@ -408,13 +331,7 @@ async function main() {
         { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Google Tivi" },
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "55 inch" },
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "LED" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
-        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Google TV" },
-        { groupName: "Màn hình", attrName: "Chuẩn HDR", attrValue: "HDR10, HLG" },
-        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "2 x 10W" },
-        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Audio, DTS:X" },
-        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
       ],
       variants: [{ sku: "TV-MI-APRO-55", color: "Đen", storage: null, price: 9490000 }],
     },
@@ -433,13 +350,7 @@ async function main() {
         { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Google Tivi" },
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "43 inch" },
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "Full HD (1920 x 1080)" },
-        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "LED" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
-        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Google TV" },
-        { groupName: "Tổng quan", attrName: "Bộ xử lý", attrValue: "Pixel Plus HD" },
-        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "8W (2 loa)" },
-        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Atmos" },
-        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
       ],
       variants: [{ sku: "TV-PHI-6900-43", color: "Đen", storage: null, price: 6990000 }],
     },

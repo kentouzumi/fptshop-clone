@@ -303,7 +303,7 @@ export interface AttributeFacet {
 export const CATEGORY_FILTER_SPECS: Record<string, string[]> = {
   "dien-thoai": ["Hiệu năng và Pin", "Dung lượng ROM", "RAM", "Tần số quét"],
   laptop: ["CPU", "RAM", "Card đồ họa", "Ổ cứng", "Kích thước màn hình", "Tần số quét"],
-  tivi: ["Loại tivi", "Kích thước màn hình", "Độ phân giải"],
+  tivi: ["Loại tivi", "Kích thước màn hình", "Độ phân giải", "Tần số quét"],
 };
 
 export const getAttributeFacets = unstable_cache(
