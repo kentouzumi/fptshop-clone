@@ -37,7 +37,11 @@ function buildComparisonRows(products: CompareProductDetail[]) {
 
 function getAttrValue(product: CompareProductDetail, groupName: string, attrName: string) {
   const group = product.attributeGroups.find((g) => g.groupName === groupName);
-  return group?.attrs.find((a) => a.name === attrName)?.value ?? null;
+  // Gộp MỌI giá trị cùng tên thông số (máy có thể có nhiều bản dung lượng,
+  // hoặc nhiều nhãn "Hiệu năng và Pin") — dùng find() như trước sẽ lặng lẽ
+  // bỏ mất các giá trị sau, bảng so sánh hiện thiếu mà không báo gì.
+  const values = group?.attrs.filter((a) => a.name === attrName).map((a) => a.value) ?? [];
+  return values.length > 0 ? values.join(", ") : null;
 }
 
 export default function ComparePage() {

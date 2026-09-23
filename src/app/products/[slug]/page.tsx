@@ -35,10 +35,19 @@ export default async function ProductDetailPage({
     notFound();
   }
 
+  // Một thông số có thể có NHIỀU dòng cùng attrName (vd máy bán cả bản 256GB
+  // lẫn 512GB, hoặc nhiều nhãn "Hiệu năng và Pin") — gộp lại thành 1 dòng,
+  // các giá trị nối bằng dấu phẩy. Nếu render mỗi dòng riêng thì bảng thông
+  // số lặp lại y hệt tên thông số vài lần, và React cũng báo trùng key.
   const attributeGroups = new Map<string, { name: string; value: string }[]>();
   for (const attr of product.attributes) {
     const list = attributeGroups.get(attr.groupName) ?? [];
-    list.push({ name: attr.attrName, value: attr.attrValue });
+    const existing = list.find((a) => a.name === attr.attrName);
+    if (existing) {
+      existing.value += `, ${attr.attrValue}`;
+    } else {
+      list.push({ name: attr.attrName, value: attr.attrValue });
+    }
     attributeGroups.set(attr.groupName, list);
   }
 
