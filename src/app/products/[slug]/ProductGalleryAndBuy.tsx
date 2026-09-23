@@ -163,7 +163,7 @@ export default function ProductGalleryAndBuy({
               alt={img.altText ?? productName}
               fill
               sizes="(max-width: 768px) 100vw, 50vw"
-              className={`object-cover transition-opacity duration-300 ease-in-out ${
+              className={`object-contain transition-opacity duration-300 ease-in-out ${
                 i === activeImageIndex ? "opacity-100" : "opacity-0"
               }`}
               priority={i === 0}
@@ -209,7 +209,7 @@ export default function ProductGalleryAndBuy({
                   i === activeImageIndex ? "border-zinc-900" : "border-transparent hover:border-zinc-300"
                 }`}
               >
-                <Image src={img.url} alt={img.altText ?? productName} fill className="object-cover" />
+                <Image src={img.url} alt={img.altText ?? productName} fill className="object-contain" />
               </button>
             ))}
           </div>
