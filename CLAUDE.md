@@ -3223,6 +3223,82 @@
       `/api/admin/orders/[id]/confirm-bank-transfer` xuất hiện đúng trong
       danh sách route). Đã dọn sạch dữ liệu test.
 
+- [x] XÁC NHẬN TỰ ĐỘNG thanh toán chuyển khoản ngân hàng qua webhook SePay
+      (user hỏi "nếu ngân hàng nhận được thì auto hoàn thành xác nhận đơn
+      hàng được không" — VietQR Quick Link ở mục trên chỉ vẽ ảnh QR tĩnh,
+      không có cách nào tự báo khi có tiền về, admin luôn phải bấm xác nhận
+      thủ công). Đã giải thích rõ cho user trước khi làm: bản thân ngân hàng
+      không cấp API/webhook cho tài khoản cá nhân thông thường — muốn tự
+      động hoá BẮT BUỘC phải qua 1 dịch vụ trung gian liên kết trực tiếp với
+      tài khoản ngân hàng thật rồi gọi webhook khi có biến động số dư. User
+      chọn SePay (so với lựa chọn còn lại là Casso) qua AskUserQuestion.
+
+      src/lib/sepay.ts (mới): `isSepayConfigured()` check biến env
+      `SEPAY_API_KEY`; `verifySepayAuth(authorizationHeader)` so sánh header
+      `Authorization: Apikey <API_KEY>` mà SePay gửi kèm mỗi lần gọi webhook
+      bằng `crypto.timingSafeEqual` (không dùng `===`, cùng cách đã làm với
+      chữ ký MoMo ở lib/momo.ts) — chống dò secret qua đo thời gian phản hồi.
+
+      lib/orders.ts: `confirmBankTransferPayment(orderId, options?)` thêm
+      tham số THỨ 2 tùy chọn `{ note }` — cho phép ghi đè nội dung
+      OrderStatusHistory (mặc định vẫn là "Admin xác nhận đã nhận được tiền
+      chuyển khoản" khi gọi từ nút bấm thủ công, webhook gọi với note khác
+      để phân biệt "Tự động xác nhận qua webhook SePay (giao dịch #...)" —
+      admin xem lịch sử trạng thái biết ngay lần đó tự động hay thủ công).
+      Thêm hàm mới `findPendingBankTransferOrderByTransaction(content,
+      amount)`: quét toàn bộ Payment đang BANK_TRANSFER + PENDING, khớp
+      ĐỒNG THỜI 2 điều kiện — nội dung chuyển khoản CÓ CHỨA đúng mã đơn hàng
+      (không cần khớp tuyệt đối cả chuỗi vì nội dung thật từ ngân hàng
+      thường có thêm chữ khác quanh mã, vd "CT tu NGUYEN VAN A
+      DHMUE3ZXPHKJM9 thanh toan") VÀ số tiền chuyển khớp CHÍNH XÁC với số
+      tiền đơn hàng — bắt buộc cả 2 để tránh nhận nhầm đơn (mã bị cắt/gõ sai
+      nhưng số tiền tình cờ trùng, hoặc ngược lại).
+
+      API: `POST /api/payments/sepay/webhook` (route MỚI) — verify
+      Authorization header trước (401 nếu sai/thiếu), CHỈ xử lý
+      `transferType === "in"` (SePay cũng gọi webhook cho tiền RA khỏi tài
+      khoản, vd chủ shop tự rút tiền — không liên quan gì đơn hàng, bỏ qua
+      luôn không coi là lỗi), tìm đơn khớp qua hàm trên rồi gọi
+      `confirmBankTransferPayment`. MỌI trường hợp không khớp được đơn nào
+      (kể cả giao dịch có thật nhưng không phải tiền mua hàng, vd người
+      khác chuyển nhầm) đều trả **200** `{ok:true, matched:false}` chứ
+      KHÔNG phải lỗi — vì SePay gọi webhook cho MỌI giao dịch trên tài
+      khoản, phần lớn vốn dĩ không liên quan đơn hàng nào, trả lỗi ở đây sẽ
+      khiến SePay hiểu lầm là lỗi thật và cứ gọi lại mãi.
+
+      UI: `/orders/[id]` đổi dòng ghi chú dưới mã QR thành "Đơn hàng sẽ TỰ
+      ĐỘNG được xác nhận trong ít phút..." khi `isSepayConfigured()`, giữ
+      nguyên câu cũ "xác nhận thủ công" khi chưa cấu hình. `/admin/
+      orders/[id]` thêm dòng chú thích nhỏ cạnh nút "Xác nhận đã nhận tiền
+      chuyển khoản" khi đã cấu hình SePay, giải thích nút đó giờ chỉ còn là
+      PHƯƠNG ÁN DỰ PHÒNG (dùng khi khách chuyển khoản ghi sai nội dung nên
+      webhook không khớp được đơn nào) — KHÔNG xóa nút này vì webhook không
+      phải lúc nào cũng khớp được 100%.
+
+      .env: thêm `SEPAY_API_KEY` (để trống thì webhook tự trả 401, không
+      ảnh hưởng gì tới xác nhận thủ công vẫn hoạt động như cũ) kèm hướng dẫn
+      đầy đủ: đăng ký tài khoản SePay, liên kết ngân hàng thật, tạo Webhook
+      mới trong dashboard SePay (sự kiện "Có tiền vào", xác thực kiểu "API
+      Key" tự đặt), dán đúng giá trị đó vào biến này.
+
+      Đã test toàn bộ qua dev server bằng DB THẬT (tạo 1 customer + giỏ hàng
+      test qua script, đặt 1 đơn BANK_TRANSFER thật qua API, dùng
+      `SEPAY_API_KEY` giả qua `.env.local` tạm — xóa ngay sau khi test xong,
+      không đụng dữ liệu thật): (1) auth sai → 401; (2) `transferType:"out"`
+      → 200 `matched:false`, không đụng gì tới đơn; (3) nội dung không khớp
+      đơn nào → 200 `matched:false`; (4) nội dung khớp nhưng SAI số tiền →
+      200 `matched:false` (không xác nhận nhầm); (5) nội dung + số tiền khớp
+      đúng → 200 `matched:true`, kiểm tra DB xác nhận Payment chuyển PAID,
+      Order PENDING→CONFIRMED, đúng 1 OrderStatusHistory với note "Tự động
+      xác nhận qua webhook SePay (giao dịch #5)", đúng 1 Notification; (6)
+      gọi lại webhook lần 2 cho ĐÚNG giao dịch đó (mô phỏng SePay gọi lặp) →
+      tự động `matched:false` vì hàm tìm kiếm chỉ quét Payment còn PENDING —
+      Payment đã PAID từ lần trước không còn nằm trong tập tìm kiếm nữa, nên
+      không có nguy cơ xác nhận trùng/tạo thêm Notification dù không cần
+      thêm cờ idempotency riêng nào. `tsc --noEmit`/`eslint`/`npm run build`
+      sạch (route `/api/payments/sepay/webhook` xuất hiện đúng trong danh
+      sách route). Đã dọn sạch dữ liệu test + xóa `.env.local` tạm.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -3251,12 +3327,21 @@
       MOMO_PARTNER_CODE/ACCESS_KEY/SECRET_KEY để trống vẫn chạy được nhờ
       default công khai, không bắt buộc điền trừ khi có tài khoản merchant
       MoMo thật riêng.
-- [ ] CHƯA điền BANK_ID/BANK_ACCOUNT_NUMBER/BANK_ACCOUNT_NAME (chuyển khoản
-      VietQR — xem mục "Thêm phương thức thanh toán CHUYỂN KHOẢN NGÂN HÀNG
-      THẬT" ở trên) bằng thông tin tài khoản ngân hàng THẬT của user — để
-      trống thì lựa chọn này tự ẩn ở /checkout. Điền xong nhớ thêm cả 3 biến
-      này vào Environment Variables trên Vercel (dùng đúng giá trị thật,
-      không phải mẫu test) để hoạt động được trên production.
+- [x] Đã điền BANK_ID/BANK_ACCOUNT_NUMBER/BANK_ACCOUNT_NAME bằng thông tin
+      tài khoản ngân hàng thật của user trong .env local — lựa chọn chuyển
+      khoản đã hiện ở /checkout. CHƯA thêm 3 biến này vào Environment
+      Variables trên Vercel (production vẫn chưa hoạt động được cho tới khi
+      làm bước này).
+- [ ] CHƯA đăng ký tài khoản SePay + liên kết ngân hàng thật + điền
+      SEPAY_API_KEY (xác nhận TỰ ĐỘNG thanh toán chuyển khoản — xem mục
+      "XÁC NHẬN TỰ ĐỘNG thanh toán chuyển khoản ngân hàng qua webhook SePay"
+      ở trên) — để trống thì webhook tự trả 401, tính năng xác nhận THỦ CÔNG
+      qua nút bấm ở /admin/orders/[id] vẫn hoạt động bình thường như trước,
+      không có gì bị phá vỡ. Sau khi đăng ký xong nhớ trỏ URL webhook trong
+      dashboard SePay về đúng domain production
+      (`https://fptshop-clone.vercel.app/api/payments/sepay/webhook` — SePay
+      không gọi được vào localhost) và thêm SEPAY_API_KEY vào Environment
+      Variables trên Vercel.
 - [ ] Làm tiếp ảnh thật + thông số chuẩn cho 29 sản phẩm còn lại (đã làm mẫu
       6 sản phẩm: iPhone 15 Pro Max, Samsung Galaxy S24 Ultra, Xiaomi Redmi
       Note 13, MacBook Air M3, Dell XPS 13, OPPO Reno11 5G — xem mục "Thêm

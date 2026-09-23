@@ -414,7 +414,10 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderStatus,
 // thông báo trùng) để admin lỡ bấm 2 lần không sao. Coi thanh toán thành
 // công tương đương xác nhận đơn (PENDING -> CONFIRMED) giống hệt cách MoMo
 // callback thành công đang làm.
-export async function confirmBankTransferPayment(orderId: string) {
+export async function confirmBankTransferPayment(
+  orderId: string,
+  options?: { note?: string }
+) {
   return prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { payments: true } });
     if (!order) {
@@ -437,7 +440,7 @@ export async function confirmBankTransferPayment(orderId: string) {
           data: {
             orderId,
             status: OrderStatus.CONFIRMED,
-            note: "Admin xác nhận đã nhận được tiền chuyển khoản",
+            note: options?.note ?? "Admin xác nhận đã nhận được tiền chuyển khoản",
           },
         });
         await tx.notification.create({
@@ -453,6 +456,30 @@ export async function confirmBankTransferPayment(orderId: string) {
 
     return tx.order.findUnique({ where: { id: orderId }, include: { payments: true } });
   });
+}
+
+// Tìm đơn hàng BANK_TRANSFER đang chờ (PENDING) khớp với 1 giao dịch ngân
+// hàng THẬT — dùng bởi webhook SePay tự động (xem /api/payments/sepay/webhook
+// và lib/sepay.ts) mỗi khi tài khoản ngân hàng thật của shop có tiền vào.
+// Khớp theo 2 điều kiện CÙNG LÚC: (1) nội dung chuyển khoản có CHỨA đúng mã
+// đơn hàng (không cần khớp tuyệt đối cả chuỗi vì nội dung thật từ ngân hàng
+// thường có thêm chữ khác quanh mã, vd "CT tu NGUYEN VAN A DHLQZ8X4F3AB1
+// thanh toan"), và (2) số tiền chuyển khớp CHÍNH XÁC với số tiền đơn hàng —
+// bắt buộc cả 2 để tránh nhận nhầm (vd khách gõ nhầm/thiếu mã đơn nhưng số
+// tiền tình cờ trùng, hoặc mã đơn bị cắt bớt nhưng số tiền lại sai).
+export async function findPendingBankTransferOrderByTransaction(
+  content: string,
+  amount: number
+): Promise<string | null> {
+  const pendingPayments = await prisma.payment.findMany({
+    where: { method: PaymentMethod.BANK_TRANSFER, status: PaymentStatus.PENDING },
+    include: { order: { select: { id: true, code: true } } },
+  });
+  const normalizedContent = content.toUpperCase();
+  const match = pendingPayments.find(
+    (p) => normalizedContent.includes(p.order.code.toUpperCase()) && Number(p.amount) === amount
+  );
+  return match?.order.id ?? null;
 }
 
 // Tạo URL thanh toán MoMo cho 1 đơn hàng đã tồn tại — dùng lúc đặt hàng lần đầu (paymentMethod=MOMO)
