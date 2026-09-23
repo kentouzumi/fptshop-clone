@@ -8,6 +8,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string }[] }[] 
     title: "Bán hàng",
     items: [
       { href: "/admin/products", label: "Sản phẩm" },
+      { href: "/admin/inventory", label: "Tồn kho" },
       { href: "/admin/orders", label: "Đơn hàng" },
       { href: "/admin/categories", label: "Danh mục" },
       { href: "/admin/brands", label: "Thương hiệu" },

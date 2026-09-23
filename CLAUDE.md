@@ -2797,6 +2797,50 @@
       DB xác nhận CHỈ kho Cầu Giấy giảm (2→1), Quận 1 giữ nguyên 0.
       `tsc --noEmit`/`eslint`/`npm run build` sạch cho cả 2 phần #1 và #3.
 
+- [x] Giao diện admin quản lý số lượng tồn kho (user yêu cầu ngay sau mục
+      trên — lúc làm #3 chủ động ghi rõ "chưa làm UI, muốn chỉnh phải qua
+      Prisma Studio" nên user yêu cầu làm nốt phần này).
+
+      lib/inventory.ts thêm 2 hàm mới (tách hẳn khỏi 3 hàm cũ dùng lúc đặt/
+      hủy đơn tự động — nhóm hàm CHO ADMIN):
+      - `getInventoryForAdmin()`: trả về toàn bộ cửa hàng (kể cả đang ẩn,
+        để admin thấy hết bức tranh) + toàn bộ biến thể kèm
+        `quantityByStore` (map storeId -> số lượng, thiếu key = 0, tức chưa
+        từng có dòng Inventory nào cho tổ hợp đó).
+      - `setInventoryQuantity(storeId, variantId, quantity)`: ghi ĐÈ số
+        lượng TUYỆT ĐỐI (khác `reserveStockOrThrow`/`releaseStock` ở trên
+        vốn cộng/trừ dồn) — dùng upsert vì có thể chưa từng có dòng
+        Inventory cho tổ hợp này (vd biến thể mới thêm sau lần seed đầu).
+        Validate số nguyên >= 0 và cửa hàng/biến thể phải tồn tại.
+
+      API: `PATCH /api/admin/inventory` (route MỚI, không phải
+      `/api/admin/inventory/[id]` kiểu thường dùng cho resource khác trong
+      dự án — vì Inventory không có 1 "id" đơn giản nào để đặt vào URL, khóa
+      chính là TỔ HỢP storeId+variantId, nên nhận cả 2 trong body).
+
+      UI: `/admin/inventory` (trang mới) + `InventoryManager.tsx` (client) —
+      1 bảng: mỗi HÀNG là 1 biến thể (SKU/tên sản phẩm/màu-dung lượng), mỗi
+      CỘT là 1 cửa hàng, ô giao giữa là input số lượng có thể sửa trực tiếp.
+      Chọn kiểu **tự lưu khi rời khỏi ô (`onBlur`)** thay vì nút "Lưu" riêng
+      từng dòng như VariantsManager — hợp lý hơn cho 1 lưới nhiều ô (37 biến
+      thể × 2 cửa hàng = 74 ô) kiểu bảng tính, không cần bấm "Sửa" từng ô
+      một trước khi gõ được. Có ô tìm kiếm lọc theo tên/SKU/màu/dung lượng
+      ngay trên client (không gọi lại server — dữ liệu nhỏ, không cần phân
+      trang). Mỗi ô tự hiện trạng thái "Đang lưu..."/"Đã lưu"/lỗi ngay cạnh
+      input, không cần refresh cả trang. Thêm link "Tồn kho" vào
+      AdminSidebarNav.tsx (nhóm "Bán hàng", ngay sau "Sản phẩm").
+
+      Đã test qua dev server bằng DB thật (tạo 1 SUPER_ADMIN test riêng,
+      khôi phục lại tồn kho mặc định (20) + xóa user/session sau khi xong):
+      chưa đăng nhập vào `/admin/inventory` bị redirect (307); là admin thì
+      200 và bảng hiện đúng tên sản phẩm + đủ 2 cột "FPT Shop Cầu Giấy"/"FPT
+      Shop Quận 1"; gọi thẳng API chưa đăng nhập bị chặn đúng 403; admin
+      PATCH số lượng = 50 thành công (200), kiểm tra DB xác nhận đúng giá
+      trị 50; PATCH số lượng âm (-5) bị chặn đúng 400 và KHÔNG ghi đè lên
+      giá trị 50 đã lưu trước đó (xác nhận qua DB). `tsc --noEmit`/`eslint`/
+      `npm run build` sạch (route `/admin/inventory` và `/api/admin/
+      inventory` đều xuất hiện đúng trong danh sách route sau build).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

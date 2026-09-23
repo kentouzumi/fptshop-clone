@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
 type Tx = Prisma.TransactionClient;
 
@@ -89,4 +90,88 @@ export async function releaseStock(
       create: { storeId, variantId: item.variantId, quantity: item.quantity },
     });
   }
+}
+
+// ============================================================
+// Quản lý tồn kho cho ADMIN (khác 3 hàm trên — dùng lúc đặt/hủy đơn tự
+// động) — admin tự xem/sửa số lượng từng biến thể tại từng cửa hàng qua
+// /admin/inventory.
+
+export interface InventoryStoreInfo {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface InventoryRow {
+  variantId: string;
+  sku: string;
+  color: string | null;
+  storage: string | null;
+  isActive: boolean;
+  productName: string;
+  productSlug: string;
+  // key = storeId — thiếu key nghĩa là chưa có dòng Inventory nào cho tổ
+  // hợp (biến thể, cửa hàng) đó (coi như tồn kho = 0, chưa từng được seed).
+  quantityByStore: Record<string, number>;
+}
+
+export async function getInventoryForAdmin(): Promise<{
+  stores: InventoryStoreInfo[];
+  rows: InventoryRow[];
+}> {
+  const [stores, variants] = await Promise.all([
+    prisma.store.findMany({ orderBy: { id: "asc" } }),
+    prisma.productVariant.findMany({
+      include: {
+        product: { select: { name: true, slug: true } },
+        inventories: { select: { storeId: true, quantity: true } },
+      },
+      orderBy: [{ product: { name: "asc" } }, { sku: "asc" }],
+    }),
+  ]);
+
+  const rows: InventoryRow[] = variants.map((v) => ({
+    variantId: v.id,
+    sku: v.sku,
+    color: v.color,
+    storage: v.storage,
+    isActive: v.isActive,
+    productName: v.product.name,
+    productSlug: v.product.slug,
+    quantityByStore: Object.fromEntries(v.inventories.map((inv) => [inv.storeId, inv.quantity])),
+  }));
+
+  return {
+    stores: stores.map((s) => ({ id: s.id, name: s.name, isActive: s.isActive })),
+    rows,
+  };
+}
+
+// Admin đặt LẠI số lượng tuyệt đối (không phải cộng/trừ dồn như
+// reserveStockOrThrow/releaseStock ở trên) cho 1 biến thể tại 1 cửa hàng —
+// dùng upsert vì có thể chưa từng có dòng Inventory nào cho tổ hợp này
+// (vd biến thể mới thêm sau lần seed ban đầu).
+export async function setInventoryQuantity(
+  storeId: string,
+  variantId: string,
+  quantity: number
+) {
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    throw new Error("Số lượng phải là số nguyên >= 0.");
+  }
+
+  const [store, variant] = await Promise.all([
+    prisma.store.findUnique({ where: { id: storeId } }),
+    prisma.productVariant.findUnique({ where: { id: variantId } }),
+  ]);
+  if (!store || !variant) {
+    throw new Error("Không tìm thấy cửa hàng hoặc biến thể.");
+  }
+
+  return prisma.inventory.upsert({
+    where: { storeId_variantId: { storeId, variantId } },
+    update: { quantity },
+    create: { storeId, variantId, quantity },
+  });
 }
