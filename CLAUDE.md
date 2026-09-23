@@ -3704,6 +3704,68 @@
       ảnh trả 200 kèm `content-type: image/jpeg` trên Supabase. Không đổi
       code (HeroBanner.tsx giữ nguyên), chỉ đổi dữ liệu `Banner.imageUrl`.
 
+- [x] Rà lại TOÀN BỘ ảnh sản phẩm và thay ảnh của 2 sản phẩm flagship (user
+      yêu cầu "kiểm tra lại ảnh các sản phẩm xem có cần sửa gì không"). Đã
+      tải về và XEM LẠI BẰNG MẮT từng ảnh trong DB (23 ảnh của 13 sản phẩm)
+      chứ không chỉ kiểm tra URL trả 200 — đây là cách DUY NHẤT phát hiện ra
+      vấn đề bên dưới, vì mọi ảnh đều là link Supabase hợp lệ, tải được bình
+      thường.
+
+      KẾT QUẢ RÀ SOÁT: 11/13 sản phẩm dùng ảnh render chính hãng đạt chuẩn
+      (3 laptop từ apple.com/dell.com/asus.com, 6 tivi vừa làm đợt trước,
+      OPPO + Redmi từ og:image của oppo.com/mi.com). Nhưng ĐÚNG 2 SẢN PHẨM
+      FLAGSHIP — iPhone 15 Pro Max và Galaxy S24 Ultra, cũng chính là 2 sản
+      phẩm `isFeatured` hiện ngay đầu trang chủ — thì cả 8 ảnh đều là ẢNH
+      CHỤP NGHIỆP DƯ lấy từ Wikimedia Commons ở đợt làm ảnh thật đầu tiên:
+      ảnh đại diện (sortOrder 0, tức ảnh hiện trên card) của iPhone là ảnh ai
+      đó CẦM MÁY XOAY NGANG trong cửa hàng, màn hình đang mở trang "Giới
+      thiệu" TIẾNG TRUNG lộ cả số sê-ri; ảnh còn lại là mặt lưng máy trưng
+      bày còn nguyên DÂY CHỐNG TRỘM. Ảnh S24 Ultra là máy trưng bày trên quầy
+      xước, có TEM BÁO ĐỘNG dán dưới đáy máy, màn hình lóa đèn trần. Đây
+      chính là nguồn của tấm ảnh banner xấu user vừa báo ở mục trên — hoá ra
+      nó không chỉ nằm ở banner mà là ảnh chính thức của sản phẩm.
+
+      Thêm 1 lỗi nữa: S24 Ultra có 2 biến thể màu (Đen/Xám) nhưng 4 ảnh thực
+      chất chỉ là 2 ảnh dùng LẶP cho cả 2 màu (kích thước file trùng khít
+      từng byte) — đổi màu ở trang chi tiết không đổi ảnh, mà máy trong ảnh
+      lại màu kem, không khớp màu nào trong 2 màu đang bán.
+
+      ĐÃ THAY bằng render chính hãng ĐÚNG TỪNG MÀU:
+      + iPhone: lấy từ CDN store của Apple theo mẫu URL
+        `store.storeimages.cdn-apple.com/.../iphone-15-pro-finish-select-202309-6-7inch-<màu>`
+        với `naturaltitanium`/`bluetitanium` — khớp đúng 2 biến thể "Titan Tự
+        Nhiên"/"Titan Xanh". LƯU Ý: `curl` trên máy này vẫn SEGFAULT với mọi
+        domain của Apple (đã ghi ở đợt trước), phải dùng PowerShell
+        `Invoke-WebRequest` — lần này xác nhận lại là đúng như vậy.
+      + Samsung: samsung.com/vn lần này KHÔNG bị chặn (khác lúc làm tivi hôm
+        trước), lấy được trang S24 Ultra rồi grep ra ảnh gallery
+        `p6pim/vn/2401/gallery/vn-galaxy-s24-s928-sm-s928b<mã màu>xxv-<id>`.
+        Mã màu trong SKU Samsung: `zk` = Titanium Black, `zt` = Titanium Gray
+        — khớp đúng 2 biến thể Đen/Xám, và ảnh có kèm bút S Pen đúng như
+        thông số sản phẩm ghi.
+
+      XỬ LÝ ẢNH: ảnh render chính hãng có viền trắng rất rộng (ảnh Apple: sản
+      phẩm chỉ chiếm ~1/3 khung) — trang chi tiết dùng `object-contain` nên để
+      nguyên thì sản phẩm trông bé xíu. Dùng `sharp .trim()` cắt sạch viền rồi
+      `.extend()` chừa lại lề 6%. LƯU Ý khi làm lại về sau: phải TẢI ẢNH NGUỒN
+      Ở ĐỘ PHÂN GIẢI CAO trước khi trim — lần đầu tải ảnh Apple ở 1400x1400,
+      trim xong chỉ còn 436x528 (mờ khi hiển thị), phải tải lại ở 3600x3600
+      (tham số `?wid=3600&hei=3600` của CDN Apple) và Samsung ở
+      `$Q90_2052_1641_JPG$` thì trim xong mới được ~1100-1350px.
+
+      Mỗi biến thể giờ có ĐÚNG 1 ảnh đúng màu (thay cho 2 ảnh sai màu/nghiệp
+      dư) — gallery không còn nút mũi tên chuyển ảnh ở 2 sản phẩm này, chấp
+      nhận được vì 1 ảnh đúng vẫn hơn 2 ảnh sai. Đổi màu ở trang chi tiết giờ
+      ĐỔI ẢNH THẬT SỰ, đúng màu đang chọn.
+
+      Đã audit lại toàn bộ sau khi sửa: 13/13 sản phẩm đều có ảnh, tổng 19
+      ảnh, 0 ảnh placehold.co, và gọi HEAD từng URL xác nhận cả 19 ảnh đều
+      trả 200. Không đổi code, chỉ đổi dữ liệu ProductImage. GHI CHÚ: các ảnh
+      cũ bị thay vẫn còn nằm trong Supabase Storage (không ai trỏ tới nữa) —
+      chưa xóa vì xóa file trên Storage là thao tác phá hủy không được yêu
+      cầu; nếu muốn dọn thì lọc các file trong `catalog/` không xuất hiện
+      trong bảng ProductImage/Banner.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
