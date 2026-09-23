@@ -76,11 +76,11 @@ async function main() {
   const products = [
     // ===================== ĐIỆN THOẠI =====================
     // Bộ lọc: Hiệu năng và Pin / Dung lượng ROM / RAM / Tần số quét.
-    // "Hiệu năng và Pin" là thông số dạng NHÃN (1 sản phẩm có thể có nhiều
-    // dòng) thay vì 1 con số — gom 2 khía cạnh người mua quan tâm nhất (sức
-    // mạnh chip + pin/sạc) thành các mức chọn được, giống cách FPT Shop thật
-    // gộp nhóm này. Dung lượng ROM cũng có thể nhiều dòng nếu sản phẩm bán
-    // nhiều phiên bản bộ nhớ, để lọc theo phiên bản nào cũng ra đúng sản phẩm.
+    // "Hiệu năng và Pin" chỉ ghi DUNG LƯỢNG PIN (mAh) — trước đây từng là
+    // thông số dạng nhãn gộp nhiều khía cạnh (mức chip, mốc pin, mốc sạc
+    // nhanh), mỗi máy vài dòng; đã bỏ theo yêu cầu, giờ mỗi máy đúng 1 dòng.
+    // Riêng "Dung lượng ROM" vẫn có thể nhiều dòng nếu máy bán nhiều phiên
+    // bản bộ nhớ, để lọc theo phiên bản nào cũng ra đúng sản phẩm.
     {
       name: "iPhone 15 Pro Max",
       slug: "iphone-15-pro-max",
@@ -91,7 +91,7 @@ async function main() {
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=iPhone+15+Pro+Max",
       attributes: [
-        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Chip cao cấp (flagship)" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "4441 mAh" },
         // iPhone 15 Pro Max KHÔNG có bản 128GB (chỉ bản Pro 6.1 inch mới có),
         // khởi điểm từ 256GB — xem Apple Tech Specs.
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
@@ -114,8 +114,7 @@ async function main() {
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=Galaxy+S24+Ultra",
       attributes: [
-        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Chip cao cấp (flagship)" },
-        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "5000 mAh" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "512GB" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "12GB" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
@@ -135,8 +134,7 @@ async function main() {
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Redmi+Note+13",
       attributes: [
-        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Chip tầm trung" },
-        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "5000 mAh" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "128GB" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
@@ -157,9 +155,7 @@ async function main() {
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=OPPO+Reno11+5G",
       attributes: [
-        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Chip tầm trung" },
-        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
-        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "Sạc nhanh từ 60W" },
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "5000 mAh" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },

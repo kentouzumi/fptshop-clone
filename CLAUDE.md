@@ -3866,6 +3866,17 @@
       `spec_tan-so-quet=60hz` ở tivi trả đúng 6/6 máy. `tsc`/`eslint`/
       `npm run build` sạch, dev server không còn cảnh báo trùng key.
 
+      SỬA TIẾP theo yêu cầu user ngay sau đó: "Hiệu năng và Pin" của điện
+      thoại BỎ hết phần nhãn về chip/sạc nhanh, chỉ còn DUNG LƯỢNG PIN (mAh).
+      Trước đó mỗi máy có 1-3 dòng nhãn ("Chip cao cấp (flagship)", "Pin từ
+      5000mAh", "Sạc nhanh từ 60W"), giờ đúng 1 dòng/máy: iPhone 15 Pro Max
+      4441 mAh, S24 Ultra / Redmi Note 13 / Reno11 5G đều 5000 mAh. Bộ lọc
+      còn 2 mức "4441 mAh (1)" và "5000 mAh (3)", sắp đúng thứ tự nhờ
+      Intl.Collator numeric (so sánh chuỗi thuần sẽ xếp "4441" trước "5000"
+      thì vẫn đúng, nhưng sẽ sai ngay nếu sau này có máy "700 mAh" kiểu vậy).
+      GIỮ NGUYÊN tên thông số "Hiệu năng và Pin" đúng như user đặt từ đầu,
+      không tự đổi thành "Dung lượng pin".
+
       GHI NHẬN (không phải lỗi): bộ lọc "Tần số quét" của Tivi hiện chỉ có 1
       giá trị 60Hz vì cả 6 tivi đều 60Hz thật — giống tình trạng "Tần số quét"
       của điện thoại (cả 4 máy đều 120Hz). Lọc theo nó không thu hẹp được gì
