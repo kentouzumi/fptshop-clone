@@ -8,18 +8,22 @@ const adapter = new PrismaPg({
 });
 const prisma = new PrismaClient({ adapter });
 
-// User yêu cầu ĐƠN GIẢN HÓA LẠI danh mục — sau khi trải qua 3 lần mở rộng
-// (4 -> 9 -> 23 danh mục cấp cao + 52 danh mục con dùng parentId), user thấy
-// rối và yêu cầu CHỈ GIỮ ĐÚNG 4 danh mục cấp cao: Điện thoại, Laptop, Điện
-// máy, Phụ kiện — không còn danh mục con/parentId nào nữa (dù field
-// Category.parentId trong schema vẫn giữ nguyên, không xóa, phòng khi cần
-// dùng lại sau). "Điện máy" đóng vai trò danh mục TỔNG cho mọi thiết bị điện
-// tử/gia dụng không phải điện thoại/laptop/phụ kiện thuần túy (tivi, tủ
-// lạnh, máy giặt, đồ gia dụng nhà bếp...) — đúng cách dùng từ "điện máy"
-// ngoài đời (siêu thị điện máy bán tivi/tủ lạnh/máy giặt/gia dụng chung 1
-// nơi), tránh phải tách thêm nhiều danh mục nhỏ lẻ như trước.
+// Cửa hàng chỉ còn ĐÚNG 3 danh mục: Điện thoại, Laptop, Tivi. Trước đó danh
+// mục thứ 3 là "Điện máy" (nhóm tổng cho mọi thiết bị gia dụng) và có thêm
+// "Phụ kiện" — user yêu cầu thu hẹp lại để mỗi danh mục là MỘT loại sản phẩm
+// thuần nhất, nhờ đó bộ lọc theo thông số kỹ thuật của từng danh mục mới có
+// ý nghĩa (xem CATEGORY_FILTER_SPECS trong src/lib/products.ts: thông số dùng
+// làm bộ lọc được khai báo riêng cho từng danh mục, và MỌI sản phẩm trong
+// danh mục đó phải có đủ các thông số này thì bộ lọc mới lọc đúng).
 async function main() {
-  const [dienThoai, laptopCategory, dienMay, phuKien] = await Promise.all([
+  // Danh mục "Tivi" kế thừa chính bản ghi "Điện máy" cũ (đổi slug/tên, giữ
+  // nguyên id) để không phải di chuyển sản phẩm sang category mới.
+  await prisma.category.updateMany({
+    where: { slug: "dien-may" },
+    data: { slug: "tivi", name: "Tivi", sortOrder: 3 },
+  });
+
+  const [dienThoai, laptopCategory, tivi] = await Promise.all([
     prisma.category.upsert({
       where: { slug: "dien-thoai" },
       update: { parentId: null, sortOrder: 1 },
@@ -31,117 +35,71 @@ async function main() {
       create: { name: "Laptop", slug: "laptop", sortOrder: 2 },
     }),
     prisma.category.upsert({
-      where: { slug: "dien-may" },
+      where: { slug: "tivi" },
       update: { parentId: null, sortOrder: 3 },
-      create: { name: "Điện máy", slug: "dien-may", sortOrder: 3 },
-    }),
-    prisma.category.upsert({
-      where: { slug: "phu-kien" },
-      update: { parentId: null, sortOrder: 4 },
-      create: { name: "Phụ kiện", slug: "phu-kien", sortOrder: 4 },
+      create: { name: "Tivi", slug: "tivi", sortOrder: 3 },
     }),
   ]);
 
-  const [apple, samsung, xiaomi, dell, oppo, asus, jbl, sony] = await Promise.all([
-    prisma.brand.upsert({
-      where: { slug: "apple" },
+  const brandDefs = [
+    { slug: "apple", name: "Apple" },
+    { slug: "samsung", name: "Samsung" },
+    { slug: "xiaomi", name: "Xiaomi" },
+    { slug: "dell", name: "Dell" },
+    { slug: "oppo", name: "OPPO" },
+    { slug: "asus", name: "Asus" },
+    { slug: "lg", name: "LG" },
+    { slug: "philips", name: "Philips" },
+    { slug: "tcl", name: "TCL" },
+  ];
+  const brands: Record<string, string> = {};
+  for (const b of brandDefs) {
+    const row = await prisma.brand.upsert({
+      where: { slug: b.slug },
       update: {},
-      create: { name: "Apple", slug: "apple" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "samsung" },
-      update: {},
-      create: { name: "Samsung", slug: "samsung" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "xiaomi" },
-      update: {},
-      create: { name: "Xiaomi", slug: "xiaomi" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "dell" },
-      update: {},
-      create: { name: "Dell", slug: "dell" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "oppo" },
-      update: {},
-      create: { name: "OPPO", slug: "oppo" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "asus" },
-      update: {},
-      create: { name: "Asus", slug: "asus" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "jbl" },
-      update: {},
-      create: { name: "JBL", slug: "jbl" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "sony" },
-      update: {},
-      create: { name: "Sony", slug: "sony" },
-    }),
-  ]);
+      create: { name: b.name, slug: b.slug },
+    });
+    brands[b.slug] = row.id;
+  }
 
-  const [lg, philips, tplink] = await Promise.all([
-    prisma.brand.upsert({
-      where: { slug: "lg" },
-      update: {},
-      create: { name: "LG", slug: "lg" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "philips" },
-      update: {},
-      create: { name: "Philips", slug: "philips" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "tp-link" },
-      update: {},
-      create: { name: "TP-Link", slug: "tp-link" },
-    }),
-  ]);
-
-  const [hp, sunhouse, kangaroo, logitech] = await Promise.all([
-    prisma.brand.upsert({
-      where: { slug: "hp" },
-      update: {},
-      create: { name: "HP", slug: "hp" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "sunhouse" },
-      update: {},
-      create: { name: "Sunhouse", slug: "sunhouse" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "kangaroo" },
-      update: {},
-      create: { name: "Kangaroo", slug: "kangaroo" },
-    }),
-    prisma.brand.upsert({
-      where: { slug: "logitech" },
-      update: {},
-      create: { name: "Logitech", slug: "logitech" },
-    }),
-  ]);
-
+  // Ảnh sản phẩm: các sản phẩm CŨ (điện thoại/laptop) đã có ảnh THẬT gắn sẵn
+  // theo từng biến thể trong DB từ các đợt trước — `imageUrl` dưới đây CHỈ
+  // dùng khi tạo mới (nhánh `create`), nên chạy lại seed không ghi đè ảnh cũ.
+  // Riêng 6 tivi là sản phẩm mới, ảnh thật lấy từ trang chính hãng (LG, TCL,
+  // Xiaomi, Samsung, Philips) rồi tải lên Supabase Storage.
   const products = [
+    // ===================== ĐIỆN THOẠI =====================
+    // Bộ lọc: Hiệu năng và Pin / Dung lượng ROM / RAM / Tần số quét.
+    // "Hiệu năng và Pin" là thông số dạng NHÃN (1 sản phẩm có thể có nhiều
+    // dòng) thay vì 1 con số — gom 2 khía cạnh người mua quan tâm nhất (sức
+    // mạnh chip + pin/sạc) thành các mức chọn được, giống cách FPT Shop thật
+    // gộp nhóm này. Dung lượng ROM cũng có thể nhiều dòng nếu sản phẩm bán
+    // nhiều phiên bản bộ nhớ, để lọc theo phiên bản nào cũng ra đúng sản phẩm.
     {
       name: "iPhone 15 Pro Max",
       slug: "iphone-15-pro-max",
       description: "iPhone 15 Pro Max với chip A17 Pro, khung viền Titan và camera 48MP.",
       categoryId: dienThoai.id,
-      brandId: apple.id,
+      brandId: brands.apple,
       basePrice: 29990000,
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=iPhone+15+Pro+Max",
       attributes: [
-        { groupName: "Màn hình", attrName: "Kích thước", attrValue: "6.7 inch" },
-        { groupName: "Camera", attrName: "Camera sau", attrValue: "48MP + 12MP + 12MP" },
+        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Chip cao cấp (flagship)" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "6.7 inch" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "Super Retina XDR OLED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
+        { groupName: "Cấu hình", attrName: "Chip xử lý", attrValue: "Apple A17 Pro" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
-        { groupName: "Cấu hình", attrName: "Bộ nhớ trong", attrValue: "256GB" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "128GB" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
         { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "iOS 17" },
+        { groupName: "Camera", attrName: "Camera sau", attrValue: "48MP + 12MP + 12MP" },
+        { groupName: "Camera", attrName: "Camera trước", attrValue: "12MP" },
+        { groupName: "Pin & Sạc", attrName: "Dung lượng pin", attrValue: "4441 mAh" },
+        { groupName: "Pin & Sạc", attrName: "Công suất sạc", attrValue: "20W" },
+        { groupName: "Thiết kế", attrName: "Chất liệu khung", attrValue: "Titanium" },
+        { groupName: "Thiết kế", attrName: "Kháng nước, bụi", attrValue: "IP68" },
       ],
       variants: [
         { sku: "IP15PM-128-TN", color: "Titan Tự Nhiên", storage: "128GB", price: 29990000 },
@@ -153,20 +111,31 @@ async function main() {
       slug: "samsung-galaxy-s24-ultra",
       description: "Galaxy S24 Ultra tích hợp Galaxy AI, bút S Pen và camera 200MP.",
       categoryId: dienThoai.id,
-      brandId: samsung.id,
+      brandId: brands.samsung,
       basePrice: 26990000,
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=Galaxy+S24+Ultra",
       attributes: [
-        { groupName: "Màn hình", attrName: "Kích thước", attrValue: "6.8 inch" },
-        { groupName: "Camera", attrName: "Camera sau", attrValue: "200MP + 12MP + 50MP + 10MP" },
+        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Chip cao cấp (flagship)" },
+        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "6.8 inch" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "Dynamic AMOLED 2X" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
+        { groupName: "Cấu hình", attrName: "Chip xử lý", attrValue: "Snapdragon 8 Gen 3 for Galaxy" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "12GB" },
-        { groupName: "Cấu hình", attrName: "Bộ nhớ trong", attrValue: "256GB" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 14" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "512GB" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 14, One UI 6.1" },
+        { groupName: "Camera", attrName: "Camera sau", attrValue: "200MP + 12MP + 50MP + 10MP" },
+        { groupName: "Camera", attrName: "Camera trước", attrValue: "12MP" },
+        { groupName: "Pin & Sạc", attrName: "Dung lượng pin", attrValue: "5000 mAh" },
+        { groupName: "Pin & Sạc", attrName: "Công suất sạc", attrValue: "45W" },
+        { groupName: "Thiết kế", attrName: "Chất liệu khung", attrValue: "Titanium" },
+        { groupName: "Thiết kế", attrName: "Kháng nước, bụi", attrValue: "IP68" },
+        { groupName: "Phụ kiện", attrName: "Bút cảm ứng", attrValue: "S Pen đi kèm" },
       ],
       variants: [
-        { sku: "S24U-256-BLK", color: "Đen", storage: "256GB", price: 26990000 },
-        { sku: "S24U-512-GRY", color: "Xám", storage: "512GB", price: 30990000 },
+        { sku: "S24U-256-BLK", color: "Đen", storage: "512GB", price: 26990000 },
+        { sku: "S24U-512-GRY", color: "Xám", storage: "512GB", price: 26990000 },
       ],
     },
     {
@@ -174,416 +143,304 @@ async function main() {
       slug: "xiaomi-redmi-note-13",
       description: "Redmi Note 13 màn hình AMOLED 120Hz, pin 5000mAh, giá tốt.",
       categoryId: dienThoai.id,
-      brandId: xiaomi.id,
+      brandId: brands.xiaomi,
       basePrice: 4990000,
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Redmi+Note+13",
       attributes: [
-        { groupName: "Pin", attrName: "Dung lượng", attrValue: "5000 mAh" },
+        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Chip tầm trung" },
+        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "6.67 inch" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "AMOLED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
+        { groupName: "Cấu hình", attrName: "Chip xử lý", attrValue: "Snapdragon 685" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
-        { groupName: "Cấu hình", attrName: "Bộ nhớ trong", attrValue: "128GB" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 13" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "128GB" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 13, MIUI 14" },
+        { groupName: "Camera", attrName: "Camera sau", attrValue: "108MP + 8MP + 2MP" },
+        { groupName: "Camera", attrName: "Camera trước", attrValue: "16MP" },
+        { groupName: "Pin & Sạc", attrName: "Dung lượng pin", attrValue: "5000 mAh" },
+        { groupName: "Pin & Sạc", attrName: "Công suất sạc", attrValue: "33W" },
+        { groupName: "Thiết kế", attrName: "Kháng nước, bụi", attrValue: "IP54" },
       ],
-      variants: [{ sku: "RN13-128-BLK", color: "Đen", storage: "128GB", price: 4990000 }],
+      variants: [
+        { sku: "RN13-128-BLK", color: "Đen", storage: "128GB", price: 4990000 },
+        { sku: "RN13-256-BLU", color: "Xanh Dương", storage: "256GB", price: 5990000 },
+      ],
     },
     {
       name: "OPPO Reno11 5G",
       slug: "oppo-reno11-5g",
-      description: "OPPO Reno11 5G camera chân dung AI, thiết kế mỏng nhẹ.",
+      description: "OPPO Reno11 5G camera chân dung AI, sạc nhanh SUPERVOOC 67W.",
       categoryId: dienThoai.id,
-      brandId: oppo.id,
+      brandId: brands.oppo,
       basePrice: 9990000,
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=OPPO+Reno11+5G",
       attributes: [
-        { groupName: "Camera", attrName: "Camera sau", attrValue: "50MP + 8MP + 2MP" },
+        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Chip tầm trung" },
+        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Pin từ 5000mAh" },
+        { groupName: "Đặc điểm nổi bật", attrName: "Hiệu năng và Pin", attrValue: "Sạc nhanh từ 60W" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "6.7 inch" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "AMOLED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
+        { groupName: "Cấu hình", attrName: "Chip xử lý", attrValue: "MediaTek Dimensity 7050" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
-        { groupName: "Cấu hình", attrName: "Bộ nhớ trong", attrValue: "256GB" },
-        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 14" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
+        { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Android 14, ColorOS 14" },
+        { groupName: "Camera", attrName: "Camera sau", attrValue: "50MP + 8MP + 2MP" },
+        { groupName: "Camera", attrName: "Camera trước", attrValue: "32MP" },
+        { groupName: "Pin & Sạc", attrName: "Dung lượng pin", attrValue: "5000 mAh" },
+        { groupName: "Pin & Sạc", attrName: "Công suất sạc", attrValue: "SUPERVOOC 67W" },
       ],
-      variants: [{ sku: "OPPO-RENO11-256-GRN", color: "Xanh Ngọc", storage: "256GB", price: 9990000 }],
+      variants: [
+        { sku: "OPPO-RENO11-256-GRN", color: "Xanh Ngọc", storage: "256GB", price: 9990000 },
+      ],
     },
+
+    // ===================== LAPTOP =====================
+    // Bộ lọc: CPU / RAM / Card đồ họa / Ổ cứng / Kích thước màn hình / Tần số quét.
+    // "Card đồ họa" cố ý dùng giá trị ở mức PHÂN LOẠI ("Card tích hợp" /
+    // "Card rời ...") chứ không phải tên chip cụ thể — lọc theo tên chip thì
+    // mỗi giá trị chỉ ứng với đúng 1 máy, không thu hẹp được gì. Tên chip cụ
+    // thể vẫn hiển thị ở dòng "Chip đồ họa" (không dùng làm bộ lọc).
     {
       name: "MacBook Air M3",
       slug: "macbook-air-m3",
-      description: "MacBook Air M3 mỏng nhẹ, hiệu năng mạnh mẽ cho công việc và sáng tạo.",
+      description: "MacBook Air M3 mỏng nhẹ, màn hình Liquid Retina, pin tới 18 giờ.",
       categoryId: laptopCategory.id,
-      brandId: apple.id,
+      brandId: brands.apple,
       basePrice: 27990000,
       isFeatured: true,
       imageUrl: "https://placehold.co/600x600.png?text=MacBook+Air+M3",
       attributes: [
-        { groupName: "Vi xử lý", attrName: "Chip", attrValue: "Apple M3" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "13.6 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "2560 x 1664 (Liquid Retina)" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
+        { groupName: "Cấu hình", attrName: "CPU", attrValue: "Apple M3" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
         { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "256GB SSD" },
+        { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card tích hợp" },
+        { groupName: "Cấu hình", attrName: "Chip đồ họa", attrValue: "GPU 8 nhân (Apple M3)" },
         { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "macOS" },
+        { groupName: "Pin & Sạc", attrName: "Thời lượng pin", attrValue: "Tới 18 giờ" },
+        { groupName: "Kết nối", attrName: "Cổng giao tiếp", attrValue: "2x Thunderbolt/USB 4, MagSafe 3, jack 3.5mm" },
+        { groupName: "Thiết kế", attrName: "Trọng lượng", attrValue: "1.24 kg" },
       ],
       variants: [{ sku: "MBA-M3-8-256", color: "Bạc", storage: "8GB/256GB", price: 27990000 }],
     },
     {
       name: "Dell XPS 13",
       slug: "dell-xps-13",
-      description: "Dell XPS 13 thiết kế cao cấp, màn hình InfinityEdge sắc nét.",
+      description: "Dell XPS 13 viền màn hình siêu mỏng, vỏ nhôm nguyên khối.",
       categoryId: laptopCategory.id,
-      brandId: dell.id,
+      brandId: brands.dell,
       basePrice: 32990000,
       isFeatured: false,
       imageUrl: "https://placehold.co/600x600.png?text=Dell+XPS+13",
       attributes: [
-        { groupName: "Vi xử lý", attrName: "CPU", attrValue: "Intel Core i7 thế hệ 13" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "13.4 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "1920 x 1200 (FHD+)" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
+        { groupName: "Cấu hình", attrName: "CPU", attrValue: "Intel Core i7" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "16GB" },
         { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
+        { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card tích hợp" },
+        { groupName: "Cấu hình", attrName: "Chip đồ họa", attrValue: "Intel Iris Xe Graphics" },
         { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Windows 11" },
+        { groupName: "Pin & Sạc", attrName: "Thời lượng pin", attrValue: "Tới 12 giờ" },
+        { groupName: "Thiết kế", attrName: "Trọng lượng", attrValue: "1.2 kg" },
       ],
       variants: [{ sku: "XPS13-16-512", color: "Bạc", storage: "16GB/512GB", price: 32990000 }],
     },
     {
       name: "Asus Zenbook 14 OLED",
       slug: "asus-zenbook-14-oled",
-      description: "Asus Zenbook 14 OLED màn hình OLED sắc nét, mỏng nhẹ cho dân văn phòng.",
+      description: "Asus Zenbook 14 OLED màn hình 2.8K 120Hz, chip Intel Core Ultra.",
       categoryId: laptopCategory.id,
-      brandId: asus.id,
+      brandId: brands.asus,
       basePrice: 22990000,
       isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Asus+Zenbook+14",
+      imageUrl: "https://placehold.co/600x600.png?text=Asus+Zenbook+14+OLED",
       attributes: [
-        { groupName: "Vi xử lý", attrName: "CPU", attrValue: "Intel Core Ultra 5" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "14 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "2880 x 1800 (2.8K OLED)" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
+        { groupName: "Cấu hình", attrName: "CPU", attrValue: "Intel Core Ultra 7" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "16GB" },
         { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
+        { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card tích hợp" },
+        { groupName: "Cấu hình", attrName: "Chip đồ họa", attrValue: "Intel Arc Graphics" },
         { groupName: "Cấu hình", attrName: "Hệ điều hành", attrValue: "Windows 11" },
+        { groupName: "Pin & Sạc", attrName: "Thời lượng pin", attrValue: "75Wh, tới 14 giờ" },
+        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "2x Thunderbolt 4, USB-A, HDMI 2.1" },
       ],
       variants: [{ sku: "ASUS-ZB14-16-512", color: "Đen", storage: "16GB/512GB", price: 22990000 }],
     },
+
+    // ===================== TIVI =====================
+    // Bộ lọc: Loại tivi / Kích thước màn hình / Độ phân giải.
+    // "Loại tivi" phân biệt Smart Tivi (hệ điều hành riêng của hãng: Tizen của
+    // Samsung, webOS của LG) với Google Tivi (chạy Google TV) — đúng cách các
+    // siêu thị điện máy VN phân loại, và là thứ người mua hỏi đầu tiên.
     {
-      name: "AirPods Pro 2",
-      slug: "airpods-pro-2",
-      description: "AirPods Pro 2 chống ồn chủ động, âm thanh không gian cá nhân hóa.",
-      categoryId: phuKien.id,
-      brandId: apple.id,
-      basePrice: 5990000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=AirPods+Pro+2",
-      attributes: [{ groupName: "Tính năng", attrName: "Chống ồn", attrValue: "Chủ động (ANC)" }],
-      variants: [{ sku: "APP2-WHT", color: "Trắng", storage: null, price: 5990000 }],
-    },
-    {
-      name: "JBL Tune 510BT",
-      slug: "jbl-tune-510bt",
-      description: "Tai nghe không dây JBL Tune 510BT, âm bass mạnh mẽ, pin 40 giờ.",
-      categoryId: phuKien.id,
-      brandId: jbl.id,
-      basePrice: 1290000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=JBL+Tune+510BT",
-      attributes: [{ groupName: "Pin", attrName: "Thời lượng", attrValue: "40 giờ" }],
-      variants: [{ sku: "JBL-T510BT-BLK", color: "Đen", storage: null, price: 1290000 }],
-    },
-    {
-      name: "Logitech G304 Chuột chơi game không dây",
-      slug: "logitech-g304-chuot-choi-game",
-      description: "Chuột chơi game không dây Logitech G304, cảm biến HERO 12000 DPI.",
-      categoryId: phuKien.id,
-      brandId: logitech.id,
-      basePrice: 690000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Logitech+G304",
-      attributes: [{ groupName: "Cảm biến", attrName: "DPI tối đa", attrValue: "12000 DPI" }],
-      variants: [{ sku: "LOGITECH-G304", color: "Đen", storage: null, price: 690000 }],
-    },
-    {
-      name: "TP-Link Archer AX55 WiFi 6",
-      slug: "tp-link-archer-ax55",
-      description: "Router WiFi 6 TP-Link Archer AX55, tốc độ cao, phủ sóng rộng.",
-      categoryId: phuKien.id,
-      brandId: tplink.id,
-      basePrice: 1590000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=TP-Link+Archer+AX55",
-      attributes: [{ groupName: "Chuẩn WiFi", attrName: "Phiên bản", attrValue: "WiFi 6 (802.11ax)" }],
-      variants: [{ sku: "TPLINK-AX55", color: "Đen", storage: null, price: 1590000 }],
-    },
-    {
-      name: "Xiaomi Camera an ninh Mi 360",
-      slug: "xiaomi-camera-an-ninh-mi-360",
-      description: "Camera an ninh Xiaomi Mi 360, xoay 360 độ, đàm thoại 2 chiều, cảnh báo chuyển động.",
-      categoryId: phuKien.id,
-      brandId: xiaomi.id,
-      basePrice: 590000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Xiaomi+Camera+Mi+360",
-      attributes: [{ groupName: "Độ phân giải", attrName: "Camera", attrValue: "2K" }],
-      variants: [{ sku: "XIAOMI-CAM-360", color: "Trắng", storage: null, price: 590000 }],
-    },
-    {
-      name: "Samsung Smart Tivi Crystal UHD 55 inch",
-      slug: "samsung-crystal-uhd-55-inch",
-      description: "Smart Tivi Samsung Crystal UHD 55 inch 4K, hệ điều hành Tizen.",
-      categoryId: dienMay.id,
-      brandId: samsung.id,
-      basePrice: 11990000,
+      name: "Samsung Smart Tivi QLED 4K Q60D 65 inch",
+      slug: "samsung-qled-4k-q60d-65-inch",
+      description:
+        "Smart Tivi QLED 4K Q60D 65 inch với công nghệ Quantum Dot, thiết kế AirSlim mỏng và hệ điều hành Tizen.",
+      categoryId: tivi.id,
+      brandId: brands.samsung,
+      basePrice: 18990000,
       isFeatured: true,
-      imageUrl: "https://placehold.co/600x600.png?text=Samsung+Crystal+UHD+55",
-      attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "55 inch" }],
-      variants: [{ sku: "SS-UHD55-2024", color: "Đen", storage: null, price: 11990000 }],
+      imageUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/2995a2e0-ab12-4cc4-a4ea-eaef893ccbf6.jpg",
+      attributes: [
+        { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Smart Tivi" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "65 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "QLED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "50Hz" },
+        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Tizen OS" },
+        { groupName: "Tổng quan", attrName: "Bộ xử lý", attrValue: "Quantum Processor Lite 4K" },
+        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "20W (2.0 kênh)" },
+        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Digital Plus, OTS Lite" },
+        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
+      ],
+      variants: [{ sku: "TV-SS-Q60D-65", color: "Đen", storage: null, price: 18990000 }],
     },
     {
-      name: "Sony Bravia 43 inch Google TV",
-      slug: "sony-bravia-43-inch-google-tv",
-      description: "Sony Bravia 43 inch Google TV, xử lý hình ảnh X1, âm thanh sống động.",
-      categoryId: dienMay.id,
-      brandId: sony.id,
-      basePrice: 9490000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Sony+Bravia+43",
-      attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "43 inch" }],
-      variants: [{ sku: "SONY-BRAVIA-43", color: "Đen", storage: null, price: 9490000 }],
+      name: "LG Smart Tivi UHD 4K UQ8000 55 inch",
+      slug: "lg-uhd-4k-uq8000-55-inch",
+      description:
+        "Smart Tivi LG UHD 4K 55 inch với bộ xử lý α5 Gen5 AI, hệ điều hành webOS và điều khiển bằng giọng nói.",
+      categoryId: tivi.id,
+      brandId: brands.lg,
+      basePrice: 11490000,
+      isFeatured: true,
+      imageUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/a2325deb-5e84-4854-9334-c77282dfc161.jpg",
+      attributes: [
+        { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Smart Tivi" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "55 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "LED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "50Hz" },
+        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "webOS" },
+        { groupName: "Tổng quan", attrName: "Bộ xử lý", attrValue: "α5 Gen5 AI Processor 4K" },
+        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "20W (2.0 kênh)" },
+        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "AI Sound, Virtual Surround" },
+        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
+      ],
+      variants: [{ sku: "TV-LG-UQ8000-55", color: "Đen", storage: null, price: 11490000 }],
     },
     {
-      name: "LG Tủ lạnh Inverter 375L",
-      slug: "lg-tu-lanh-inverter-375l",
-      description: "Tủ lạnh LG Inverter 375L ngăn đông trên, tiết kiệm điện.",
-      categoryId: dienMay.id,
-      brandId: lg.id,
+      name: "TCL Google Tivi QLED 4K C655 50 inch",
+      slug: "tcl-google-tivi-qled-4k-c655-50-inch",
+      description:
+        "Google Tivi TCL QLED 4K 50 inch, bộ xử lý AiPQ, âm thanh Onkyo và hỗ trợ Dolby Vision, HDR10+.",
+      categoryId: tivi.id,
+      brandId: brands.tcl,
       basePrice: 10490000,
       isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=LG+Tu+Lanh+375L",
-      attributes: [{ groupName: "Dung tích", attrName: "Thể tích", attrValue: "375 lít" }],
-      variants: [{ sku: "LG-TL-375L", color: "Bạc", storage: null, price: 10490000 }],
+      imageUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/14c52550-ee7f-4e38-af86-dc5cd52d5b12.jpg",
+      attributes: [
+        { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Google Tivi" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "50 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "QLED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
+        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Google TV" },
+        { groupName: "Tổng quan", attrName: "Bộ xử lý", attrValue: "AiPQ Processor" },
+        { groupName: "Màn hình", attrName: "Chuẩn HDR", attrValue: "Dolby Vision, HDR10+" },
+        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "2 x 10W (Onkyo)" },
+        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Atmos, DTS Virtual:X" },
+        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
+      ],
+      variants: [{ sku: "TV-TCL-C655-50", color: "Đen", storage: null, price: 10490000 }],
     },
     {
-      name: "LG Máy giặt cửa trước Inverter 9kg",
-      slug: "lg-may-giat-inverter-9kg",
-      description: "Máy giặt LG Inverter 9kg cửa trước, công nghệ giặt hơi nước diệt khuẩn.",
-      categoryId: dienMay.id,
-      brandId: lg.id,
-      basePrice: 8290000,
+      name: "Xiaomi Google Tivi A Pro 43 inch",
+      slug: "xiaomi-google-tivi-a-pro-43-inch",
+      description:
+        "Google Tivi Xiaomi A Pro 43 inch, màn hình 4K viền mỏng, âm thanh Dolby Audio và DTS:X.",
+      categoryId: tivi.id,
+      brandId: brands.xiaomi,
+      basePrice: 6490000,
       isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=LG+May+Giat+9kg",
-      attributes: [{ groupName: "Khối lượng giặt", attrName: "Trọng lượng", attrValue: "9 kg" }],
-      variants: [{ sku: "LG-MG-9KG", color: "Đen", storage: null, price: 8290000 }],
+      imageUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/3e7dc851-3484-43ba-9586-1d9100c3d7ba.jpg",
+      attributes: [
+        { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Google Tivi" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "43 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "LED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
+        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Google TV" },
+        { groupName: "Màn hình", attrName: "Chuẩn HDR", attrValue: "Dolby Vision, HDR10+" },
+        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "2 x 12W" },
+        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Audio, DTS:X" },
+        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
+      ],
+      variants: [{ sku: "TV-MI-APRO-43", color: "Đen", storage: null, price: 6490000 }],
     },
     {
-      name: "Apple Watch Series 9",
-      slug: "apple-watch-series-9",
-      description: "Apple Watch Series 9 chip S9, màn hình sáng hơn, theo dõi sức khỏe toàn diện.",
-      categoryId: dienMay.id,
-      brandId: apple.id,
-      basePrice: 10990000,
-      isFeatured: true,
-      imageUrl: "https://placehold.co/600x600.png?text=Apple+Watch+Series+9",
-      attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "45mm" }],
-      variants: [{ sku: "AWS9-45-BLK", color: "Đen", storage: null, price: 10990000 }],
-    },
-    {
-      name: "Samsung Galaxy Tab S9",
-      slug: "samsung-galaxy-tab-s9",
-      description: "Galaxy Tab S9 màn hình Dynamic AMOLED 2X, kèm bút S Pen.",
-      categoryId: dienMay.id,
-      brandId: samsung.id,
-      basePrice: 15990000,
+      name: "Xiaomi Google Tivi A Pro 55 inch",
+      slug: "xiaomi-google-tivi-a-pro-55-inch",
+      description:
+        "Google Tivi Xiaomi A Pro 55 inch, màn hình 4K tràn viền, hỗ trợ Dolby Vision và điều khiển giọng nói.",
+      categoryId: tivi.id,
+      brandId: brands.xiaomi,
+      basePrice: 9490000,
       isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Galaxy+Tab+S9",
-      attributes: [{ groupName: "Màn hình", attrName: "Kích thước", attrValue: "11 inch" }],
-      variants: [{ sku: "TABS9-128-GRY", color: "Xám", storage: "128GB", price: 15990000 }],
+      imageUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/034b32fa-a166-4447-b588-57e72b6735f3.jpg",
+      attributes: [
+        { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Google Tivi" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "55 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "LED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
+        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Google TV" },
+        { groupName: "Màn hình", attrName: "Chuẩn HDR", attrValue: "Dolby Vision, HDR10+" },
+        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "2 x 12W" },
+        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Audio, DTS:X" },
+        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
+      ],
+      variants: [{ sku: "TV-MI-APRO-55", color: "Đen", storage: null, price: 9490000 }],
     },
     {
-      name: "Dell UltraSharp U2724D",
-      slug: "dell-ultrasharp-u2724d",
-      description: "Màn hình Dell UltraSharp 27 inch QHD, chuẩn màu chính xác cho dân thiết kế.",
-      categoryId: dienMay.id,
-      brandId: dell.id,
-      basePrice: 7990000,
+      name: "Philips Google Tivi LED 6900 Series 43 inch",
+      slug: "philips-google-tivi-led-6900-43-inch",
+      description:
+        "Google Tivi Philips 6900 Series 43 inch màn hình Full HD, Pixel Precise HD và âm thanh Dolby Atmos.",
+      categoryId: tivi.id,
+      brandId: brands.philips,
+      basePrice: 6990000,
       isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Dell+UltraSharp+27",
-      attributes: [{ groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "2560x1440 (QHD)" }],
-      variants: [{ sku: "DELL-U2724D", color: "Bạc", storage: null, price: 7990000 }],
-    },
-    {
-      name: "Asus TUF Gaming VG249Q3A",
-      slug: "asus-tuf-gaming-vg249q3a",
-      description: "Màn hình gaming Asus TUF 24 inch 165Hz, thời gian phản hồi 1ms.",
-      categoryId: dienMay.id,
-      brandId: asus.id,
-      basePrice: 4490000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Asus+TUF+Gaming+24",
-      attributes: [{ groupName: "Màn hình", attrName: "Tần số quét", attrValue: "165Hz" }],
-      variants: [{ sku: "ASUS-VG249Q3A", color: "Đen", storage: null, price: 4490000 }],
-    },
-    {
-      name: "HP LaserJet Pro M15w",
-      slug: "hp-laserjet-pro-m15w",
-      description: "Máy in laser HP LaserJet Pro M15w, in không dây qua WiFi, nhỏ gọn.",
-      categoryId: dienMay.id,
-      brandId: hp.id,
-      basePrice: 2690000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=HP+LaserJet+M15w",
-      attributes: [{ groupName: "Kết nối", attrName: "WiFi", attrValue: "Có" }],
-      variants: [{ sku: "HP-M15W", color: "Trắng", storage: null, price: 2690000 }],
-    },
-    {
-      name: "Philips Nồi chiên không dầu",
-      slug: "philips-noi-chien-khong-dau",
-      description: "Nồi chiên không dầu Philips công nghệ Rapid Air, dung tích 4.1L.",
-      categoryId: dienMay.id,
-      brandId: philips.id,
-      basePrice: 1990000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Philips+Noi+Chien",
-      attributes: [{ groupName: "Dung tích", attrName: "Thể tích", attrValue: "4.1 lít" }],
-      variants: [{ sku: "PHILIPS-NC41", color: "Đen", storage: null, price: 1990000 }],
-    },
-    {
-      name: "Philips Nồi cơm điện tử",
-      slug: "philips-noi-com-dien-tu",
-      description: "Nồi cơm điện tử Philips lòng nồi chống dính cao cấp, nấu đa năng.",
-      categoryId: dienMay.id,
-      brandId: philips.id,
-      basePrice: 1290000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Philips+Noi+Com+Dien",
-      attributes: [{ groupName: "Dung tích", attrName: "Thể tích", attrValue: "1.8 lít" }],
-      variants: [{ sku: "PHILIPS-NCD18", color: "Đỏ", storage: null, price: 1290000 }],
-    },
-    {
-      name: "Xiaomi Robot hút bụi lau nhà",
-      slug: "xiaomi-robot-hut-bui-lau-nha",
-      description: "Robot hút bụi lau nhà Xiaomi, lực hút mạnh mẽ, điều khiển qua app.",
-      categoryId: dienMay.id,
-      brandId: xiaomi.id,
-      basePrice: 5990000,
-      isFeatured: true,
-      imageUrl: "https://placehold.co/600x600.png?text=Xiaomi+Robot+Hut+Bui",
-      attributes: [{ groupName: "Tính năng", attrName: "Chức năng", attrValue: "Hút bụi + lau nhà" }],
-      variants: [{ sku: "XIAOMI-ROBOT-VAC", color: "Trắng", storage: null, price: 5990000 }],
-    },
-    {
-      name: "Philips Máy lọc không khí",
-      slug: "philips-may-loc-khong-khi",
-      description: "Máy lọc không khí Philips lọc bụi mịn PM2.5, khử mùi, kháng khuẩn.",
-      categoryId: dienMay.id,
-      brandId: philips.id,
-      basePrice: 3990000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Philips+May+Loc+Khong+Khi",
-      attributes: [{ groupName: "Diện tích", attrName: "Phù hợp phòng", attrValue: "Đến 40m²" }],
-      variants: [{ sku: "PHILIPS-AC-40", color: "Trắng", storage: null, price: 3990000 }],
-    },
-    {
-      name: "Kangaroo Máy hút ẩm KG150",
-      slug: "kangaroo-may-hut-am-kg150",
-      description: "Máy hút ẩm Kangaroo KG150, phù hợp phòng đến 30m², chống ẩm mốc.",
-      categoryId: dienMay.id,
-      brandId: kangaroo.id,
-      basePrice: 3290000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Kangaroo+May+Hut+Am",
-      attributes: [{ groupName: "Công suất hút ẩm", attrName: "Lít/ngày", attrValue: "12L/ngày" }],
-      variants: [{ sku: "KGR-HA-KG150", color: "Trắng", storage: null, price: 3290000 }],
-    },
-    {
-      name: "Philips Máy sấy tóc BHC010",
-      slug: "philips-may-say-toc-bhc010",
-      description: "Máy sấy tóc Philips BHC010, công suất 1200W, gọn nhẹ.",
-      categoryId: dienMay.id,
-      brandId: philips.id,
-      basePrice: 390000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Philips+May+Say+Toc",
-      attributes: [{ groupName: "Công suất", attrName: "Watt", attrValue: "1200W" }],
-      variants: [{ sku: "PHILIPS-BHC010", color: "Hồng", storage: null, price: 390000 }],
-    },
-    {
-      name: "Xiaomi Cân điện tử Mi Body Scale",
-      slug: "xiaomi-can-dien-tu-mi-body-scale",
-      description: "Cân điện tử Xiaomi Mi Body Scale, đo chỉ số cơ thể, kết nối app sức khỏe.",
-      categoryId: dienMay.id,
-      brandId: xiaomi.id,
-      basePrice: 390000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Xiaomi+Can+Dien+Tu",
-      attributes: [{ groupName: "Kết nối", attrName: "Bluetooth", attrValue: "Có" }],
-      variants: [{ sku: "XIAOMI-SCALE", color: "Trắng", storage: null, price: 390000 }],
-    },
-    {
-      name: "Kangaroo Máy lọc nước RO",
-      slug: "kangaroo-may-loc-nuoc-ro",
-      description: "Máy lọc nước Kangaroo RO 10 lõi lọc, loại bỏ tạp chất, nước tinh khiết.",
-      categoryId: dienMay.id,
-      brandId: kangaroo.id,
-      basePrice: 4990000,
-      isFeatured: true,
-      imageUrl: "https://placehold.co/600x600.png?text=Kangaroo+May+Loc+Nuoc",
-      attributes: [{ groupName: "Số lõi lọc", attrName: "Lõi", attrValue: "10 lõi" }],
-      variants: [{ sku: "KGR-RO-10", color: "Trắng", storage: null, price: 4990000 }],
-    },
-    {
-      name: "Kangaroo Máy nước nóng KG69",
-      slug: "kangaroo-may-nuoc-nong-kg69",
-      description: "Máy nước nóng trực tiếp Kangaroo KG69, chống giật, làm nóng nhanh.",
-      categoryId: dienMay.id,
-      brandId: kangaroo.id,
-      basePrice: 1090000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Kangaroo+May+Nuoc+Nong",
-      attributes: [{ groupName: "Công suất", attrName: "Watt", attrValue: "4500W" }],
-      variants: [{ sku: "KGR-NN-KG69", color: "Trắng", storage: null, price: 1090000 }],
-    },
-    {
-      name: "Sunhouse Máy xay sinh tố SHD5341",
-      slug: "sunhouse-may-xay-sinh-to-shd5341",
-      description: "Máy xay sinh tố Sunhouse SHD5341, cối xay inox, xay đá dễ dàng.",
-      categoryId: dienMay.id,
-      brandId: sunhouse.id,
-      basePrice: 590000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Sunhouse+May+Xay",
-      attributes: [{ groupName: "Công suất", attrName: "Watt", attrValue: "500W" }],
-      variants: [{ sku: "SUNHOUSE-SHD5341", color: "Đỏ", storage: null, price: 590000 }],
-    },
-    {
-      name: "Sunhouse Máy hút mùi SHB6822",
-      slug: "sunhouse-may-hut-mui-shb6822",
-      description: "Máy hút mùi Sunhouse SHB6822 dạng áp tường, khử mùi hiệu quả cho bếp.",
-      categoryId: dienMay.id,
-      brandId: sunhouse.id,
-      basePrice: 2490000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Sunhouse+May+Hut+Mui",
-      attributes: [{ groupName: "Kích thước", attrName: "Chiều rộng", attrValue: "70cm" }],
-      variants: [{ sku: "SUNHOUSE-SHB6822", color: "Đen", storage: null, price: 2490000 }],
-    },
-    {
-      name: "Sunhouse Nồi áp suất điện SHD8616",
-      slug: "sunhouse-noi-ap-suat-dien-shd8616",
-      description: "Nồi áp suất điện Sunhouse SHD8616, nấu nhanh, an toàn với van xả áp tự động.",
-      categoryId: dienMay.id,
-      brandId: sunhouse.id,
-      basePrice: 1190000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Sunhouse+Noi+Ap+Suat",
-      attributes: [{ groupName: "Dung tích", attrName: "Thể tích", attrValue: "5 lít" }],
-      variants: [{ sku: "SUNHOUSE-SHD8616", color: "Bạc", storage: null, price: 1190000 }],
-    },
-    {
-      name: "Sunhouse Chảo chống dính đáy từ",
-      slug: "sunhouse-chao-chong-dinh-day-tu",
-      description: "Chảo chống dính Sunhouse đáy từ, dùng được cho mọi loại bếp.",
-      categoryId: dienMay.id,
-      brandId: sunhouse.id,
-      basePrice: 290000,
-      isFeatured: false,
-      imageUrl: "https://placehold.co/600x600.png?text=Sunhouse+Chao+Chong+Dinh",
-      attributes: [{ groupName: "Đường kính", attrName: "Kích thước", attrValue: "28cm" }],
-      variants: [{ sku: "SUNHOUSE-CHAO28", color: "Đen", storage: null, price: 290000 }],
+      imageUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/8d8bb6cd-b47f-4779-a8d3-89fd5c8264c5.jpg",
+      attributes: [
+        { groupName: "Tổng quan", attrName: "Loại tivi", attrValue: "Google Tivi" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "43 inch" },
+        { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "Full HD (1920 x 1080)" },
+        { groupName: "Màn hình", attrName: "Công nghệ màn hình", attrValue: "LED" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
+        { groupName: "Tổng quan", attrName: "Hệ điều hành", attrValue: "Google TV" },
+        { groupName: "Tổng quan", attrName: "Bộ xử lý", attrValue: "Pixel Precise HD" },
+        { groupName: "Âm thanh", attrName: "Công suất loa", attrValue: "2 x 10W" },
+        { groupName: "Âm thanh", attrName: "Công nghệ âm thanh", attrValue: "Dolby Atmos" },
+        { groupName: "Kết nối", attrName: "Cổng kết nối", attrValue: "3x HDMI, 2x USB, Wi-Fi, Bluetooth" },
+      ],
+      variants: [{ sku: "TV-PHI-6900-43", color: "Đen", storage: null, price: 6990000 }],
     },
   ];
 
   for (const p of products) {
     // `update` đồng bộ lại categoryId/brandId/basePrice/isFeatured mỗi lần
     // chạy seed (không phải `{}` no-op) — cần thiết để sản phẩm đã tồn tại
-    // từ các lần seed trước THỰC SỰ quay lại đúng 1 trong 4 category mới.
+    // từ các lần seed trước THỰC SỰ quay lại đúng category/giá trong code.
     const product = await prisma.product.upsert({
       where: { slug: p.slug },
       update: {
@@ -620,6 +477,9 @@ async function main() {
     }
 
     for (const v of p.variants) {
+      // `update: {}` có chủ đích: màu của một số biến thể đã được sửa tay cho
+      // khớp với ảnh thật lấy từ trang chính hãng (xem CLAUDE.md) — ghi đè lại
+      // theo code sẽ làm lệch màu so với ảnh đang gắn cho chính biến thể đó.
       await prisma.productVariant.upsert({
         where: { sku: v.sku },
         update: {},
@@ -633,41 +493,6 @@ async function main() {
       });
     }
   }
-
-  // Dọn TOÀN BỘ cấu trúc danh mục con/nhóm gộp từ 2 lần mở rộng trước (23
-  // danh mục cấp cao + 52 danh mục con) — user yêu cầu quay lại chỉ đúng 4
-  // danh mục phẳng ở trên. Toàn bộ 34 sản phẩm đã được gán lại categoryId
-  // vào 1 trong 4 category mới ở vòng lặp ngay trên nên các category cũ này
-  // chắc chắn không còn sản phẩm nào tham chiếu tới, xóa an toàn. Xóa
-  // CATEGORY CON trước (parentId khác null) rồi mới xóa tới các category
-  // "nhóm" cấp cao cũ theo đúng slug — thứ tự này cần thiết vì nếu xóa cha
-  // trước, quan hệ parentId optional sẽ mặc định SetNull (không cascade),
-  // khiến category con bị mồ côi thành cấp cao mới thay vì bị xóa theo.
-  await prisma.category.deleteMany({ where: { parentId: { not: null } } });
-
-  const OLD_GROUP_SLUGS = [
-    "tivi-may-lanh-dieu-hoa",
-    "tu-lanh-tu-dong-tu-mat",
-    "may-giat-may-say-tu-say",
-    "dong-ho-may-tinh-bang",
-    "pc-man-hinh-linh-kien",
-    "may-in-may-chieu-phan-mem",
-    "robot-hut-bui-may-loc-khi",
-    "may-hut-am-thiet-bi-suoi-am",
-    "may-massage-may-say-toc",
-    "cham-soc-suc-khoe-do-dung-gia-dinh",
-    "quat-quat-dieu-hoa-may-loc-nuoc",
-    "may-nuoc-nong-cay-nuoc-nong-lanh",
-    "dien-gia-dung-sinh-to-xay-vat-ep",
-    "am-sieu-toc-noi-com-dien",
-    "thiet-bi-bep-may-rua-bat-may-hut-mui",
-    "noi-chien-lo-vi-song-bep-nuong-dien",
-    "noi-ap-suat-noi-lau-dien-bep-dien",
-    "noi-chao-do-dung-nha-bep",
-    "camera-thiet-bi-mang",
-    "thiet-bi-choi-game-ban-ghe-xe-dap",
-  ];
-  await prisma.category.deleteMany({ where: { slug: { in: OLD_GROUP_SLUGS } } });
 
   const bannerCount = await prisma.banner.count({ where: { position: "home_slider" } });
   if (bannerCount === 0) {
@@ -686,8 +511,8 @@ async function main() {
           sortOrder: 2,
         },
         {
-          imageUrl: "https://placehold.co/1200x400.png?text=Phu+Kien+Chinh+Hang",
-          linkUrl: "/products?category=phu-kien",
+          imageUrl: "https://placehold.co/1200x400.png?text=Tivi+Chinh+Hang",
+          linkUrl: "/products?category=tivi",
           position: "home_slider",
           sortOrder: 3,
         },
@@ -717,7 +542,7 @@ async function main() {
   }
 
   console.log(
-    `Seed xong: ${products.length} sản phẩm, 4 danh mục (Điện thoại/Laptop/Điện máy/Phụ kiện), ` +
+    `Seed xong: ${products.length} sản phẩm, 3 danh mục (Điện thoại/Laptop/Tivi), ` +
       `tồn kho cho ${allVariants.length} biến thể x ${activeStores.length} cửa hàng.`
   );
 }

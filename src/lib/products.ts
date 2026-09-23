@@ -288,24 +288,29 @@ export interface AttributeFacet {
   values: AttributeFacetValue[];
 }
 
-const MIN_PRODUCTS_FOR_FACET = 2;
-
-// Bảng lọc theo thông số kỹ thuật RIÊNG cho từng danh mục (user yêu cầu
-// "mỗi danh mục có 1 bảng filter riêng kiểu thông số"). KHÔNG hard-code
-// danh sách thông số theo từng category (vd không tự quyết "Điện thoại phải
-// có RAM/ROM/Hệ điều hành") — suy ra HOÀN TOÀN từ dữ liệu ProductAttribute
-// thật đang có trong DB của các sản phẩm ACTIVE thuộc category đó, để danh
-// mục nào cũng ra đúng thông số sản phẩm nó thực sự có, không bịa thêm.
+// Bộ lọc theo thông số kỹ thuật RIÊNG cho từng danh mục: mỗi danh mục khai
+// báo tường minh những thông số nào được dùng làm bộ lọc, theo ĐÚNG thứ tự
+// hiển thị trong sidebar. Trước đây danh sách này được suy ra tự động từ dữ
+// liệu ProductAttribute thật — hợp lý khi danh mục còn là nhóm tổng gộp
+// nhiều loại thiết bị khác hẳn nhau, nhưng giờ mỗi danh mục chỉ còn đúng 1
+// loại sản phẩm nên khai báo tường minh tốt hơn: thứ tự bộ lọc do mình quyết
+// định (không phải xếp theo bảng chữ cái), và các thông số chỉ để THAM KHẢO
+// ở trang chi tiết (camera, trọng lượng, cổng kết nối...) không lẫn vào
+// sidebar dù chúng cũng nằm trong ProductAttribute.
 //
-// Chỉ giữ lại attrName nào xuất hiện ở ÍT NHẤT 2 sản phẩm khác nhau
-// (MIN_PRODUCTS_FOR_FACET) — attrName chỉ 1 sản phẩm có thì lọc theo nó
-// không có tác dụng thu hẹp gì cả (chỉ có đúng 1 kết quả duy nhất), thường
-// là do khác sản phẩm trong cùng danh mục có bộ thông số không đồng nhất
-// (đặc biệt danh mục "Điện máy" vốn là nhóm tổng cho nhiều loại thiết bị
-// khác hẳn nhau — tivi/tủ lạnh/máy giặt/đồ gia dụng — nên không phải
-// attrName nào cũng dùng chung được giữa các sản phẩm).
+// Giá trị trong `attrName` phải khớp CHÍNH XÁC attrName trong DB (xem
+// prisma/seed.ts) — sai một chữ thì bộ lọc đó không có giá trị nào để chọn.
+export const CATEGORY_FILTER_SPECS: Record<string, string[]> = {
+  "dien-thoai": ["Hiệu năng và Pin", "Dung lượng ROM", "RAM", "Tần số quét"],
+  laptop: ["CPU", "RAM", "Card đồ họa", "Ổ cứng", "Kích thước màn hình", "Tần số quét"],
+  tivi: ["Loại tivi", "Kích thước màn hình", "Độ phân giải"],
+};
+
 export const getAttributeFacets = unstable_cache(
   async (categorySlug: string): Promise<AttributeFacet[]> => {
+    const specNames = CATEGORY_FILTER_SPECS[categorySlug];
+    if (!specNames) return [];
+
     const category = await prisma.category.findUnique({
       where: { slug: categorySlug },
       select: { id: true, children: { select: { id: true } } },
@@ -314,36 +319,43 @@ export const getAttributeFacets = unstable_cache(
     const categoryIds = [category.id, ...category.children.map((c) => c.id)];
 
     const rows = await prisma.productAttribute.findMany({
-      where: { product: { categoryId: { in: categoryIds }, status: ProductStatus.ACTIVE } },
+      where: {
+        attrName: { in: specNames },
+        product: { categoryId: { in: categoryIds }, status: ProductStatus.ACTIVE },
+      },
       select: { productId: true, attrName: true, attrValue: true },
     });
 
-    const byAttrName = new Map<
-      string,
-      { productIds: Set<string>; values: Map<string, { value: string; count: number }> }
-    >();
+    // Đếm theo SỐ SẢN PHẨM (Set productId) chứ không phải số dòng thuộc tính:
+    // 1 sản phẩm có thể có nhiều dòng cùng attrName (vd máy bán cả bản 128GB
+    // lẫn 256GB, hoặc nhiều nhãn "Hiệu năng và Pin"), đếm dòng sẽ ra số lớn
+    // hơn số sản phẩm thực sự hiện ra sau khi lọc.
+    const byAttrName = new Map<string, Map<string, Set<string>>>();
     for (const row of rows) {
-      const entry = byAttrName.get(row.attrName) ?? {
-        productIds: new Set<string>(),
-        values: new Map<string, { value: string; count: number }>(),
-      };
-      entry.productIds.add(row.productId);
-      const valueEntry = entry.values.get(row.attrValue) ?? { value: row.attrValue, count: 0 };
-      valueEntry.count += 1;
-      entry.values.set(row.attrValue, valueEntry);
-      byAttrName.set(row.attrName, entry);
+      const values = byAttrName.get(row.attrName) ?? new Map<string, Set<string>>();
+      const productIds = values.get(row.attrValue) ?? new Set<string>();
+      productIds.add(row.productId);
+      values.set(row.attrValue, productIds);
+      byAttrName.set(row.attrName, values);
     }
 
-    return [...byAttrName.entries()]
-      .filter(([, entry]) => entry.productIds.size >= MIN_PRODUCTS_FOR_FACET)
-      .map(([attrName, entry]) => ({
+    // So sánh có nhận biết SỐ (numeric: true) để "8GB" đứng trước "12GB" và
+    // "43 inch" trước "50 inch" — so sánh chuỗi thuần sẽ xếp "12GB" lên trước.
+    const collator = new Intl.Collator("vi", { numeric: true });
+
+    return specNames
+      .map((attrName) => ({
         attrName,
         slug: slugifyAttr(attrName),
-        values: [...entry.values.values()]
-          .map((v) => ({ value: v.value, slug: slugifyAttr(v.value), count: v.count }))
-          .sort((a, b) => a.value.localeCompare(b.value)),
+        values: [...(byAttrName.get(attrName) ?? new Map()).entries()]
+          .map(([value, productIds]) => ({
+            value,
+            slug: slugifyAttr(value),
+            count: productIds.size,
+          }))
+          .sort((a, b) => collator.compare(a.value, b.value)),
       }))
-      .sort((a, b) => a.attrName.localeCompare(b.attrName));
+      .filter((facet) => facet.values.length > 0);
   },
   ["attribute-facets"],
   { tags: [PRODUCTS_TAG], revalidate: 60 }

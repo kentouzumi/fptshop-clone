@@ -114,11 +114,6 @@ export default async function Home() {
         </div>
       </section>
 
-      <div className="mx-auto w-full max-w-6xl px-6 text-center">
-        <Link href="/products" className="btn-secondary">
-          Xem tất cả sản phẩm
-        </Link>
-      </div>
     </div>
   );
 }

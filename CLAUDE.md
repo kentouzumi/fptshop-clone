@@ -3464,6 +3464,180 @@
       tạm (`catalog_batch2.mjs`, `update_banners.mjs`, thư mục
       `%TEMP%/catalog_imgs`) sau khi chạy xong.
 
+- [x] Thu gọn còn 3 danh mục (Điện thoại / Laptop / Tivi) + bộ lọc THÔNG SỐ
+      khai báo RIÊNG cho từng danh mục + bỏ lối vào "tất cả sản phẩm" (user
+      yêu cầu trọn gói: "bỏ trang tất cả sản phẩm", "chuyển điện máy thành
+      tv", "bỏ danh mục phụ kiện", "bộ lọc phụ thuộc vào danh mục đang xem",
+      "sửa lại các thông số kĩ thuật của các sản phẩm hiện có theo bộ lọc").
+
+      BỘ LỌC THEO DANH MỤC — đổi hướng so với lần trước: mục "Bảng lọc theo
+      thông số kỹ thuật RIÊNG cho từng danh mục" ở trên suy ra danh sách
+      thông số HOÀN TOÀN TỰ ĐỘNG từ dữ liệu ProductAttribute thật (kèm ngưỡng
+      "attrName phải xuất hiện ở >= 2 sản phẩm"). Cách đó hợp lý khi "Điện
+      máy" còn là nhóm tổng gộp tivi/tủ lạnh/nồi cơm — không thể biết trước
+      thông số nào dùng chung được. Giờ mỗi danh mục chỉ còn ĐÚNG 1 loại sản
+      phẩm nên khai báo tường minh tốt hơn hẳn, thêm `CATEGORY_FILTER_SPECS`
+      (src/lib/products.ts): "dien-thoai" -> Hiệu năng và Pin / Dung lượng
+      ROM / RAM / Tần số quét; "laptop" -> CPU / RAM / Card đồ họa / Ổ cứng /
+      Kích thước màn hình / Tần số quét; "tivi" -> Loại tivi / Kích thước màn
+      hình / Độ phân giải. `getAttributeFacets()` viết lại: chỉ query đúng
+      các attrName trong config, trả về theo ĐÚNG THỨ TỰ khai báo (không sắp
+      xếp theo bảng chữ cái như trước), bỏ hẳn ngưỡng >= 2 sản phẩm (user đã
+      tự chọn các bộ lọc này nên phải luôn hiện), và bỏ facet nào chưa có giá
+      trị nào thay vì hiện mục rỗng. Nhờ config này, các thông số chỉ để THAM
+      KHẢO ở trang chi tiết (camera, trọng lượng, cổng kết nối, công suất
+      loa...) không còn lọt vào sidebar dù vẫn nằm chung bảng ProductAttribute.
+
+      2 điểm tinh chỉnh nhỏ nhưng cần thiết trong `getAttributeFacets()`:
+      (1) số đếm cạnh mỗi giá trị đếm theo SỐ SẢN PHẨM (Set productId) chứ
+      không phải số DÒNG thuộc tính — 1 sản phẩm có thể có nhiều dòng cùng
+      attrName (máy bán cả bản 128GB lẫn 256GB, hoặc nhiều nhãn "Hiệu năng và
+      Pin"), đếm dòng sẽ ra số lớn hơn số sản phẩm thực sự hiện ra sau khi
+      lọc; (2) sắp xếp giá trị bằng `Intl.Collator("vi", { numeric: true })`
+      — so sánh chuỗi thuần sẽ xếp "12GB" TRƯỚC "8GB" và "50 inch" trước
+      "43 inch", nhìn rất sai.
+
+      "Hiệu năng và Pin" (điện thoại) là thông số dạng NHÃN chứ không phải 1
+      con số: 1 sản phẩm có NHIỀU dòng cùng attrName này ("Chip cao cấp
+      (flagship)" / "Chip tầm trung" / "Pin từ 5000mAh" / "Sạc nhanh từ 60W"),
+      gom 2 khía cạnh người mua quan tâm nhất thành các mức chọn được — giống
+      cách FPT Shop thật gộp nhóm này. Đặt trong groupName riêng "Đặc điểm nổi
+      bật" để bảng thông số ở trang chi tiết đọc vẫn xuôi. Tương tự, "Card đồ
+      họa" (laptop) cố ý dùng giá trị mức PHÂN LOẠI ("Card tích hợp") chứ
+      không phải tên chip cụ thể — lọc theo tên chip thì mỗi giá trị ứng với
+      đúng 1 máy, không thu hẹp được gì; tên chip cụ thể vẫn hiện ở dòng
+      "Chip đồ họa" (không dùng làm bộ lọc). Cơ chế lọc AND-giữa-các-thông-số
+      / OR-trong-cùng-1-thông-số ở `getProducts()` KHÔNG đổi gì.
+
+      DIỄN GIẢI 1 chỗ mơ hồ trong yêu cầu: với tivi user ghi "màn hình" (tách
+      riêng khỏi "độ phân giải") — hiểu là KÍCH THƯỚC màn hình (43/50/55/65
+      inch, thứ người mua tivi hỏi đầu tiên), không phải công nghệ tấm nền.
+      Công nghệ màn hình (LED/QLED) vẫn có trong thông số nhưng không làm bộ
+      lọc. Nếu user muốn ngược lại thì chỉ cần đổi 1 dòng trong
+      CATEGORY_FILTER_SPECS.
+
+      BỘ LỌC "HÃNG SẢN XUẤT" giờ cũng phụ thuộc danh mục: /products đổi từ
+      `getActiveBrands()` (toàn bộ bảng Brand) sang `getBrandsByCategory()`
+      (suy từ sản phẩm ACTIVE thật, đã có sẵn từ lúc làm mega menu). LỖI THẬT
+      tự phát hiện lúc test nhờ đổi này: trang KẾT QUẢ TÌM KIẾM (không thuộc
+      danh mục nào) vẫn dùng `getActiveBrands()` nên hiện cả những hãng KHÔNG
+      CÒN SẢN PHẨM NÀO (Sunhouse, Kangaroo, HP, Logitech, TP-Link, JBL, Sony
+      — hàng gia dụng/phụ kiện vừa bị gỡ bán), bấm vào ra trang rỗng. Đã sửa:
+      trang tìm kiếm gộp hãng của MỌI danh mục từ chính `getBrandsByCategory()`
+      (dedupe theo slug) thay vì đọc bảng Brand. Các Brand không còn sản phẩm
+      VẪN GIỮ trong DB (không xóa — admin vẫn quản lý/dùng lại được, và xóa
+      là thao tác phá hủy không được yêu cầu), chỉ là không hiện ra ở bộ lọc.
+      `FilterSidebar` đổi type `BrandLite` bỏ field `id` (getBrandsByCategory
+      chỉ trả name+slug), key theo `slug`.
+
+      DỮ LIỆU — 3 danh mục, 13 sản phẩm: "Điện máy" đổi thẳng slug/tên thành
+      "Tivi" (updateMany trên chính bản ghi cũ, GIỮ NGUYÊN id — không tạo
+      category mới rồi xóa cái cũ, tránh phải di chuyển sản phẩm/ghi đè khóa
+      ngoại). Xóa danh mục "Phụ kiện". Xóa 23 sản phẩm không còn thuộc danh
+      mục nào (19 đồ gia dụng + 4 phụ kiện) — user đã chọn "xóa hẳn" qua
+      AskUserQuestion sau khi được hỏi rõ (xóa hẳn / ẩn đi / để tự quyết).
+
+      LỖI TIỀM ẨN đã chặn được nhờ tự kiểm tra trước khi xóa (đúng nguyên tắc
+      "không tin ràng buộc DB tự chặn" áp dụng xuyên suốt dự án): script tự
+      đếm OrderItem tham chiếu tới các biến thể sắp xóa TRƯỚC — phát hiện 1
+      đơn hàng THẬT của chính user (DHMUDZOQM4NBCJ, trạng thái CONFIRMED, đơn
+      test chuyển khoản hôm trước) đang chứa "Sunhouse Chảo chống dính đáy
+      từ". Xóa sẽ vi phạm khóa ngoại (OrderItem.variantId là quan hệ BẮT
+      BUỘC) và quan trọng hơn là mất dữ liệu đơn hàng thật. Đã xử lý: sản
+      phẩm nào nằm trong đơn hàng thì GIỮ bản ghi nhưng đặt `status:
+      DISCONTINUED` — mọi truy vấn hiển thị (getProducts/getAttributeFacets/
+      getBrandsByCategory/getProductsForCompare) đều lọc theo ACTIVE nên nó
+      biến mất hoàn toàn khỏi site, còn đơn hàng cũ vẫn nguyên vẹn. Đã xác
+      minh lại bằng curl: không còn xuất hiện ở trang chủ/danh mục/tìm kiếm.
+
+      THÊM 6 TIVI MỚI kèm ẢNH THẬT (user chọn phương án này qua
+      AskUserQuestion, thay vì để danh mục Tivi chỉ có 1 sản phẩm): Samsung
+      QLED 4K Q60D 65" / LG UHD 4K UQ8000 55" / TCL Google Tivi QLED 4K C655
+      50" (thêm brand TCL mới) / Xiaomi Google Tivi A Pro 43" / Xiaomi Google
+      Tivi A Pro 55" / Philips Google Tivi LED 6900 Series 43". Chọn CÓ CHỦ Ý
+      để 3 bộ lọc đều có nhiều giá trị thật: Loại tivi Google(4)/Smart(2),
+      kích thước 43(2)/50(1)/55(2)/65(1), độ phân giải 4K(5)/Full HD(1) —
+      riêng Philips 43" được chọn chính vì nó là máy Full HD duy nhất, nếu
+      không bộ lọc "Độ phân giải" chỉ có 1 giá trị.
+
+      NGUỒN ẢNH (đều là ảnh chính hãng, tải về xem lại BẰNG MẮT qua Read tool
+      trước khi dùng, rồi sharp resize 1400px + JPEG q85 + upload Supabase):
+      LG lấy og:image rồi đổi đuôi sang `gallery/D-01.jpg` (bản 1600px, thay
+      vì `450-0.jpg` nhỏ trong og:image); Xiaomi og:image ở mi.com/vn dùng
+      được ngay; Philips og:image kèm tham số `?$png$&wid=1400` để lấy bản
+      lớn; TCL og:image là ảnh share CHUNG vô dụng nên phải grep HTML tìm
+      `aws-obg-image-lb-*.tcl.com/.../c655/id-images/50-2.png`; Samsung phải
+      grep HTML tìm URL `images.samsung.com/.../gallery/...?$Q90_1368_1094_F_JPG$`.
+      LƯU Ý MỚI: CDN của TCL trả về nội dung nén gzip kể cả khi không xin —
+      `curl` không có `--compressed` sẽ lưu ra file gzip (Read tool báo
+      "unrecognized bytes 1f 8b"), tưởng là bị chặn nhưng thực ra chỉ thiếu
+      cờ giải nén; thêm `--compressed` là xong.
+
+      CHẶN BOT (cập nhật so với ghi chú lần trước): Sony (sony.com.vn) vẫn
+      403 ngay từ request đầu, không qua được. Samsung VN thì cho qua ĐÚNG 1
+      request đầu tiên rồi mọi request sau (kể cả URL khác hẳn, kể cả đổi
+      sang PowerShell Invoke-WebRequest) đều trả trang `<title>error</title>`
+      — nghĩa là chặn theo IP trong 1 khoảng thời gian chứ không phải chặn
+      URL. Nhờ vậy vẫn lấy được ảnh Q60D (request đầu), nhưng KHÔNG lấy được
+      ảnh cho "Samsung Smart Tivi Crystal UHD 55 inch" (sản phẩm cũ vốn đã
+      dùng ảnh placehold.co từ trước). Quyết định: XÓA hẳn sản phẩm đó thay
+      vì giữ 1 ảnh minh họa lạc lõng giữa 6 tivi ảnh thật — danh mục Tivi giờ
+      100% ảnh thật, và đã có Samsung Q60D đại diện cho Samsung.
+
+      SỬA LẠI THÔNG SỐ TOÀN BỘ 13 SẢN PHẨM cho khớp bộ lọc (viết thẳng vào
+      prisma/seed.ts, không dùng script rời — seed vốn đã xóa-rồi-tạo-lại
+      attributes mỗi lần chạy nên nó là nguồn chân lý cho bảng thông số).
+      QUAN TRỌNG: attrName trong seed phải khớp CHÍNH XÁC chuỗi trong
+      CATEGORY_FILTER_SPECS, sai 1 chữ là bộ lọc đó không có giá trị nào để
+      chọn — đã viết script audit riêng kiểm tra CẢ 2 chiều: mỗi bộ lọc đều
+      có >= 1 giá trị, VÀ mọi sản phẩm ACTIVE đều có đủ từng thông số dùng làm
+      bộ lọc (thiếu 1 thông số thì lọc theo nó sẽ làm sản phẩm biến mất khỏi
+      kết quả một cách khó hiểu). Kết quả audit: 0 thiếu sót.
+
+      BỎ LỐI VÀO "TẤT CẢ SẢN PHẨM" (user chọn phương án "bỏ lối vào", không
+      phải redirect): URL /products VẪN TỒN TẠI và vẫn chạy bình thường —
+      bắt buộc, vì đó cũng là trang hiện KẾT QUẢ TÌM KIẾM và trang lọc theo
+      danh mục. Chỉ gỡ các ĐƯỜNG DẪN tới nó khi không kèm danh mục: link
+      "Sản phẩm" ở thanh nav phụ của Header đổi thành 3 link danh mục thật
+      (render động từ `categories` Header vốn đã fetch sẵn cho mega menu —
+      cần thiết vì mega menu bị ẩn dưới md, nếu chỉ dựa vào nó thì mobile mất
+      hẳn đường vào trang sản phẩm), "Tất cả sản phẩm" ở Footer đổi thành 3
+      link danh mục, nút "Xem tất cả sản phẩm" cuối trang chủ xóa hẳn. Các
+      nút phụ ở trạng thái rỗng (giỏ hàng trống, wishlist trống, trang so
+      sánh trống) đổi về "/" ; nút "+ Thêm sản phẩm" ở trang so sánh trỏ vào
+      ĐÚNG danh mục của sản phẩm đang so sánh; breadcrumb trang chi tiết sản
+      phẩm đổi gốc "Sản phẩm" -> "Trang chủ" (trước đó 2 cấp đầu đều trỏ
+      /products, giờ cấp 1 là trang chủ, cấp 2 là danh mục). Tiêu đề h1 của
+      /products giờ hiện TÊN DANH MỤC đang xem thay vì chữ "Sản phẩm" chung
+      chung. Mega menu: đổi key icon "dien-may" -> "tivi" (icon tivi vốn đã
+      vẽ sẵn, chỉ đổi tên key), xóa icon "phu-kien".
+
+      LỖI THẬT tự phát hiện lúc test (không đợi user báo): banner thứ 3 ở
+      trang chủ có `linkUrl` trỏ `/products?category=phu-kien` — danh mục vừa
+      bị xóa nên bấm vào ra trang rỗng. Banner không có trang admin quản lý
+      nên đã sửa linkUrl thẳng trong DB sang `?category=tivi` (ảnh banner giữ
+      nguyên, vẫn là ảnh thật đã làm ở đợt trước).
+
+      Đã test qua dev server (xóa `.next` + restart trước khi test vì thay
+      đổi dữ liệu qua script/seed không tự gọi `revalidateTag`; dùng DB thật,
+      không mock): `tsc --noEmit`/`eslint`/`npm run build` sạch. Xác nhận
+      từng danh mục hiện ĐÚNG bộ lọc user yêu cầu và ĐÚNG THỨ TỰ (grep các
+      thẻ `<summary>` trong HTML thật). Lọc thật qua curl, đếm sản phẩm trả
+      về: `spec_ram=8gb` loại đúng Samsung (12GB) còn 3 máy;
+      `spec_hieu-nang-va-pin=sac-nhanh-tu-60w` ra đúng 1 máy (OPPO);
+      `spec_dung-luong-rom=128gb` ra đúng 2 máy có bản 128GB; tivi
+      `spec_loai-tivi=smart-tivi` ra đúng Samsung+LG; `spec_do-phan-giai=
+      full-hd-1920-x-1080` ra đúng Philips; AND 2 thông số (google-tivi +
+      43-inch) ra đúng 2 máy; OR trong 1 thông số (43-inch,65-inch) ra đúng 3
+      máy; `brand=xiaomi` trong danh mục tivi ra đúng 2 máy. Xác nhận danh
+      sách hãng ở sidebar đúng theo từng danh mục (dien-thoai: Apple/OPPO/
+      Samsung/Xiaomi — không có Dell; laptop: Apple/Asus/Dell; tivi: LG/
+      Philips/Samsung/TCL/Xiaomi) bằng cách chỉ trích phần `<aside>` (lần đầu
+      grep cả trang cho kết quả SAI vì dính luôn các link brand trong mega
+      menu của Header). Xác nhận 6 trang chi tiết tivi mới đều 200, đều load
+      ảnh Supabase và KHÔNG còn placehold.co ở bất kỳ trang nào. Đã dọn sạch
+      toàn bộ script dùng 1 lần + ảnh tạm sau khi chạy xong.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -3497,12 +3671,18 @@
       khoản đã hiện ở /checkout. CHƯA thêm 3 biến này vào Environment
       Variables trên Vercel (production vẫn chưa hoạt động được cho tới khi
       làm bước này).
-- [ ] CHƯA có ảnh thật cho 4 sản phẩm: Dell UltraSharp U2724D, JBL Tune
-      510BT, Samsung Smart Tivi Crystal UHD 55 inch, Sony Bravia 43 inch —
-      xem lý do kỹ thuật (chặn bot) ở mục "Thêm ảnh thật + banner thật cho
-      28 sản phẩm còn lại + banner trang chủ" ở trên. Cả 4 đã có THÔNG SỐ
-      THẬT đầy đủ, chỉ còn thiếu ảnh — có thể thử lại sau (đặc biệt Samsung/
-      Sony có thể chỉ đang chặn tạm thời, không hẳn chặn vĩnh viễn).
+- [x] Mục "CHƯA có ảnh thật cho 4 sản phẩm (Dell UltraSharp, JBL Tune 510BT,
+      Samsung Crystal UHD 55, Sony Bravia 43)" KHÔNG còn nữa — cả 4 đã bị xóa
+      khỏi DB khi thu gọn về 3 danh mục (xem mục "Thu gọn còn 3 danh mục +
+      bộ lọc thông số theo từng danh mục" ở trên). Toàn bộ 13 sản phẩm còn
+      lại đều đã có ảnh THẬT, site không còn ảnh placehold.co nào.
+- [ ] Danh mục Điện thoại (4 sản phẩm) và Laptop (3 sản phẩm) hơi mỏng nên
+      vài bộ lọc gần như không thu hẹp được gì: "Tần số quét" của điện thoại
+      chỉ có đúng 1 giá trị (120Hz — cả 4 máy đều 120Hz thật), "CPU" của
+      laptop có 3 giá trị nhưng mỗi giá trị đúng 1 máy, "Card đồ họa" chỉ có
+      "Card tích hợp" (chưa có laptop gaming nào). Không phải lỗi — chỉ là
+      dữ liệu còn ít; thêm vài máy tầm trung (90Hz/60Hz) và 1-2 laptop gaming
+      card rời là các bộ lọc này có ý nghĩa ngay, không cần sửa code.
 - [ ] Polish CẤU TRÚC (không phải màu sắc — màu đã tự động đổi theo theme
       mới) cho phần còn lại của admin (danh mục, thương hiệu, người dùng,
       cửa hàng, khuyến mãi, bảo hành, thu cũ đổi mới, hỗ trợ, trang tĩnh,

@@ -143,9 +143,19 @@ export default async function Header() {
 
       <div className="border-t border-zinc-100 bg-zinc-100/60">
         <nav className="mx-auto flex w-full max-w-6xl items-center gap-6 px-6 py-2 text-sm text-zinc-600">
-          <Link href="/products" className="font-medium text-zinc-900 hover:text-zinc-600">
-            Sản phẩm
-          </Link>
+          {/* Không còn lối vào "tất cả sản phẩm" — người dùng luôn duyệt theo
+              danh mục. Thanh nav phụ này liệt kê thẳng từng danh mục vì mega
+              menu "Danh mục" ở trên bị ẩn dưới md, nếu chỉ dựa vào nó thì màn
+              hình nhỏ sẽ không còn đường nào vào trang sản phẩm. */}
+          {categories.map((c) => (
+            <Link
+              key={c.slug}
+              href={`/products?category=${c.slug}`}
+              className="font-medium text-zinc-900 hover:text-zinc-600"
+            >
+              {c.name}
+            </Link>
+          ))}
           <Link href="/stores" className="hover:text-zinc-900">
             Cửa hàng
           </Link>

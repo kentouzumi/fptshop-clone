@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 
 interface BrandLite {
-  id: string;
   name: string;
   slug: string;
 }
@@ -149,7 +148,7 @@ export default function FilterSidebar({
     const checked = selectedBrands.includes(b.slug);
     return (
       <Link
-        key={b.id}
+        key={b.slug}
         href={brandHref(b.slug)}
         className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition ${
           checked

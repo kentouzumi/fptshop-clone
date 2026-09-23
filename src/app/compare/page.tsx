@@ -99,7 +99,7 @@ export default function ComparePage() {
         <p className="mb-6 text-zinc-500">
           Chưa có sản phẩm nào để so sánh. Bấm &quot;So sánh&quot; ở dưới sản phẩm bạn quan tâm để thêm vào đây.
         </p>
-        <Link href="/products" className="btn-primary">
+        <Link href="/" className="btn-primary">
           Xem sản phẩm
         </Link>
       </div>
@@ -121,7 +121,7 @@ export default function ComparePage() {
         <p className="mb-6 text-zinc-500">
           Chưa có sản phẩm nào để so sánh. Bấm &quot;So sánh&quot; ở dưới sản phẩm bạn quan tâm để thêm vào đây.
         </p>
-        <Link href="/products" className="btn-primary">
+        <Link href="/" className="btn-primary">
           Xem sản phẩm
         </Link>
       </div>
@@ -138,7 +138,7 @@ export default function ComparePage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href="/products" className="btn-secondary text-sm">
+          <Link href={`/products?category=${products[0].categorySlug}`} className="btn-secondary text-sm">
             + Thêm sản phẩm
           </Link>
           <button type="button" onClick={clear} className="btn-secondary text-sm">

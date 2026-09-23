@@ -69,8 +69,8 @@ export default async function ProductDetailPage({
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <nav className="mb-6 flex flex-wrap items-center gap-1 text-sm text-zinc-500">
-        <Link href="/products" className="hover:underline">
-          Sản phẩm
+        <Link href="/" className="hover:underline">
+          Trang chủ
         </Link>
         <span>/</span>
         <Link href={`/products?category=${product.category.slug}`} className="hover:underline">

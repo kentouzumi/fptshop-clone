@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { getProducts, getAttributeFacets, type ProductSort } from "@/lib/products";
+import { getProducts, getAttributeFacets, getBrandsByCategory, type ProductSort } from "@/lib/products";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistedProductIds } from "@/lib/wishlist";
-import { getActiveBrands } from "@/lib/brands";
+import { getActiveCategories } from "@/lib/categories";
 import ProductCard from "@/components/ProductCard";
 import SortSelect from "./SortSelect";
 import FilterSidebar, { PRICE_RANGES } from "./FilterSidebar";
@@ -45,9 +45,11 @@ export default async function ProductsPage({
   const selectedBrands = params.brand ? params.brand.split(",").filter(Boolean) : [];
 
   // Bảng lọc thông số kỹ thuật chỉ có ý nghĩa khi đang xem 1 danh mục cụ thể
-  // (không tính "Tất cả sản phẩm" — thông số của điện thoại và máy giặt
-  // không liên quan gì nhau). Giải mã "spec_<slug>=<slug-giá-trị-1,...>"
-  // thành { attrName thật: [giá trị thật,...] } dựa vào facet đã tính được.
+  // (thông số của điện thoại và tivi không liên quan gì nhau) — trang này
+  // giờ chỉ còn vào được qua danh mục hoặc qua ô tìm kiếm, và kết quả tìm
+  // kiếm có thể trộn nhiều danh mục nên không hiện bộ lọc thông số. Giải mã
+  // "spec_<slug>=<slug-giá-trị-1,...>" thành { attrName thật: [giá trị
+  // thật,...] } dựa vào facet đã tính được.
   const facets = params.category ? await getAttributeFacets(params.category) : [];
   const attributeFilters: Record<string, string[]> = {};
   for (const facet of facets) {
@@ -58,8 +60,20 @@ export default async function ProductsPage({
     if (values.length > 0) attributeFilters[facet.attrName] = values;
   }
 
+  // Bộ lọc "Hãng sản xuất" cũng phụ thuộc danh mục đang xem: chỉ hiện hãng
+  // THẬT SỰ có sản phẩm trong danh mục đó (Dell không hiện ở Tivi). Trang kết
+  // quả tìm kiếm không thuộc danh mục nào nên gộp hãng của mọi danh mục —
+  // vẫn suy từ sản phẩm thật, KHÔNG lấy nguyên bảng Brand, vì bảng Brand còn
+  // giữ những hãng không còn sản phẩm nào (hàng gia dụng/phụ kiện đã gỡ bán)
+  // và hiện chúng ra thì bấm vào chỉ ra trang rỗng.
   const [brands, { products, totalPages }, currentUser] = await Promise.all([
-    getActiveBrands(),
+    getBrandsByCategory().then((map) =>
+      params.category
+        ? (map[params.category as string] ?? [])
+        : [...new Map(Object.values(map).flat().map((b) => [b.slug, b])).values()].sort((a, b) =>
+            a.name.localeCompare(b.name)
+          )
+    ),
     getProducts({
       categorySlug: params.category,
       brandSlugs: selectedBrands.length ? selectedBrands : undefined,
@@ -72,6 +86,12 @@ export default async function ProductsPage({
     }),
     getCurrentUser(),
   ]);
+
+  // Tiêu đề trang hiện tên danh mục đang xem (thay vì chữ "Sản phẩm" chung
+  // chung) — giờ trang này luôn được vào từ 1 danh mục cụ thể hoặc ô tìm kiếm.
+  const categoryName = params.category
+    ? (await getActiveCategories()).find((c) => c.slug === params.category)?.name
+    : undefined;
 
   const wishlistedIds = currentUser
     ? await getWishlistedProductIds(currentUser.id, products.map((p) => p.id))
@@ -88,7 +108,9 @@ export default async function ProductsPage({
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {params.search ? `Kết quả cho "${params.search}"` : "Sản phẩm"}
+          {params.search
+            ? `Kết quả cho "${params.search}"`
+            : (categoryName ?? "Sản phẩm")}
         </h1>
         <SortSelect current={sort} />
       </div>

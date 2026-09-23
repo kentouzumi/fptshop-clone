@@ -20,7 +20,7 @@ export default async function WishlistPage() {
         <div className="rounded-lg border border-zinc-200 p-8 text-center text-zinc-500">
           Bạn chưa có sản phẩm yêu thích nào.
           <div className="mt-4">
-            <Link href="/products" className="text-black underline">
+            <Link href="/" className="text-black underline">
               Khám phá sản phẩm
             </Link>
           </div>

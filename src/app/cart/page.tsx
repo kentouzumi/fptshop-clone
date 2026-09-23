@@ -24,7 +24,7 @@ export default async function CartPage() {
         <div className="card p-10 text-center text-zinc-500">
           Giỏ hàng của bạn đang trống.
           <div className="mt-4">
-            <Link href="/products" className="btn-secondary">
+            <Link href="/" className="btn-secondary">
               Tiếp tục mua sắm
             </Link>
           </div>
