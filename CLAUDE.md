@@ -3615,8 +3615,8 @@
       LỖI THẬT tự phát hiện lúc test (không đợi user báo): banner thứ 3 ở
       trang chủ có `linkUrl` trỏ `/products?category=phu-kien` — danh mục vừa
       bị xóa nên bấm vào ra trang rỗng. Banner không có trang admin quản lý
-      nên đã sửa linkUrl thẳng trong DB sang `?category=tivi` (ảnh banner giữ
-      nguyên, vẫn là ảnh thật đã làm ở đợt trước).
+      nên đã sửa linkUrl thẳng trong DB sang `?category=tivi` (ảnh banner lúc
+      đó giữ nguyên — sau đó làm lại hẳn, xem mục ngay dưới).
 
       Đã test qua dev server (xóa `.next` + restart trước khi test vì thay
       đổi dữ liệu qua script/seed không tự gọi `revalidateTag`; dùng DB thật,
@@ -3637,6 +3637,72 @@
       menu của Header). Xác nhận 6 trang chi tiết tivi mới đều 200, đều load
       ảnh Supabase và KHÔNG còn placehold.co ở bất kỳ trang nào. Đã dọn sạch
       toàn bộ script dùng 1 lần + ảnh tạm sau khi chạy xong.
+
+- [x] Làm lại 3 banner trang chủ thành banner THIẾT KẾ thật (user báo "ảnh
+      hiện tại xấu quá"). User nói đúng: 3 banner cũ chỉ là ẢNH CHỤP SẢN PHẨM
+      ghép lên nền tím than rồi letterbox cho vừa khung 3:1 — banner 1 là ảnh
+      ai đó cầm iPhone XOAY NGANG trong cửa hàng, màn hình đang mở trang cài
+      đặt TIẾNG TRUNG; banner 3 là ảnh AirPods, mà AirPods vừa bị xóa khỏi
+      shop ở đợt thu gọn danh mục nên banner quảng cáo 1 sản phẩm không còn
+      bán, lại còn trỏ sang danh mục Tivi. Cả 3 đều có 2 dải tối thừa 2 bên do
+      ảnh dọc/vuông nhồi vào khung ngang.
+
+      CÁCH LÀM MỚI — dựng banner bằng `sharp` thay vì dùng thẳng ảnh chụp:
+      nền gradient tím than theo đúng theme "Đêm Hổ Phách" + quầng sáng hổ
+      phách phía sau sản phẩm, nửa trái là khối chữ (eyebrow tên danh mục,
+      tiêu đề 2 dòng, dòng mô tả, nút pill màu hổ phách), nửa phải là ảnh sản
+      phẩm ĐÃ TÁCH NỀN. Toàn bộ chữ + gradient vẽ bằng SVG rồi cho sharp
+      rasterize, sau đó composite ảnh sản phẩm lên. Đã tự kiểm tra trước khi
+      làm rằng sharp render được TIẾNG VIỆT CÓ DẤU (librsvg dùng font hệ
+      thống Segoe UI/Arial trên máy này) — render thử 1 ảnh test rồi xem lại
+      bằng mắt qua Read tool, dấu hiển thị đúng hết, không cần nhúng font.
+
+      TÁCH NỀN TRẮNG bằng LOANG TỪ MÉP ẢNH (flood fill) chứ không xóa theo
+      màu: ảnh render chính hãng đều nền trắng, nhưng sản phẩm cũng có chi
+      tiết trắng/bạc ở giữa (vỏ MacBook, viền tivi) — xóa mọi pixel trắng sẽ
+      thủng lỗ giữa sản phẩm, còn loang từ 4 mép vào thì chỉ ăn đúng phần nền
+      bao quanh. Làm mềm rìa bằng cách hạ alpha của pixel có hàng xóm trong
+      suốt (nếu để alpha nhị phân 0/255 thì viền răng cưa rõ trên nền tối).
+
+      2 LỖI THẬT gặp phải lúc dựng (đều tự phát hiện bằng cách XEM LẠI ảnh
+      kết xuất qua Read tool trước khi upload, không chỉ tin script chạy
+      không báo lỗi):
+      (1) Bản đầu làm mềm rìa bằng cách tách riêng kênh alpha ra `.blur()`
+          rồi `joinChannel()` lại — với ảnh nguồn JPEG (MacBook) mask bị lệch
+          so với RGB, ra nguyên 1 khối SỌC NGANG trắng/tím thay vì hình
+          laptop (ảnh nguồn PNG thì không sao, nên lỗi chỉ lộ ở 1/3 banner).
+          Đã bỏ hẳn đường vòng qua pipeline sharp, sửa alpha thẳng trên buffer
+          RGBA rồi xuất 1 lần.
+      (2) Dấu "&" trong câu "học tập & việc làm" làm librsvg bỏ cả file SVG
+          (lỗi `xmlParseEntityRef: no name`) — chữ đi thẳng vào SVG nên phải
+          escape `&`/`<`/`>`.
+      Và 1 lỗi bố cục: tiêu đề banner laptop dài hơn khoảng trống nên chữ
+      "việc làm" chạy xuống DƯỚI ảnh laptop, bị che mất. Vì không đo được bề
+      rộng chữ thật trong sharp nên thêm bước TỰ CO CỠ CHỮ: ước lượng bề rộng
+      theo số ký tự (hệ số 0.52 đo từ chính font này) rồi giảm font-size
+      (86 -> tối thiểu 56) cho vừa khoảng trống bên trái ảnh sản phẩm. Dòng
+      mô tả và nút pill đặt theo vị trí TƯƠNG ĐỐI so với dòng tiêu đề 2 để
+      không hở khoảng trống khi cỡ chữ co lại.
+
+      KÍCH THƯỚC & VÙNG AN TOÀN: xuất 2100x700 (đúng tỉ lệ 3:1 của khung
+      desktop trong HeroBanner.tsx), nhưng trên mobile khung là 16/7 với
+      `object-cover` nên bị cắt ~250px MỖI BÊN — mọi chữ và ảnh sản phẩm đều
+      đặt trong vùng an toàn x ∈ [250, 1850] để mobile không cụt chữ.
+
+      NỘI DUNG CHỮ cố ý chỉ nêu những gì hệ thống THẬT SỰ có: "Bảo hành 12
+      tháng" (lib/warranty.ts tạo bảo hành 12 tháng khi đơn DELIVERED), "Thu
+      cũ đổi mới" (/trade-in), "Nhận tại cửa hàng" (STORE_PICKUP) — KHÔNG bịa
+      các câu quảng cáo phổ biến kiểu "Trả góp 0%" hay "Miễn phí vận chuyển"
+      vì shop chưa làm trả góp và phí ship vẫn là 30.000đ cố định. Cũng KHÔNG
+      in tên thương hiệu "FPT Shop" lên ảnh banner.
+
+      Ảnh sản phẩm dùng cho banner lấy lại từ chính ảnh đã có trên Supabase:
+      OPPO Reno11 (điện thoại), MacBook Air M3 (laptop), TCL C655 (tivi) —
+      đều là ảnh render chính hãng nền trắng nên tách nền sạch. Đã xem lại
+      bằng mắt cả 3 banner thành phẩm trước khi upload, rồi xóa `.next` +
+      restart dev server và xác nhận trang chủ tải đúng URL banner mới, cả 3
+      ảnh trả 200 kèm `content-type: image/jpeg` trên Supabase. Không đổi
+      code (HeroBanner.tsx giữ nguyên), chỉ đổi dữ liệu `Banner.imageUrl`.
 
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
