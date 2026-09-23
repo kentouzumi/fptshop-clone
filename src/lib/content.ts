@@ -23,7 +23,7 @@ export function parseStaticPageInput(body: unknown): StaticPageInput | null {
 export const getStaticPage = unstable_cache(
   async (slug: string) => prisma.staticPage.findUnique({ where: { slug } }),
   ["static-page-by-slug"],
-  { tags: [STATIC_PAGES_TAG] }
+  { tags: [STATIC_PAGES_TAG], revalidate: 300 }
 );
 
 export async function getAllStaticPagesForAdmin() {
@@ -70,7 +70,7 @@ export function parseFaqInput(body: unknown): FaqInput | null {
 export const getAllFaqItems = unstable_cache(
   async () => prisma.faqItem.findMany({ orderBy: { sortOrder: "asc" } }),
   ["all-faq-items"],
-  { tags: [FAQ_TAG] }
+  { tags: [FAQ_TAG], revalidate: 300 }
 );
 
 export async function createFaqItem(input: FaqInput) {

@@ -36,7 +36,7 @@ export const getActiveStores = unstable_cache(
       orderBy: [{ province: "asc" }, { name: "asc" }],
     }),
   ["active-stores"],
-  { tags: [STORES_TAG] }
+  { tags: [STORES_TAG], revalidate: 300 }
 );
 
 export async function getAllStoresForAdmin() {

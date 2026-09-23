@@ -10,7 +10,7 @@ export const getActiveBrands = unstable_cache(
       orderBy: { name: "asc" },
     }),
   ["active-brands"],
-  { tags: [BRANDS_TAG] }
+  { tags: [BRANDS_TAG], revalidate: 300 }
 );
 
 export interface BrandInput {

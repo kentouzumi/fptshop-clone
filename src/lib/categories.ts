@@ -20,8 +20,17 @@ export const getActiveCategories = unstable_cache(
       where: { isActive: true, parentId: null },
       orderBy: { sortOrder: "asc" },
     }),
-  ["active-categories"],
-  { tags: [CATEGORIES_TAG] }
+  // "-v2": đổi key để BỎ luôn bản cache cũ đang kẹt trên production. Data
+  // Cache của Vercel SỐNG QUA CÁC LẦN DEPLOY, mà bản ghi cũ được lưu với
+  // revalidate: false (không hạn) nên deploy lại bao nhiêu lần cũng không
+  // sạch — chỉ đổi key hoặc gọi revalidateTag mới thay được nó.
+  ["active-categories-v2"],
+  // LUÔN kèm revalidate bên cạnh tags: tag chỉ được xóa khi admin thao tác
+  // qua chính app; sửa dữ liệu bằng seed/script (bỏ qua revalidateTag) thì
+  // không có TTL đồng nghĩa với kẹt VĨNH VIỄN. Đã gặp thật: đổi "Điện máy"
+  // -> "Tivi" và xóa "Phụ kiện" bằng script, production vẫn hiện 5 danh mục
+  // cũ trong khi sản phẩm (cache có revalidate: 60) thì cập nhật bình thường.
+  { tags: [CATEGORIES_TAG], revalidate: 300 }
 );
 
 export interface CategoryInput {
