@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
-import { parseVariantInput, updateVariant, deleteVariant } from "@/lib/variants";
+import { parseVariantInput, updateVariant, deleteVariant, parseImages } from "@/lib/variants";
 
 export async function PATCH(
   request: Request,
@@ -21,8 +21,14 @@ export async function PATCH(
     );
   }
 
+  // `images` chỉ được xử lý nếu client THỰC SỰ gửi mảng này lên (kể cả rỗng)
+  // — thiếu hẳn field (undefined) nghĩa là request không đụng tới ảnh,
+  // tránh vô tình xóa sạch ảnh biến thể chỉ vì 1 request sửa giá/SKU.
+  const rawImages = (body as Record<string, unknown>)?.images;
+  const images = Array.isArray(rawImages) ? parseImages(rawImages) : undefined;
+
   try {
-    const variant = await updateVariant(id, input);
+    const variant = await updateVariant(id, input, images);
     return NextResponse.json(variant);
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 409 });

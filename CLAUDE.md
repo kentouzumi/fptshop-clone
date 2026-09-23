@@ -2892,6 +2892,72 @@
       `npm run dev` vào `/admin/products/new` hoặc sửa 1 sản phẩm để xác
       nhận UI thêm nhiều ảnh + thông số hoạt động thuận tay.
 
+- [x] Sửa ảnh chi tiết sản phẩm bị phóng to/vỡ nét (user báo lại sau khi tự
+      upload ảnh thật qua tính năng vừa thêm ở trên). NGUYÊN NHÂN: ảnh chính
+      + thumbnail ở ProductGalleryAndBuy.tsx dùng `object-cover` trong khung
+      `aspect-square` cố định — nếu ảnh gốc KHÔNG vuông (đa số ảnh thật chụp/
+      tải lên đều vậy, khác hẳn ảnh demo placehold.co luôn vuông sẵn dùng lúc
+      test trước đó), trình duyệt tự phóng to ảnh để LẤP ĐẦY cả 2 chiều rồi
+      cắt bớt phần dư — vừa méo bố cục vừa vỡ nét vì phần hiển thị bị phóng
+      to vượt độ phân giải gốc. Đổi cả 2 chỗ (ảnh chính + thumbnail) sang
+      `object-contain` (hiện trọn ảnh trong khung, không phóng to/crop quá
+      mức — nền `bg-zinc-100` sẵn có đóng vai trò khung viền nếu ảnh không
+      vuông). Nhân tiện dọn 2 ảnh sai (không phải ảnh sản phẩm — do chọn
+      nhầm file lúc test multi-upload) khỏi sản phẩm "Logitech G304" trực
+      tiếp trong DB. Chỉ sửa component này (KHÔNG đụng ProductCard.tsx —
+      thumbnail dạng lưới ở trang danh sách vẫn cố ý dùng `object-cover` để
+      giữ khung đồng đều, ngoài phạm vi user báo).
+
+- [x] Cho admin gắn ẢNH RIÊNG cho từng biến thể (màu/dung lượng) ngay trong
+      giao diện — trước đó field `ProductImage.variantId` chỉ gán được qua
+      script/Prisma Studio (xem mục "Tách bộ chọn Phiên bản..." — lúc đó
+      từng demo qua script cho Xiaomi Redmi Note 13, ProductForm/VariantsManager
+      chưa có UI nào cho việc này).
+
+      lib/variants.ts: `getVariantsForProduct()` include thêm `images`
+      (sort theo `sortOrder`). `createVariant(productId, input, images?)`
+      nhận thêm mảng URL ảnh, tạo kèm luôn lúc tạo variant (nested create,
+      `variantId` = variant vừa tạo). `updateVariant(id, input, images?)`
+      — THAM SỐ `images` CỐ Ý OPTIONAL (khác `images` bắt buộc ở
+      lib/productInput.ts cấp sản phẩm): `undefined` = không đụng gì tới
+      ảnh (chỉ sửa field khác như giá/SKU), còn 1 MẢNG (kể cả mảng rỗng) =
+      THAY THẾ toàn bộ ảnh riêng của variant đó (xóa hết rồi tạo lại, cùng
+      pattern không-có-unique-key đã dùng cho ProductAttribute) — phân biệt
+      2 trường hợp này để tránh 1 request chỉ sửa giá vô tình xóa sạch ảnh
+      variant nếu chẳng may quên gửi field images. Tái dùng thẳng
+      `parseImages()` đã viết ở lib/productInput.ts (export thêm ra để dùng
+      chung, không viết lại).
+
+      API: `POST /api/admin/products/[id]/variants` và
+      `PATCH /api/admin/variants/[id]` đều parse thêm `images` từ body —
+      route PATCH đặc biệt kiểm tra `Array.isArray(body?.images)` để quyết
+      định truyền `undefined` hay mảng đã parse xuống `updateVariant()`,
+      đúng theo hợp đồng optional ở trên.
+
+      VariantsManager.tsx: mỗi dòng sửa/thêm biến thể (VariantEditRow) giờ
+      có thêm 1 khu vực "Ảnh riêng của biến thể này" — upload nhiều ảnh
+      cùng lúc (input `multiple`, tối đa 5 ảnh/biến thể, cùng pattern
+      ReviewForm.tsx/ProductForm.tsx: upload tuần tự từng file qua
+      `/api/admin/upload`, thumbnail có nút × xóa riêng). Ảnh nằm trong
+      CHÍNH `form.images` của dòng đang sửa nên khi bấm "Lưu" sẽ gửi kèm
+      luôn cùng các field khác trong 1 request — không cần nút lưu ảnh
+      riêng. Không ảnh nào (mảng rỗng) thì trang chi tiết sản phẩm tự rơi về
+      dùng ảnh chung của sản phẩm (logic fallback này đã có sẵn từ trước ở
+      ProductGalleryAndBuy.tsx, không cần sửa thêm).
+
+      Đã test qua dev server bằng DB thật (tạo 1 ADMIN test tạm, thao tác
+      trên đúng variant "Đen/128GB" của Xiaomi Redmi Note 13 rồi khôi phục
+      lại y hệt trạng thái ban đầu sau khi xong, xóa sạch user/session/
+      variant test): PATCH kèm 2 ảnh mới thay thế đúng ảnh cũ (DB xác nhận
+      đúng variantId + thứ tự); PATCH tiếp theo CHỈ đổi giá, KHÔNG gửi
+      `images` — xác nhận giá đổi nhưng 2 ảnh vẫn giữ nguyên (không bị xóa
+      nhầm); tạo 1 variant MỚI kèm ảnh ngay lúc tạo — DB xác nhận ảnh gắn
+      đúng `variantId` của variant vừa tạo. `tsc --noEmit`/`eslint`/
+      `npm run build` sạch. CHƯA tự xem qua trình duyệt thật (môi trường
+      không có màn hình) — nhờ user tự mở `npm run dev`, vào sửa 1 biến thể
+      bất kỳ để thử upload ảnh riêng và xác nhận ảnh đổi đúng khi chọn màu
+      đó ở trang chi tiết sản phẩm.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

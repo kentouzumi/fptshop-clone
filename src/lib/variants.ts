@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { revalidateTag } from "next/cache";
 import { PRODUCTS_TAG } from "@/lib/products";
+import { parseImages } from "@/lib/productInput";
+
+export { parseImages };
 
 export interface VariantInput {
   sku: string;
@@ -45,21 +48,33 @@ export function parseVariantInput(body: unknown): VariantInput | null {
 export async function getVariantsForProduct(productId: string) {
   return prisma.productVariant.findMany({
     where: { productId },
+    include: { images: { orderBy: { sortOrder: "asc" } } },
     orderBy: { sku: "asc" },
   });
 }
 
-export async function createVariant(productId: string, input: VariantInput) {
+export async function createVariant(productId: string, input: VariantInput, images: string[] = []) {
   const existing = await prisma.productVariant.findUnique({ where: { sku: input.sku } });
   if (existing) {
     throw new Error("SKU này đã tồn tại.");
   }
-  const variant = await prisma.productVariant.create({ data: { ...input, productId } });
+  const variant = await prisma.productVariant.create({
+    data: {
+      ...input,
+      productId,
+      images: images.length
+        ? { create: images.map((url, i) => ({ productId, url, sortOrder: i })) }
+        : undefined,
+    },
+  });
   revalidateTag(PRODUCTS_TAG, { expire: 0 });
   return variant;
 }
 
-export async function updateVariant(id: string, input: VariantInput) {
+// `images` optional: undefined = giữ nguyên ảnh hiện có (chỉ sửa các field
+// khác), mảng (kể cả rỗng) = THAY THẾ toàn bộ ảnh riêng của biến thể này —
+// giống hệt cách lib/productInput.ts xử lý ảnh cấp sản phẩm.
+export async function updateVariant(id: string, input: VariantInput, images?: string[]) {
   const existing = await prisma.productVariant.findFirst({
     where: { sku: input.sku, NOT: { id } },
   });
@@ -67,6 +82,16 @@ export async function updateVariant(id: string, input: VariantInput) {
     throw new Error("SKU này đã tồn tại.");
   }
   const variant = await prisma.productVariant.update({ where: { id }, data: input });
+
+  if (images !== undefined) {
+    await prisma.productImage.deleteMany({ where: { variantId: id } });
+    if (images.length) {
+      await prisma.productImage.createMany({
+        data: images.map((url, i) => ({ productId: variant.productId, variantId: id, url, sortOrder: i })),
+      });
+    }
+  }
+
   revalidateTag(PRODUCTS_TAG, { expire: 0 });
   return variant;
 }

@@ -64,6 +64,7 @@ export default async function EditProductPage({
             weightGram: v.weightGram,
             barcode: v.barcode,
             isActive: v.isActive,
+            images: v.images.map((img) => img.url),
           }))}
         />
       </div>

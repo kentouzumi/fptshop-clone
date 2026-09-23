@@ -6,7 +6,7 @@ export interface ProductAttributeInput {
   attrValue: string;
 }
 
-function parseImages(raw: unknown): string[] {
+export function parseImages(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((v): v is string => typeof v === "string")

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
-import { parseVariantInput, createVariant } from "@/lib/variants";
+import { parseVariantInput, createVariant, parseImages } from "@/lib/variants";
 
 export async function POST(
   request: Request,
@@ -21,8 +21,10 @@ export async function POST(
     );
   }
 
+  const images = parseImages((body as Record<string, unknown>)?.images);
+
   try {
-    const variant = await createVariant(id, input);
+    const variant = await createVariant(id, input, images);
     return NextResponse.json(variant, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 409 });

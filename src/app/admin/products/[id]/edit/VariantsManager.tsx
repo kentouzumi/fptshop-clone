@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
+
+const MAX_VARIANT_IMAGES = 5;
 
 interface Variant {
   id: string;
@@ -13,6 +15,7 @@ interface Variant {
   weightGram: number | null;
   barcode: string | null;
   isActive: boolean;
+  images: string[];
 }
 
 interface FormState {
@@ -24,6 +27,7 @@ interface FormState {
   weightGram: string;
   barcode: string;
   isActive: boolean;
+  images: string[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -35,6 +39,7 @@ const EMPTY_FORM: FormState = {
   weightGram: "",
   barcode: "",
   isActive: true,
+  images: [],
 };
 
 function variantToForm(v: Variant): FormState {
@@ -47,6 +52,7 @@ function variantToForm(v: Variant): FormState {
     weightGram: v.weightGram !== null ? String(v.weightGram) : "",
     barcode: v.barcode ?? "",
     isActive: v.isActive,
+    images: v.images,
   };
 }
 
@@ -69,6 +75,43 @@ function VariantEditRow({
   saving: boolean;
   error: string | null;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handleFilesChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    const remaining = MAX_VARIANT_IMAGES - form.images.length;
+    if (remaining <= 0) {
+      setUploadError(`Tối đa ${MAX_VARIANT_IMAGES} ảnh cho mỗi biến thể.`);
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const file of files.slice(0, remaining)) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/admin/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        if (!res.ok) {
+          setUploadError(data.error ?? "Upload ảnh thất bại.");
+          break;
+        }
+        setForm({ ...form, images: [...form.images, data.url] });
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeImage(index: number) {
+    setForm({ ...form, images: form.images.filter((_, i) => i !== index) });
+  }
+
   return (
     <tr className="border-t border-zinc-100 bg-zinc-100">
       <td colSpan={7} className="p-3">
@@ -155,6 +198,44 @@ function VariantEditRow({
             Hủy
           </button>
         </div>
+
+        <div className="mt-3">
+          <label className="mb-1 block text-xs text-zinc-500">
+            Ảnh riêng của biến thể này (không bắt buộc — nếu để trống sẽ dùng
+            ảnh chung của sản phẩm, tối đa {MAX_VARIANT_IMAGES} ảnh)
+          </label>
+          {form.images.length < MAX_VARIANT_IMAGES && (
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFilesChange}
+              disabled={uploading}
+              className="file-input"
+            />
+          )}
+          {uploading && <p className="mt-1 text-xs text-zinc-500">Đang tải ảnh lên...</p>}
+          {uploadError && <p className="mt-1 text-xs text-red-600">{uploadError}</p>}
+          {form.images.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {form.images.map((url, i) => (
+                <div key={`${url}-${i}`} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt={`Ảnh ${i + 1}`} className="h-16 w-16 rounded object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(i)}
+                    className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black text-xs text-white"
+                    aria-label="Xóa ảnh"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       </td>
     </tr>
@@ -204,6 +285,7 @@ export default function VariantsManager({
         weightGram: form.weightGram ? Number(form.weightGram) : null,
         barcode: form.barcode || null,
         isActive: form.isActive,
+        images: form.images,
       };
       const isNew = editingId === "__new__";
       const res = await fetch(
