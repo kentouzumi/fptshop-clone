@@ -3041,6 +3041,104 @@
       vào `/admin/products/new` để trống ô SKU khi tạo sản phẩm để xác nhận
       luồng chạy trơn tru.
 
+- [x] Thêm ảnh THẬT (không phải ảnh minh họa placehold.co) + thông số chuẩn +
+      ảnh riêng theo từng biến thể cho 6 SẢN PHẨM MẪU (user yêu cầu làm mẫu
+      trước 1 batch nhỏ trước khi quyết định làm tiếp toàn bộ 35 sản phẩm —
+      xem lý do chọn "làm mẫu trước" ở câu hỏi đã hỏi user). 6 sản phẩm:
+      iPhone 15 Pro Max, Samsung Galaxy S24 Ultra, Xiaomi Redmi Note 13,
+      MacBook Air M3, Dell XPS 13, OPPO Reno11 5G — chọn nhóm điện thoại/
+      laptop nổi bật nhất, phủ cả trường hợp 2 biến thể (màu khác nhau) lẫn
+      1 biến thể duy nhất. Nhân tiện xóa sản phẩm rác "tesst" (dữ liệu test
+      cũ, 2 biến thể chữ thường, không có thông số — user xác nhận xóa).
+
+      NGUỒN ẢNH (đúng thứ tự ưu tiên user chọn — Wikimedia Commons trước,
+      ảnh hãng khi cần): Commons cho kết quả tốt với Apple/Samsung (dùng
+      `action=query&list=search&srnamespace=6` hoặc `list=categorymembers`
+      qua API công khai, không cần đăng nhập) — vd tìm được đúng ảnh unbox
+      "iPhone 15 Pro Max...Natural Titanium"/"...and the box...02.jpg" (bản
+      màu xanh) khớp chính xác 2 màu variant đang cần. Xiaomi/OPPO/Dell hầu
+      như KHÔNG có trên Commons (sản phẩm phổ thông ít được cộng đồng chụp
+      ảnh tự do) — phải lấy từ trang sản phẩm CHÍNH HÃNG (mi.com, oppo.com,
+      dell.com, apple.com/newsroom): hầu hết trang này là SPA nên
+      `curl`/`Invoke-WebRequest` chỉ thấy HTML tĩnh ban đầu, phải tự grep
+      pattern URL ảnh CDN riêng của từng hãng nhúng sẵn trong HTML đó
+      (`i02.appmifile.com/mi-com-product/...` cho Xiaomi,
+      `i.dell.com/is/image/DellContent/...` cho Dell,
+      `oppo.com/content/dam/...` cho OPPO) — phần lớn kết quả grep ra là
+      ảnh nền/icon/ảnh mẫu chụp-bằng-điện-thoại (KHÔNG phải ảnh sản phẩm),
+      phải tự tải xuống và XEM LẠI BẰNG MẮT (qua Read tool) từng ảnh ứng
+      viên trước khi dùng — đã loại bỏ nhiều ảnh sai kiểu này (ảnh phong
+      cảnh, ảnh chân dung người mẫu, ảnh infographic RAM/ROM) lúc kiểm tra.
+      MẸO hữu ích phát hiện được: nhiều trang hãng có `<meta property=
+      "og:image">` trỏ thẳng tới 1 ảnh sản phẩm chính chất lượng cao — và
+      đổi sang trang PHIÊN BẢN KHU VỰC KHÁC (vd mi.com/id/... thay vì
+      mi.com/global/...) có thể trả về og:image màu KHÁC (khu vực khác nhau
+      có màu mặc định khác nhau) — dùng mẹo này lấy được đúng 2 màu Đen/Xanh
+      Dương thật cho Xiaomi Redmi Note 13 chỉ từ 2 request.
+
+      LỖI MÔI TRƯỜNG phát hiện: `curl` (bản Windows/Schannel cài kèm máy
+      này) bị SEGFAULT ngay lập tức với MỌI request tới `apple.com` (kể cả
+      `curl -sI https://www.apple.com` cũng crash, thử `--tlsv1.2`/
+      `--http1.1` đều không khắc phục được) — không phải lỗi mạng, là lỗi
+      riêng của curl khi bắt tay TLS với hạ tầng CDN của Apple. ĐÃ THAY THẾ
+      hoàn toàn bằng `Invoke-WebRequest` (PowerShell) cho mọi request tới
+      apple.com — hoạt động bình thường. Ghi lại thành lưu ý chung: nếu
+      `curl` lỗi khó hiểu (đặc biệt segfault) với 1 domain cụ thể, thử ngay
+      `Invoke-WebRequest` qua PowerShell tool trước khi kết luận domain đó
+      chặn bot.
+
+      XỬ LÝ ẢNH TRƯỚC KHI UPLOAD: một số ảnh gốc tải từ Commons rất nặng
+      (Commons giữ nguyên bản gốc máy ảnh, có file tới 7-8MB) — VƯỢT giới
+      hạn 5MB của bucket Supabase Storage "product-images" (giới hạn cấu
+      hình lúc setup Storage, xem mục "Cấu hình SUPABASE_URL..." rất đầu
+      file này). Dùng `sharp` (đã có sẵn trong node_modules vì Next.js cần
+      cho tối ưu ảnh, không phải cài thêm) để resize `width:1600` +
+      nén lại (`jpeg quality:85` hoặc `png compressionLevel:9`) TRƯỚC khi
+      gọi `supabase.storage.upload()` — giảm từ 7-8MB xuống còn 150-450KB,
+      không lỗi vượt giới hạn bucket. Script upload dùng thẳng
+      `@supabase/supabase-js` với `SUPABASE_SERVICE_ROLE_KEY` (không qua
+      route `/api/admin/upload` của app vì đó là route nhận `multipart/
+      form-data` từ trình duyệt, không tiện gọi từ script Node).
+
+      GẮN ẢNH THEO VARIANT: với sản phẩm có 2 màu (iPhone, Xiaomi) — gắn
+      ĐÚNG ảnh theo màu thật (2 ảnh Titan Tự Nhiên, 2 ảnh Titan Xanh cho
+      iPhone; 1 ảnh Đen + 1 ảnh Xanh Dương cho Xiaomi — CHỈ 1 ảnh/màu cho
+      Xiaomi vì không tìm được ảnh thứ 2 thật sự khác dù đã thử nhiều nguồn,
+      chấp nhận thiếu sót này thay vì độn thêm ảnh không phải sản phẩm).
+      Với Samsung Galaxy S24 Ultra — KHÔNG tìm được ảnh thật phân biệt rõ
+      đúng 2 màu Đen/Xám (ảnh Commons tìm được là ảnh cầm trên tay ở gian
+      hàng, màu ngả xám-be khó khẳng định là "Đen") nên dùng CHUNG 2 ảnh
+      thật (mặt trước + mặt sau) cho CẢ 2 biến thể (ghi 2 dòng ProductImage
+      riêng, mỗi dòng 1 variantId khác nhau, cùng trỏ 2 URL ảnh) — vẫn là
+      ảnh thật 100%, chỉ là không phân biệt được thị giác theo màu khi đổi
+      variant. Sản phẩm chỉ có 1 biến thể (MacBook Air M3, Dell XPS 13,
+      OPPO Reno11 5G) thì gắn thẳng 2 ảnh thật vào đúng biến thể đó.
+
+      Đã XÓA HẾT ảnh cũ (`ProductImage.deleteMany({where:{productId}})`) của
+      cả 6 sản phẩm trước khi ghi ảnh mới — không còn sót ảnh placehold.co
+      nào. Thông số: bổ sung đầy đủ 9-13 dòng/sản phẩm (nhóm Màn hình/Vi xử
+      lý/Camera/Cấu hình/Pin & Sạc/Thiết kế/Kết nối tùy loại thiết bị) dùng
+      SỐ LIỆU THẬT của đúng model (từ kiến thức có sẵn, không tra cứu từng
+      con số qua web vì đây là các sản phẩm phổ biến/thông số công khai rộng
+      rãi) — Xiaomi Redmi Note 13 trước đó có ĐÚNG 0 thông số, giờ có đủ 11.
+
+      Đã test qua dev server (dùng DB thật, không tạo dữ liệu test tạm nào —
+      toàn bộ là nội dung thật sẽ giữ lại): `/products/<slug>` cho cả 6 sản
+      phẩm đều 200, xác nhận URL ảnh Supabase Storage mới xuất hiện đúng
+      trong HTML (không còn `placehold.co`), xác nhận đủ 12 file ảnh
+      catalog/* load được (200) qua Supabase, thông số hiển thị đúng (grep
+      thấy "Apple A17 Pro", "Kháng nước, bụi"...). KHÔNG có thay đổi code
+      nào trong việc này (thuần thao tác dữ liệu qua script dùng 1 lần rồi
+      xóa, giống các lần seed trước) nên không có gì để commit/push.
+
+      CÒN LẠI 29 sản phẩm khác CHƯA làm (vẫn dùng ảnh minh họa placehold.co
+      cũ + thông số sơ sài như trước) — chờ user duyệt chất lượng/cách làm
+      của 6 sản phẩm mẫu này trước khi quyết định làm tiếp toàn bộ, vì mỗi
+      sản phẩm tốn khá nhiều công tìm kiếm + xác minh ảnh thật (một số hãng
+      như Sunhouse/Kangaroo/TP-Link nhiều khả năng sẽ khó tìm ảnh thật hơn
+      nữa do đây là thương hiệu nội địa Việt Nam, ít xuất hiện trên Commons
+      lẫn trang hãng quốc tế).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -3069,6 +3167,13 @@
       MOMO_PARTNER_CODE/ACCESS_KEY/SECRET_KEY để trống vẫn chạy được nhờ
       default công khai, không bắt buộc điền trừ khi có tài khoản merchant
       MoMo thật riêng.
+- [ ] Làm tiếp ảnh thật + thông số chuẩn cho 29 sản phẩm còn lại (đã làm mẫu
+      6 sản phẩm: iPhone 15 Pro Max, Samsung Galaxy S24 Ultra, Xiaomi Redmi
+      Note 13, MacBook Air M3, Dell XPS 13, OPPO Reno11 5G — xem mục "Thêm
+      ảnh THẬT... cho 6 sản phẩm mẫu" ở trên). Đang chờ user duyệt chất
+      lượng/cách làm trước khi tiếp tục toàn bộ — một số thương hiệu nội địa
+      VN (Sunhouse, Kangaroo, TP-Link...) dự kiến khó tìm ảnh thật hơn do ít
+      xuất hiện trên Wikimedia Commons lẫn trang hãng quốc tế.
 - [ ] Polish CẤU TRÚC (không phải màu sắc — màu đã tự động đổi theo theme
       mới) cho phần còn lại của admin (danh mục, thương hiệu, người dùng,
       cửa hàng, khuyến mãi, bảo hành, thu cũ đổi mới, hỗ trợ, trang tĩnh,
