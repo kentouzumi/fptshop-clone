@@ -3223,7 +3223,7 @@
       `/api/admin/orders/[id]/confirm-bank-transfer` xuất hiện đúng trong
       danh sách route). Đã dọn sạch dữ liệu test.
 
-- [x] XÁC NHẬN TỰ ĐỘNG thanh toán chuyển khoản ngân hàng qua webhook SePay
+- [x] THỬ (rồi HỦY BỎ) xác nhận TỰ ĐỘNG thanh toán chuyển khoản ngân hàng qua webhook SePay
       (user hỏi "nếu ngân hàng nhận được thì auto hoàn thành xác nhận đơn
       hàng được không" — VietQR Quick Link ở mục trên chỉ vẽ ảnh QR tĩnh,
       không có cách nào tự báo khi có tiền về, admin luôn phải bấm xác nhận
@@ -3299,6 +3299,49 @@
       sạch (route `/api/payments/sepay/webhook` xuất hiện đúng trong danh
       sách route). Đã dọn sạch dữ liệu test + xóa `.env.local` tạm.
 
+      ĐÃ BỊ HỦY BỎ VÀ XÓA HẾT CODE ngay sau khi implement xong (khác các lần
+      "ĐÃ BỊ THAY THẾ" trước — lần này KHÔNG có provider thay thế, quay lại
+      đúng nguyên trạng "chỉ xác nhận thủ công" trước khi làm mục này). Lý
+      do: user báo ngay "nó không hỗ trợ techcombank" (tài khoản ngân hàng
+      thật của user là Techcombank — xem BANK_ID trong .env). Tra lại kỹ qua
+      WebFetch (không tin gợi ý ban đầu của WebSearch, hoá ra sai) xác nhận
+      đúng: trang "Ngân hàng hợp tác" chính thức của SePay KHÔNG liệt kê
+      Techcombank ở đâu cả — SePay chỉ hỗ trợ qua API partnership CHÍNH THỨC
+      với từng ngân hàng, Techcombank chưa có trong danh sách đó. Đối thủ
+      Casso CÓ hỗ trợ Techcombank nhưng qua cơ chế RPA ("Casso Flow" — 1
+      con robot tự động ĐĂNG NHẬP vào Internet Banking Techcombank thay
+      người dùng để đọc giao dịch định kỳ), nghĩa là phải CẤP THẬT thông
+      tin đăng nhập ngân hàng cho Casso — khác hẳn cơ chế API chính thức
+      (không cần chia sẻ mật khẩu) mà SePay dùng cho các ngân hàng khác. Đã
+      trình bày rõ 4 lựa chọn cho user qua AskUserQuestion (dùng Casso chấp
+      nhận rủi ro RPA / mở thêm 1 tài khoản ở ngân hàng SePay hỗ trợ chính
+      thức để nhận tiền / giữ nguyên xác nhận thủ công / tìm hiểu thêm) — 
+      user chọn **giữ nguyên xác nhận thủ công**, không chấp nhận đánh đổi
+      bảo mật (chia sẻ mật khẩu ngân hàng) hay phiền phức (mở thêm tài
+      khoản) chỉ để có tự động hoá.
+
+      ĐÃ XÓA HẾT: src/lib/sepay.ts, src/app/api/payments/sepay/ (cả thư
+      mục), tham số `options?.note` mới thêm ở `confirmBankTransferPayment`
+      (lib/orders.ts, quay lại chữ ký 1 tham số như cũ), hàm
+      `findPendingBankTransferOrderByTransaction` (lib/orders.ts), đoạn
+      code hiển thị thông báo "TỰ ĐỘNG"/hint SePay ở /orders/[id] và
+      /admin/orders/[id] (quay lại nguyên văn thông báo "xác nhận thủ công"
+      như trước), biến `SEPAY_API_KEY` trong .env. `ConfirmBankTransferButton`
+      + nút xác nhận thủ công ở /admin/orders/[id] KHÔNG đổi gì — vẫn là
+      CÁCH DUY NHẤT xác nhận thanh toán chuyển khoản, y hệt trước khi làm
+      mục này. Đã `rm -rf .next` (validator.ts cache còn trỏ tới route đã
+      xóa, gây lỗi tsc giả) rồi `npm run build` lại xác nhận sạch, route
+      `/api/payments/sepay/webhook` không còn trong danh sách, route
+      `/api/admin/orders/[id]/confirm-bank-transfer` vẫn còn nguyên.
+
+      BÀI HỌC: mỗi dịch vụ "tự động đối chiếu giao dịch ngân hàng" ở VN chỉ
+      hỗ trợ 1 tập ngân hàng nhất định qua API CHÍNH THỨC (an toàn, không
+      cần mật khẩu) — ngân hàng ngoài danh sách đó thường CHỈ khả dụng qua
+      RPA (rủi ro cao hơn hẳn, phải cấp thật thông tin đăng nhập). Trước khi
+      chọn 1 dịch vụ loại này, PHẢI tra đúng danh sách ngân hàng hỗ trợ CHO
+      ĐÚNG NGÂN HÀNG NGƯỜI DÙNG ĐANG DÙNG trước khi implement, không giả
+      định "dịch vụ phổ biến chắc hỗ trợ hết".
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -3332,16 +3375,6 @@
       khoản đã hiện ở /checkout. CHƯA thêm 3 biến này vào Environment
       Variables trên Vercel (production vẫn chưa hoạt động được cho tới khi
       làm bước này).
-- [ ] CHƯA đăng ký tài khoản SePay + liên kết ngân hàng thật + điền
-      SEPAY_API_KEY (xác nhận TỰ ĐỘNG thanh toán chuyển khoản — xem mục
-      "XÁC NHẬN TỰ ĐỘNG thanh toán chuyển khoản ngân hàng qua webhook SePay"
-      ở trên) — để trống thì webhook tự trả 401, tính năng xác nhận THỦ CÔNG
-      qua nút bấm ở /admin/orders/[id] vẫn hoạt động bình thường như trước,
-      không có gì bị phá vỡ. Sau khi đăng ký xong nhớ trỏ URL webhook trong
-      dashboard SePay về đúng domain production
-      (`https://fptshop-clone.vercel.app/api/payments/sepay/webhook` — SePay
-      không gọi được vào localhost) và thêm SEPAY_API_KEY vào Environment
-      Variables trên Vercel.
 - [ ] Làm tiếp ảnh thật + thông số chuẩn cho 29 sản phẩm còn lại (đã làm mẫu
       6 sản phẩm: iPhone 15 Pro Max, Samsung Galaxy S24 Ultra, Xiaomi Redmi
       Note 13, MacBook Air M3, Dell XPS 13, OPPO Reno11 5G — xem mục "Thêm

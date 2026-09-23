@@ -6,7 +6,6 @@ import {
   ORDER_STATUS_TRANSITIONS,
 } from "@/lib/orders";
 import { isUsingPublicMomoTestCredentials } from "@/lib/momo";
-import { isSepayConfigured } from "@/lib/sepay";
 import OrderStatusUpdateForm from "../OrderStatusUpdateForm";
 import ConfirmBankTransferButton from "../ConfirmBankTransferButton";
 
@@ -129,17 +128,7 @@ export default async function AdminOrderDetailPage({
               )}
             </p>
             {p.method === "BANK_TRANSFER" && p.status === "PENDING" && (
-              <div className="mt-1">
-                {isSepayConfigured() && (
-                  <p className="mb-1 text-xs text-zinc-500">
-                    Đã bật xác nhận tự động qua SePay — đơn sẽ tự chuyển sang
-                    trạng thái đã thanh toán khi khớp đúng nội dung + số tiền
-                    chuyển khoản. Chỉ bấm nút dưới đây nếu webhook không tự
-                    khớp được (vd khách ghi sai nội dung chuyển khoản).
-                  </p>
-                )}
-                <ConfirmBankTransferButton orderId={order.id} />
-              </div>
+              <ConfirmBankTransferButton orderId={order.id} />
             )}
           </div>
         ))}

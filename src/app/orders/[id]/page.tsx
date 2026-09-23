@@ -4,7 +4,6 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrderDetail, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@/lib/orders";
 import { buildVietQrUrl, getBankAccountInfo } from "@/lib/bankTransfer";
-import { isSepayConfigured } from "@/lib/sepay";
 import RetryPaymentButton from "./RetryPaymentButton";
 
 function formatPrice(value: number) {
@@ -187,10 +186,8 @@ export default async function OrderDetailPage({
                 Nội dung chuyển khoản: <span className="font-medium text-zinc-900">{order.code}</span>
               </p>
               <p className="mt-2 text-xs text-zinc-500">
-                Vui lòng giữ đúng nội dung chuyển khoản để hệ thống đối chiếu.{" "}
-                {isSepayConfigured()
-                  ? "Đơn hàng sẽ TỰ ĐỘNG được xác nhận trong ít phút sau khi shop nhận được tiền."
-                  : "Đơn hàng sẽ được xác nhận thủ công sau khi shop nhận được tiền."}
+                Vui lòng giữ đúng nội dung chuyển khoản để shop đối chiếu. Đơn
+                hàng sẽ được xác nhận thủ công sau khi shop nhận được tiền.
               </p>
             </div>
           </div>
