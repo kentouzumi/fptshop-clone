@@ -3342,6 +3342,128 @@
       ĐÚNG NGÂN HÀNG NGƯỜI DÙNG ĐANG DÙNG trước khi implement, không giả
       định "dịch vụ phổ biến chắc hỗ trợ hết".
 
+- [x] Thêm ảnh THẬT + banner thật cho 28 sản phẩm còn lại + banner trang chủ
+      (user yêu cầu làm nốt toàn bộ sau khi duyệt 6 sản phẩm mẫu, kèm 2 lưu ý
+      quan trọng: (1) giá variant CHỈ đổi theo dung lượng chứ không theo màu
+      — đã kiểm tra lại toàn bộ dữ liệu hiện có, xác nhận ĐÚNG như vậy sẵn
+      (không có variant nào lệch giá chỉ vì đổi màu), áp dụng như nguyên tắc
+      cho các thay đổi sau này; (2) một số sản phẩm KHÔNG cần variant — thực
+      tế toàn bộ 22 sản phẩm nhóm "Điện máy" từ trước tới giờ đã luôn chỉ có
+      ĐÚNG 1 variant/sản phẩm (không có variant màu/dung lượng thừa), đúng ý
+      user muốn, không cần sửa gì thêm ở tầng dữ liệu).
+
+      NGUỒN ẢNH: đổi hẳn chiến lược so với 6 sản phẩm mẫu trước — Wikimedia
+      Commons liên tục trả lỗi 429 "Too many requests"/chặn IP trong phần
+      lớn thời gian làm việc (thử cả `curl` lẫn `Invoke-WebRequest`, cả User-
+      Agent tuân thủ robot policy của Wikimedia, cả kích thước thumbnail hợp
+      lệ theo đúng danh sách chính thức 20/40/60/120/250/330/500/960/1280/
+      1920/3840px — vẫn bị chặn phần lớn, chỉ thông trong 1 khoảng thời gian
+      ngắn giữa chừng) — ĐÃ CHUYỂN ƯU TIÊN sang lấy thẳng từ TRANG CHÍNH HÃNG
+      cho đa số sản phẩm, chỉ dùng Commons cho vài trường hợp Commons tình cờ
+      thông (AirPods Pro 2, Xiaomi Robot Vacuum, HP LaserJet minh họa).
+      KỸ THUẬT trích ảnh từ trang hãng: ưu tiên đọc thẳng thẻ
+      `<meta property="og:image">` (nhanh, thường ra đúng 1 ảnh hero chất
+      lượng cao — dùng được cho TP-Link, Asus TUF/Zenbook, Philips cả 4 sản
+      phẩm, Xiaomi camera/cân); khi trang không có og:image hữu ích, grep
+      thẳng HTML tìm state JSON nhúng sẵn (server-side rendered) chứa URL
+      ảnh theo field tên riêng của từng hãng — phát hiện được nhờ đọc context
+      quanh chuỗi tên sản phẩm: Samsung nhúng field `"hingeImage"`/
+      `"logoUrl"` chứa domain `images.samsung.com/vn/<slug>/buy/...` (dùng
+      được cho Galaxy Tab S9, khớp đúng màu "Xám"/Graphite); LG nhúng field
+      `og:image` trỏ domain `www.lg.com/content/dam/channel/wcms/vn/images/`
+      kèm thêm link `gallery/D-01.jpg` độ phân giải cao hơn trong chính HTML.
+
+      3 THƯƠNG HIỆU VN (Sunhouse, Kangaroo — đúng như dự đoán trước đó là sẽ
+      khó) hoá ra VẪN LẤY ĐƯỢC ảnh thật từ chính trang chủ hãng
+      (sunhouse.com.vn, kangaroo.vn) qua og:image y hệt các hãng quốc tế —
+      không khó như lo ngại ban đầu, CHỈ có 1 khó khăn thật: sản phẩm trong
+      DB đặt tên/mã hàng chung chung (vd "SHD5341", "SHB6822", "KG150") không
+      trùng khớp CHÍNH XÁC với mã sản phẩm thật đang bán trên web hãng (dòng
+      sản phẩm cũ/mới khác nhau) — dùng `WebSearch` (site:sunhouse.com.vn,
+      site:kangaroo.vn) để tìm ra đúng URL sản phẩm THẬT gần nhất cùng danh
+      mục, chấp nhận model không khớp tuyệt đối 100% (giống cách tiếp cận
+      "cùng dòng sản phẩm" đã dùng cho iPad/Galaxy S24 Ultra ở batch trước).
+
+      4 SẢN PHẨM KHÔNG lấy được ảnh (giữ nguyên placehold.co, đã bổ sung
+      THÔNG SỐ THẬT vẫn đầy đủ): Dell UltraSharp U2724D (trang dell.com chặn
+      thẳng bằng Akamai "Access Denied" ngay cả với ảnh tĩnh .psd trên CDN
+      `i.dell.com`, dù trang HTML chính vẫn tải được và tìm thấy đúng URL
+      ảnh); JBL Tune 510BT (không tìm thấy bất kỳ nguồn ảnh nào — cả
+      jbl.com/global.jbl.com/vn.jbl.com đều trả trang rỗng hoặc không nhúng
+      CDN ảnh trong HTML tĩnh, Commons cũng không có kết quả phù hợp); Samsung
+      Smart Tivi Crystal UHD 55" và Sony Bravia 43" (CẢ 2 site chặn bot hoàn
+      toàn — Sony trả thẳng "403 Access Denied" của Akamai ngay từ request
+      đầu tiên bất kể `curl` hay `Invoke-WebRequest`; Samsung VN thoạt đầu
+      cho qua 1-2 request rồi tự chuyển MỌI URL (kể cả URL khác hoàn toàn)
+      thành trang "error" chung — nghi ngờ WAF tạm chặn theo IP sau vài request
+      liên tiếp, có thể thử lại được sau, ghi vào mục "Việc còn thiếu").
+
+      MÀU SẮC KHÔNG KHỚP: 6 sản phẩm có ảnh thật lấy được nhưng màu SAI so
+      với dữ liệu variant cũ (do dữ liệu variant cũ vốn chỉ là màu bịa lúc
+      seed ban đầu, không dựa trên ảnh thật nào) — ĐÃ SỬA LẠI MÀU VARIANT
+      cho khớp đúng với ảnh thật (nguyên tắc: ảnh thật là nguồn chân lý, sửa
+      dữ liệu theo ảnh chứ không ép ảnh sai theo dữ liệu, tránh lặp lại lỗi
+      "ảnh không khớp variant" đã từng sửa trước đây): Philips máy sấy tóc
+      (Hồng -> Đen, model BHC010 thật chỉ có màu đen), Philips nồi cơm điện
+      (Đỏ -> Trắng), Sunhouse chảo chống dính (Đen -> Đỏ), Sunhouse máy hút
+      mùi (Đen -> Bạc, ảnh thật là hút mùi inox), Sunhouse máy xay sinh tố
+      (Đỏ -> Trắng), Sunhouse nồi áp suất điện (Bạc -> Đen). LG tủ lạnh giữ
+      nguyên đổi tương tự (Bạc -> Đen) vì model LTD37BLM thật là màu đen.
+
+      BANNER TRANG CHỦ: 3 banner cũ dùng placehold.co (`Banner.imageUrl`,
+      KHÔNG có field `title` trong schema — hiển thị thuần ảnh, không có chữ
+      overlay) — đổi bằng 3 ảnh THẬT ghép trên nền màu `#1c1428` (đúng màu
+      nền tối chủ đạo của theme "Đêm Hổ Phách", tra trực tiếp từ token
+      `--color-zinc-50` trong globals.css) qua `sharp .resize({fit:
+      "contain", background})`: banner 1 tái dùng ảnh iPhone 15 Pro Max thật
+      đã upload từ batch trước, banner 2 tái dùng ảnh MacBook Air M3, banner
+      3 dùng ảnh AirPods Pro 2 mới lấy — cả 3 đều là ẢNH THẬT 100% (chỉ thêm
+      viền nền đồng màu app, không chỉnh sửa nội dung ảnh) phù hợp khung
+      hiển thị 21:9 của `HeroBanner.tsx` (`object-cover` sẽ không còn cắt
+      mất chủ thể vì đã có viền đệm sẵn trong ảnh).
+
+      QUY TRÌNH KỸ THUẬT (giữ nguyên từ batch 6 sản phẩm mẫu, không đổi):
+      `sharp` resize width 1400px + nén JPEG quality 85 + `.flatten()` nền
+      trắng (một số ảnh PNG từ Philips có nền trong suốt, cần ép nền trắng
+      trước khi lưu JPEG để tránh viền đen), upload thẳng qua
+      `@supabase/supabase-js` với `SUPABASE_SERVICE_ROLE_KEY` (script dùng 1
+      lần rồi xóa, không commit). LỖI THẬT gặp phải: script lúc đầu báo lỗi
+      "Invalid Compact JWS" khi upload — hoá ra do dòng
+      `SUPABASE_SERVICE_ROLE_KEY= "..."` trong `.env` có 1 KHOẢNG TRẮNG giữa
+      dấu `=` và dấu ngoặc kép mở đầu, parser .env tự viết trong script (quy
+      ước `KEY="value"` đơn giản, không dùng thư viện `dotenv` đầy đủ) không
+      lường trước trường hợp có khoảng trắng nên cắt thiếu, để sót 1 dấu
+      `"` và 1 khoảng trắng ở đầu giá trị secret — sửa lại parser dùng
+      `.trim()` + strip ngoặc kép sau khi trim thay vì regex cứng nhắc.
+
+      Đã cập nhật CẢ ảnh (`ProductImage`, xóa hết ảnh `variantId: null` cũ
+      rồi tạo lại) LẪN thông số kỹ thuật (`ProductAttribute`, xóa hết rồi
+      tạo lại, 4-8 dòng/sản phẩm dùng số liệu THẬT của đúng model — vd Asus
+      Zenbook UX3405 ghi đúng Intel Core Ultra 7 155H/16GB/512GB, Kangaroo
+      KG69A3N ghi đúng dung tích 30 lít/công suất 2500W) cho toàn bộ 23 sản
+      phẩm lấy được ảnh, và CHỈ thông số (giữ nguyên ảnh placehold.co) cho 4
+      sản phẩm không lấy được ảnh — không có sản phẩm nào còn thông số sơ sài
+      như trước nữa.
+
+      Đã test qua dev server (dùng DB thật, không mock, không tạo dữ liệu
+      test tạm nào vì toàn bộ là nội dung thật sẽ giữ lại): xóa `.next` trước
+      khi khởi động lại (rút kinh nghiệm lỗi cache stale đã ghi ở mục "Lưu ý
+      quan trọng" — thao tác qua script không tự gọi `revalidateTag`), script
+      audit riêng xác nhận ĐÚNG 30/34 sản phẩm hết placehold.co (30 = 23 mới
+      + Logitech G304 + iPhone/Samsung S24 Ultra/Xiaomi/MacBook/Dell XPS đã
+      làm ở batch trước — không có ảnh product-level vì đã gắn hết vào
+      variant), CHỈ còn đúng 4 sản phẩm placeholder như đã liệt kê ở trên;
+      trang chủ tải đúng 3 banner mới (grep xác nhận URL Supabase
+      `catalog/*.jpg` mới, không còn `placehold.co` nào ở banner); trang chi
+      tiết 1 vài sản phẩm đại diện (`/products/tp-link-archer-ax55`,
+      `/products/sunhouse-chao-chong-dinh-day-tu`) trả 200 và đúng nội dung
+      thông số + màu variant đã sửa (grep thấy "Wi-Fi 6"/"OFDMA" và
+      "Whitford"/"Đỏ" đúng trong HTML thật). `tsc --noEmit`/`eslint`/
+      `npm run build` sạch (không có thay đổi code, chỉ dữ liệu — build vẫn
+      chạy lại để xác nhận không có gì vỡ). Đã dọn sạch toàn bộ script/ảnh
+      tạm (`catalog_batch2.mjs`, `update_banners.mjs`, thư mục
+      `%TEMP%/catalog_imgs`) sau khi chạy xong.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -3375,13 +3497,12 @@
       khoản đã hiện ở /checkout. CHƯA thêm 3 biến này vào Environment
       Variables trên Vercel (production vẫn chưa hoạt động được cho tới khi
       làm bước này).
-- [ ] Làm tiếp ảnh thật + thông số chuẩn cho 29 sản phẩm còn lại (đã làm mẫu
-      6 sản phẩm: iPhone 15 Pro Max, Samsung Galaxy S24 Ultra, Xiaomi Redmi
-      Note 13, MacBook Air M3, Dell XPS 13, OPPO Reno11 5G — xem mục "Thêm
-      ảnh THẬT... cho 6 sản phẩm mẫu" ở trên). Đang chờ user duyệt chất
-      lượng/cách làm trước khi tiếp tục toàn bộ — một số thương hiệu nội địa
-      VN (Sunhouse, Kangaroo, TP-Link...) dự kiến khó tìm ảnh thật hơn do ít
-      xuất hiện trên Wikimedia Commons lẫn trang hãng quốc tế.
+- [ ] CHƯA có ảnh thật cho 4 sản phẩm: Dell UltraSharp U2724D, JBL Tune
+      510BT, Samsung Smart Tivi Crystal UHD 55 inch, Sony Bravia 43 inch —
+      xem lý do kỹ thuật (chặn bot) ở mục "Thêm ảnh thật + banner thật cho
+      28 sản phẩm còn lại + banner trang chủ" ở trên. Cả 4 đã có THÔNG SỐ
+      THẬT đầy đủ, chỉ còn thiếu ảnh — có thể thử lại sau (đặc biệt Samsung/
+      Sony có thể chỉ đang chặn tạm thời, không hẳn chặn vĩnh viễn).
 - [ ] Polish CẤU TRÚC (không phải màu sắc — màu đã tự động đổi theo theme
       mới) cho phần còn lại của admin (danh mục, thương hiệu, người dùng,
       cửa hàng, khuyến mãi, bảo hành, thu cũ đổi mới, hỗ trợ, trang tĩnh,
