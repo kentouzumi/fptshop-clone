@@ -4,6 +4,7 @@ import { getCartDetail } from "@/lib/cart";
 import { getAddressesForUser } from "@/lib/addresses";
 import { SHIPPING_FEE } from "@/lib/orders";
 import { isMomoConfigured } from "@/lib/momo";
+import { isBankTransferConfigured } from "@/lib/bankTransfer";
 import { getActiveStores } from "@/lib/stores";
 import CheckoutForm from "./CheckoutForm";
 
@@ -48,6 +49,7 @@ export default async function CheckoutPage() {
               isDefault: a.isDefault,
             }))}
             momoAvailable={isMomoConfigured()}
+            bankTransferAvailable={isBankTransferConfigured()}
             stores={stores.map((s) => ({
               id: s.id,
               name: s.name,

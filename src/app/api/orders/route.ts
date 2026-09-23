@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { createOrderFromCart, generatePaymentUrlForOrder, type CheckoutInput } from "@/lib/orders";
 import { isMomoConfigured } from "@/lib/momo";
+import { isBankTransferConfigured } from "@/lib/bankTransfer";
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -13,7 +14,12 @@ export async function POST(request: Request) {
   const addressId = typeof body?.addressId === "string" && body.addressId ? body.addressId : undefined;
   const note = typeof body?.note === "string" ? body.note.trim() : "";
   const couponCode = typeof body?.couponCode === "string" && body.couponCode.trim() ? body.couponCode.trim() : undefined;
-  const paymentMethod = body?.paymentMethod === "MOMO" ? "MOMO" : "COD";
+  const paymentMethod =
+    body?.paymentMethod === "MOMO"
+      ? "MOMO"
+      : body?.paymentMethod === "BANK_TRANSFER"
+        ? "BANK_TRANSFER"
+        : "COD";
   const deliveryMethod = body?.deliveryMethod === "STORE_PICKUP" ? "STORE_PICKUP" : "HOME_DELIVERY";
   const pickupStoreId =
     typeof body?.pickupStoreId === "string" && body.pickupStoreId ? body.pickupStoreId : undefined;
@@ -21,6 +27,13 @@ export async function POST(request: Request) {
   if (paymentMethod === "MOMO" && !isMomoConfigured()) {
     return NextResponse.json(
       { error: "Thanh toán MoMo chưa được cấu hình trên hệ thống. Vui lòng chọn COD." },
+      { status: 400 }
+    );
+  }
+
+  if (paymentMethod === "BANK_TRANSFER" && !isBankTransferConfigured()) {
+    return NextResponse.json(
+      { error: "Chuyển khoản ngân hàng chưa được cấu hình trên hệ thống. Vui lòng chọn phương thức khác." },
       { status: 400 }
     );
   }

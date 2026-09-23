@@ -7,6 +7,7 @@ import {
 } from "@/lib/orders";
 import { isUsingPublicMomoTestCredentials } from "@/lib/momo";
 import OrderStatusUpdateForm from "../OrderStatusUpdateForm";
+import ConfirmBankTransferButton from "../ConfirmBankTransferButton";
 
 function formatPrice(value: number) {
   return value.toLocaleString("vi-VN") + "₫";
@@ -116,12 +117,20 @@ export default async function AdminOrderDetailPage({
       <div className="mb-6 card p-4">
         <h2 className="mb-2 text-sm font-semibold text-zinc-700">Thanh toán</h2>
         {order.payments.map((p) => (
-          <p key={p.id} className="text-sm">
-            {PAYMENT_METHOD_LABELS[p.method] ?? p.method} —{" "}
-            <span className={p.status === "PAID" ? "text-green-600" : "text-zinc-500"}>
-              {PAYMENT_STATUS_LABELS[p.status] ?? p.status}
-            </span>
-          </p>
+          <div key={p.id}>
+            <p className="text-sm">
+              {PAYMENT_METHOD_LABELS[p.method] ?? p.method} —{" "}
+              <span className={p.status === "PAID" ? "text-green-600" : "text-zinc-500"}>
+                {PAYMENT_STATUS_LABELS[p.status] ?? p.status}
+              </span>
+              {p.transactionRef && (
+                <span className="ml-2 text-xs text-zinc-400">(Nội dung CK: {p.transactionRef})</span>
+              )}
+            </p>
+            {p.method === "BANK_TRANSFER" && p.status === "PENDING" && (
+              <ConfirmBankTransferButton orderId={order.id} />
+            )}
+          </div>
         ))}
         {/* Rà soát nghiệp vụ phát hiện: secret ký chữ ký MoMo hiện là bộ test
             CÔNG KHAI do MoMo tự công bố (xem lib/momo.ts) — bất kỳ ai đọc tài

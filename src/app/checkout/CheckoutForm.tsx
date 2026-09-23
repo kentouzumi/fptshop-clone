@@ -49,12 +49,14 @@ export default function CheckoutForm({
   subtotal,
   shippingFee,
   momoAvailable,
+  bankTransferAvailable,
   stores,
 }: {
   savedAddresses: SavedAddress[];
   subtotal: number;
   shippingFee: number;
   momoAvailable: boolean;
+  bankTransferAvailable: boolean;
   stores: StoreOption[];
 }) {
   const router = useRouter();
@@ -75,7 +77,7 @@ export default function CheckoutForm({
   const [ward, setWard] = useState("");
   const [streetDetail, setStreetDetail] = useState("");
   const [note, setNote] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"COD" | "MOMO">("COD");
+  const [paymentMethod, setPaymentMethod] = useState<"COD" | "MOMO" | "BANK_TRANSFER">("COD");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -427,6 +429,22 @@ export default function CheckoutForm({
             <span>
               Thanh toán qua ví MoMo
               {!momoAvailable && <span className="ml-1 text-xs text-zinc-400">(chưa khả dụng)</span>}
+            </span>
+          </label>
+          <label className={radioCardClass(paymentMethod === "BANK_TRANSFER", !bankTransferAvailable)}>
+            <input
+              type="radio"
+              name="paymentMethod"
+              className="mt-0.5"
+              checked={paymentMethod === "BANK_TRANSFER"}
+              disabled={!bankTransferAvailable}
+              onChange={() => setPaymentMethod("BANK_TRANSFER")}
+            />
+            <span>
+              Chuyển khoản ngân hàng (quét mã QR)
+              {!bankTransferAvailable && (
+                <span className="ml-1 text-xs text-zinc-400">(chưa khả dụng)</span>
+              )}
             </span>
           </label>
         </div>

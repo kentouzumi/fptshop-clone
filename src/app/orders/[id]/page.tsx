@@ -1,7 +1,9 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrderDetail, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@/lib/orders";
+import { buildVietQrUrl, getBankAccountInfo } from "@/lib/bankTransfer";
 import RetryPaymentButton from "./RetryPaymentButton";
 
 function formatPrice(value: number) {
@@ -154,6 +156,43 @@ export default async function OrderDetailPage({
       )}
 
       {canRetryPayment && <RetryPaymentButton orderId={order.id} />}
+
+      {payment && payment.method === "BANK_TRANSFER" && payment.status === "PENDING" && (
+        <div className="card mt-4 p-4">
+          <p className="mb-3 text-sm font-semibold text-zinc-900">Quét mã để chuyển khoản</p>
+          <div className="flex flex-col items-start gap-4 sm:flex-row">
+            <Image
+              src={buildVietQrUrl({ amount: Number(order.grandTotal), addInfo: order.code })}
+              alt="Mã QR chuyển khoản VietQR"
+              width={260}
+              height={308}
+              className="rounded-lg border border-zinc-200"
+              unoptimized
+            />
+            <div className="space-y-1 text-sm text-zinc-600">
+              <p>
+                Chủ tài khoản: <span className="font-medium text-zinc-900">{getBankAccountInfo().accountName}</span>
+              </p>
+              <p>
+                Số tài khoản: <span className="font-medium text-zinc-900">{getBankAccountInfo().accountNumber}</span>
+              </p>
+              <p>
+                Ngân hàng: <span className="font-medium text-zinc-900">{getBankAccountInfo().bankId}</span>
+              </p>
+              <p>
+                Số tiền: <span className="font-medium text-accent">{formatPrice(Number(order.grandTotal))}</span>
+              </p>
+              <p>
+                Nội dung chuyển khoản: <span className="font-medium text-zinc-900">{order.code}</span>
+              </p>
+              <p className="mt-2 text-xs text-zinc-500">
+                Vui lòng giữ đúng nội dung chuyển khoản để shop đối chiếu. Đơn
+                hàng sẽ được xác nhận thủ công sau khi shop nhận được tiền.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Link href="/orders" className="mt-6 inline-block text-sm text-zinc-600 underline hover:text-zinc-900">
         Xem tất cả đơn hàng

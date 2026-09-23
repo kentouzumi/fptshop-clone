@@ -18,7 +18,7 @@ const CSP = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https://*.supabase.co https://placehold.co",
+  "img-src 'self' data: https://*.supabase.co https://placehold.co https://img.vietqr.io",
   "font-src 'self' data:",
   `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
   "object-src 'none'",
@@ -34,6 +34,7 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "placehold.co" },
       { protocol: "https", hostname: "*.supabase.co" },
+      { protocol: "https", hostname: "img.vietqr.io" },
     ],
   },
   async headers() {

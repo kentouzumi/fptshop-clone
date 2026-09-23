@@ -19,6 +19,7 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   COD: "Thanh toán khi nhận hàng (COD)",
   VNPAY: "VNPay",
   MOMO: "Ví MoMo",
+  BANK_TRANSFER: "Chuyển khoản ngân hàng (VietQR)",
 };
 
 export const DELIVERY_METHOD_LABELS: Record<string, string> = {
@@ -57,7 +58,7 @@ export interface CheckoutInput {
   newAddress?: NewAddressInput; // hoặc nhập địa chỉ mới (sẽ được lưu vào sổ địa chỉ)
   note?: string;
   couponCode?: string;
-  paymentMethod?: "COD" | "MOMO";
+  paymentMethod?: "COD" | "MOMO" | "BANK_TRANSFER";
   deliveryMethod?: "HOME_DELIVERY" | "STORE_PICKUP";
   pickupStoreId?: string; // bắt buộc nếu deliveryMethod = STORE_PICKUP
 }
@@ -137,6 +138,7 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
     const grandTotal = subtotal + shippingFee - discountTotal;
 
     const isMomo = input.paymentMethod === "MOMO";
+    const isBankTransfer = input.paymentMethod === "BANK_TRANSFER";
     const orderCode = generateOrderCode();
     const momoTxnRef = isMomo ? generateTxnRef(orderCode) : null;
 
@@ -219,10 +221,17 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
         },
         payments: {
           create: {
-            method: isMomo ? PaymentMethod.MOMO : PaymentMethod.COD,
+            method: isMomo
+              ? PaymentMethod.MOMO
+              : isBankTransfer
+                ? PaymentMethod.BANK_TRANSFER
+                : PaymentMethod.COD,
             status: PaymentStatus.PENDING,
             amount: grandTotal,
-            transactionRef: momoTxnRef,
+            // Chuyển khoản dùng thẳng mã đơn hàng làm nội dung CK (addInfo gửi
+            // cho VietQR) — không có webhook như MoMo nên admin đối chiếu thủ
+            // công qua đúng mã này khi soát sao kê ngân hàng.
+            transactionRef: isMomo ? momoTxnRef : isBankTransfer ? orderCode : null,
           },
         },
         statusHistory: {
@@ -395,6 +404,54 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderStatus,
         statusHistory: { orderBy: { createdAt: "asc" } },
       },
     });
+  });
+}
+
+// Xác nhận THỦ CÔNG bởi admin sau khi tự kiểm tra tài khoản ngân hàng thật
+// thấy tiền đã về — chuyển khoản VietQR không có webhook báo tự động như
+// MoMo/VNPay (xem lib/bankTransfer.ts) nên đây là bước bắt buộc phải có con
+// người xác nhận. Idempotent (gọi lại lần 2 không lỗi, không tính điểm/tạo
+// thông báo trùng) để admin lỡ bấm 2 lần không sao. Coi thanh toán thành
+// công tương đương xác nhận đơn (PENDING -> CONFIRMED) giống hệt cách MoMo
+// callback thành công đang làm.
+export async function confirmBankTransferPayment(orderId: string) {
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { id: orderId }, include: { payments: true } });
+    if (!order) {
+      throw new Error("Không tìm thấy đơn hàng.");
+    }
+    const payment = order.payments.find((p) => p.method === PaymentMethod.BANK_TRANSFER);
+    if (!payment) {
+      throw new Error("Đơn hàng này không dùng phương thức chuyển khoản ngân hàng.");
+    }
+
+    if (payment.status !== PaymentStatus.PAID) {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.PAID, paidAt: new Date() },
+      });
+
+      if (order.status === OrderStatus.PENDING) {
+        await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.CONFIRMED } });
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId,
+            status: OrderStatus.CONFIRMED,
+            note: "Admin xác nhận đã nhận được tiền chuyển khoản",
+          },
+        });
+        await tx.notification.create({
+          data: {
+            userId: order.userId,
+            type: "ORDER_UPDATE",
+            title: `Đơn hàng ${order.code} đã được xác nhận`,
+            content: "Chúng tôi đã nhận được thanh toán chuyển khoản của bạn.",
+          },
+        });
+      }
+    }
+
+    return tx.order.findUnique({ where: { id: orderId }, include: { payments: true } });
   });
 }
 

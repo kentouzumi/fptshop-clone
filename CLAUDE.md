@@ -3139,6 +3139,90 @@
       nữa do đây là thương hiệu nội địa Việt Nam, ít xuất hiện trên Commons
       lẫn trang hãng quốc tế).
 
+- [x] Thêm phương thức thanh toán CHUYỂN KHOẢN NGÂN HÀNG THẬT qua mã VietQR
+      (user hỏi cách test MoMo chuyển tiền thật — giải thích rõ
+      `test-payment.momo.vn` KHÔNG BAO GIỜ chuyển tiền thật dù dùng bộ
+      credentials nào vì đó là vũ trụ sandbox riêng của MoMo (test bằng app
+      "MoMo Test" với số dư giả) — muốn tiền thật phải có tài khoản MoMo
+      Business được duyệt (mất vài ngày, cần hồ sơ kinh doanh). User chọn
+      hướng khác nhanh hơn: chuyển khoản ngân hàng qua mã QR).
+
+      DÙNG dịch vụ "Quick Link" CÔNG KHAI MIỄN PHÍ của VietQR
+      (`img.vietqr.io`) — KHÔNG cần đăng ký tài khoản/API key nào (khác hẳn
+      MoMo/VNPay), chỉ cần điền đúng SỐ TÀI KHOẢN NGÂN HÀNG THẬT của user là
+      chạy được ngay, tiền đi THẲNG vào tài khoản đó khi khách quét mã bằng
+      app ngân hàng bất kỳ hoặc app MoMo (đều đọc được chuẩn VietQR/Napas
+      247). `PaymentMethod.BANK_TRANSFER` ĐÃ CÓ SẴN trong schema từ đầu dự
+      án nhưng CHƯA TỪNG được dùng — không cần `prisma db push`.
+
+      src/lib/bankTransfer.ts (mới): `isBankTransferConfigured()` check đủ
+      3 biến env; `getBankAccountInfo()`; `buildVietQrUrl({amount, addInfo})`
+      ghép URL theo đúng cú pháp VietQR
+      `img.vietqr.io/image/{BANK_ID}-{SO_TK}-{TEMPLATE}.png?amount=...&addInfo=...&accountName=...`
+      (template `compact2` — có logo + đầy đủ thông tin chuyển khoản, tra
+      cứu đúng cú pháp qua https://www.vietqr.io/danh-sach-api/link-tao-ma-nhanh/
+      trước khi viết code, không đoán). `BANK_ID` chấp nhận cả mã ngắn
+      ("VCB", "MB"...) lẫn mã BIN 6 số — tra đúng mã ngân hàng của mình tại
+      `https://api.vietqr.io/v2/banks` (JSON công khai).
+
+      lib/orders.ts: `CheckoutInput.paymentMethod` thêm `"BANK_TRANSFER"`.
+      `createOrderFromCart()`: tạo `Payment` method `BANK_TRANSFER` status
+      `PENDING`, `transactionRef` = CHÍNH mã đơn hàng (`orderCode`) — dùng
+      làm nội dung chuyển khoản (`addInfo` gửi VietQR) để đối chiếu, KHÁC
+      với MoMo (txnRef riêng, không phải mã đơn). Thêm
+      `confirmBankTransferPayment(orderId)` — vì VietQR KHÔNG có webhook báo
+      tự động như MoMo/VNPay (khác biệt cốt lõi cần hiểu rõ), hàm này dành
+      cho ADMIN gọi THỦ CÔNG sau khi tự kiểm tra tài khoản ngân hàng thấy
+      tiền đã về: đánh dấu Payment PAID + nếu Order đang PENDING thì tự
+      chuyển CONFIRMED (giống hệt cách MoMo callback thành công đang làm) —
+      idempotent (gọi lại lần 2 không tạo thêm Notification/lịch sử trạng
+      thái trùng, admin lỡ bấm 2 lần không sao).
+
+      API: `POST /api/admin/orders/[id]/confirm-bank-transfer` (route MỚI,
+      requireAdmin). `POST /api/orders` parse thêm `BANK_TRANSFER`, chặn
+      400 nếu chưa cấu hình đủ 3 biến bank.
+
+      UI: CheckoutForm.tsx thêm lựa chọn thứ 3 "Chuyển khoản ngân hàng (quét
+      mã QR)" (tự disable như MoMo nếu chưa cấu hình, dùng
+      `isBankTransferConfigured()` truyền từ checkout/page.tsx). Trang
+      /orders/[id] hiện khối QR (ảnh `<Image unoptimized>` vì URL VietQR có
+      query string động, không phù hợp cache tối ưu ảnh của Next) kèm đầy đủ
+      số tài khoản/tên chủ TK/ngân hàng/số tiền/nội dung CK dạng text (dự
+      phòng nếu khách không quét được QR) — CHỈ hiện khi Payment method
+      BANK_TRANSFER và status còn PENDING (ẩn đi sau khi admin xác nhận).
+      Admin: /admin/orders/[id] thêm nút "Xác nhận đã nhận tiền chuyển
+      khoản" (ConfirmBankTransferButton.tsx, có `confirm()` hỏi lại trước
+      khi gọi vì đây là hành động không dễ hoàn tác) — chỉ hiện khi có
+      Payment BANK_TRANSFER đang PENDING; đồng thời hiện thêm nội dung CK
+      (transactionRef) cạnh mỗi dòng thanh toán để admin biết cần tìm giao
+      dịch nào trong sao kê.
+
+      next.config.ts: thêm `img.vietqr.io` vào CẢ `images.remotePatterns`
+      (cho next/image) LẪN `Content-Security-Policy` `img-src` (thiếu 1
+      trong 2 chỗ này ảnh QR sẽ không hiện được — remotePatterns thiếu thì
+      Next chặn lúc build/render, CSP thiếu thì trình duyệt tự chặn dù Next
+      render ra HTML đúng).
+
+      .env: thêm `BANK_ID`/`BANK_ACCOUNT_NUMBER`/`BANK_ACCOUNT_NAME` (để
+      trống thì tính năng tự ẩn), kèm hướng dẫn chi tiết cách lấy đúng mã
+      ngân hàng + CẢNH BÁO rõ đây là số tài khoản THẬT sẽ hiển thị công khai
+      cho khách xem (đúng bản chất — vẫn phải hiện ra để chuyển tiền, không
+      phải lỗ hổng) nhưng không hề lộ thông tin đăng nhập/OTP ngân hàng.
+
+      Đã test qua dev server bằng DB thật (tạo 1 customer + 1 admin test
+      tạm, dùng bộ thông tin ngân hàng MẪU trong tài liệu VietQR — KHÔNG
+      phải tài khoản thật — qua `.env.local`, xóa `.env.local` ngay sau khi
+      test xong): đặt hàng BANK_TRANSFER thành công (201), DB xác nhận đúng
+      Payment method/status/transactionRef=mã đơn; trang `/orders/[id]`
+      hiện đúng ảnh QR (gọi thẳng URL ảnh xác nhận Content-Type image/png,
+      200) kèm đủ thông tin tài khoản; `/checkout` hiện đúng lựa chọn thứ 3
+      không bị disable khi đã cấu hình; admin gọi API xác nhận — Order tự
+      chuyển PENDING → CONFIRMED, Payment → PAID; gọi xác nhận LẦN 2 —
+      không lỗi, không tạo thêm Notification trùng (đúng idempotent).
+      `tsc --noEmit`/`eslint`/`npm run build` sạch (route
+      `/api/admin/orders/[id]/confirm-bank-transfer` xuất hiện đúng trong
+      danh sách route). Đã dọn sạch dữ liệu test.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -3167,6 +3251,12 @@
       MOMO_PARTNER_CODE/ACCESS_KEY/SECRET_KEY để trống vẫn chạy được nhờ
       default công khai, không bắt buộc điền trừ khi có tài khoản merchant
       MoMo thật riêng.
+- [ ] CHƯA điền BANK_ID/BANK_ACCOUNT_NUMBER/BANK_ACCOUNT_NAME (chuyển khoản
+      VietQR — xem mục "Thêm phương thức thanh toán CHUYỂN KHOẢN NGÂN HÀNG
+      THẬT" ở trên) bằng thông tin tài khoản ngân hàng THẬT của user — để
+      trống thì lựa chọn này tự ẩn ở /checkout. Điền xong nhớ thêm cả 3 biến
+      này vào Environment Variables trên Vercel (dùng đúng giá trị thật,
+      không phải mẫu test) để hoạt động được trên production.
 - [ ] Làm tiếp ảnh thật + thông số chuẩn cho 29 sản phẩm còn lại (đã làm mẫu
       6 sản phẩm: iPhone 15 Pro Max, Samsung Galaxy S24 Ultra, Xiaomi Redmi
       Note 13, MacBook Air M3, Dell XPS 13, OPPO Reno11 5G — xem mục "Thêm
