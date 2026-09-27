@@ -17,6 +17,8 @@ export interface ProductCardData {
   imageUrl: string | null;
   minPrice: number;
   maxPrice: number;
+  compareAtPrice: number | null;
+  discountPercent: number | null;
   averageRating: number;
   reviewCount: number;
 }
@@ -107,6 +109,21 @@ export default function ProductCard({
           ? formatPrice(product.minPrice)
           : `${formatPrice(product.minPrice)} - ${formatPrice(product.maxPrice)}`}
       </p>
+      {/* Giá niêm yết + mức giảm chỉ hiện khi biến thể rẻ nhất THỰC SỰ có
+          compareAtPrice lớn hơn giá bán (mapProductToListItem đã tự lọc) —
+          không dựng badge "-0%" cho sản phẩm bán đúng giá niêm yết. Giữ
+          chiều cao cố định cho cả 2 trạng thái bằng cách để khối này ngoài
+          luồng chữ chính, tránh card cao thấp so le trong cùng 1 hàng. */}
+      <div className="mt-0.5 flex min-h-[1.25rem] items-center gap-2 text-xs">
+        {product.compareAtPrice !== null && (
+          <>
+            <span className="text-zinc-400 line-through">{formatPrice(product.compareAtPrice)}</span>
+            <span className="rounded-full bg-red-600/10 px-1.5 py-0.5 font-semibold text-red-500">
+              -{product.discountPercent}%
+            </span>
+          </>
+        )}
+      </div>
 
       <CompareToggle
         item={{

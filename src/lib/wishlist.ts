@@ -46,7 +46,7 @@ export async function getWishlistProducts(userId: string): Promise<ProductListIt
           brand: { select: { name: true } },
           category: { select: { name: true, slug: true } },
           images: { orderBy: { sortOrder: "asc" }, take: 1 },
-          variants: { select: { price: true }, where: { isActive: true } },
+          variants: { select: { price: true, compareAtPrice: true }, where: { isActive: true } },
           reviews: { where: { isVisible: true }, select: { rating: true } },
         },
       },

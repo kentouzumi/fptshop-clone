@@ -100,8 +100,8 @@ async function main() {
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
-        { sku: "IP15PM-256-TN", color: "Titan Tự Nhiên", storage: "256GB", price: 29990000 },
-        { sku: "IP15PM-512-TX", color: "Titan Xanh", storage: "512GB", price: 32990000 },
+        { sku: "IP15PM-256-TN", color: "Titan Tự Nhiên", storage: "256GB", price: 29990000, compareAtPrice: 34990000 },
+        { sku: "IP15PM-512-TX", color: "Titan Xanh", storage: "512GB", price: 32990000, compareAtPrice: 40990000 },
       ],
     },
     {
@@ -120,8 +120,8 @@ async function main() {
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
-        { sku: "S24U-256-BLK", color: "Đen", storage: "512GB", price: 26990000 },
-        { sku: "S24U-512-GRY", color: "Xám", storage: "512GB", price: 26990000 },
+        { sku: "S24U-256-BLK", color: "Đen", storage: "512GB", price: 26990000, compareAtPrice: 33990000 },
+        { sku: "S24U-512-GRY", color: "Xám", storage: "512GB", price: 26990000, compareAtPrice: 33990000 },
       ],
     },
     {
@@ -141,8 +141,8 @@ async function main() {
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
-        { sku: "RN13-128-BLK", color: "Đen", storage: "128GB", price: 4990000 },
-        { sku: "RN13-256-BLU", color: "Xanh Dương", storage: "256GB", price: 5990000 },
+        { sku: "RN13-128-BLK", color: "Đen", storage: "128GB", price: 4990000, compareAtPrice: 5490000 },
+        { sku: "RN13-256-BLU", color: "Xanh Dương", storage: "256GB", price: 5990000, compareAtPrice: 6490000 },
       ],
     },
     {
@@ -161,7 +161,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
-        { sku: "OPPO-RENO11-256-GRN", color: "Xanh Ngọc", storage: "256GB", price: 9990000 },
+        { sku: "OPPO-RENO11-256-GRN", color: "Xanh Ngọc", storage: "256GB", price: 9990000, compareAtPrice: 10990000 },
       ],
     },
 
@@ -187,7 +187,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "13.6 inch" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [{ sku: "MBA-M3-8-256", color: "Bạc", storage: "8GB/256GB", price: 27990000 }],
+      variants: [{ sku: "MBA-M3-8-256", color: "Bạc", storage: "8GB/256GB", price: 27990000, compareAtPrice: null }],
     },
     {
       name: "Dell XPS 13",
@@ -206,7 +206,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "13.4 inch" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [{ sku: "XPS13-16-512", color: "Bạc", storage: "16GB/512GB", price: 32990000 }],
+      variants: [{ sku: "XPS13-16-512", color: "Bạc", storage: "16GB/512GB", price: 32990000, compareAtPrice: 36990000 }],
     },
     {
       name: "Asus Zenbook 14 OLED",
@@ -225,7 +225,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "14 inch" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
-      variants: [{ sku: "ASUS-ZB14-16-512", color: "Đen", storage: "16GB/512GB", price: 22990000 }],
+      variants: [{ sku: "ASUS-ZB14-16-512", color: "Đen", storage: "16GB/512GB", price: 22990000, compareAtPrice: 26990000 }],
     },
 
     // ===================== TIVI =====================
@@ -250,7 +250,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [{ sku: "TV-SS-Q60D-65", color: "Đen", storage: null, price: 18990000 }],
+      variants: [{ sku: "TV-SS-Q60D-65", color: "Đen", storage: null, price: 18990000, compareAtPrice: 25900000 }],
     },
     {
       name: "LG Smart Tivi UHD 4K UQ8000 55 inch",
@@ -272,7 +272,7 @@ async function main() {
         // là 60Hz — chuẩn hóa về "60Hz" cho gộp đúng nhóm.
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [{ sku: "TV-LG-UQ8000-55", color: "Đen", storage: null, price: 11490000 }],
+      variants: [{ sku: "TV-LG-UQ8000-55", color: "Đen", storage: null, price: 11490000, compareAtPrice: 15900000 }],
     },
     {
       name: "TCL Google Tivi QLED 4K C655 50 inch",
@@ -291,7 +291,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [{ sku: "TV-TCL-C655-50", color: "Đen", storage: null, price: 10490000 }],
+      variants: [{ sku: "TV-TCL-C655-50", color: "Đen", storage: null, price: 10490000, compareAtPrice: 13990000 }],
     },
     {
       name: "Xiaomi Google Tivi A Pro 43 inch",
@@ -310,7 +310,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [{ sku: "TV-MI-APRO-43", color: "Đen", storage: null, price: 6490000 }],
+      variants: [{ sku: "TV-MI-APRO-43", color: "Đen", storage: null, price: 6490000, compareAtPrice: 7990000 }],
     },
     {
       name: "Xiaomi Google Tivi A Pro 55 inch",
@@ -329,7 +329,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "4K UHD (3840 x 2160)" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [{ sku: "TV-MI-APRO-55", color: "Đen", storage: null, price: 9490000 }],
+      variants: [{ sku: "TV-MI-APRO-55", color: "Đen", storage: null, price: 9490000, compareAtPrice: 10990000 }],
     },
     {
       name: "Philips Google Tivi LED 6900 Series 43 inch",
@@ -348,7 +348,7 @@ async function main() {
         { groupName: "Màn hình", attrName: "Độ phân giải", attrValue: "Full HD (1920 x 1080)" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [{ sku: "TV-PHI-6900-43", color: "Đen", storage: null, price: 6990000 }],
+      variants: [{ sku: "TV-PHI-6900-43", color: "Đen", storage: null, price: 6990000, compareAtPrice: null }],
     },
   ];
 
@@ -396,18 +396,23 @@ async function main() {
     }
 
     for (const v of p.variants) {
-      // `update: {}` có chủ đích: màu của một số biến thể đã được sửa tay cho
-      // khớp với ảnh thật lấy từ trang chính hãng (xem CLAUDE.md) — ghi đè lại
-      // theo code sẽ làm lệch màu so với ảnh đang gắn cho chính biến thể đó.
+      // `update` CỐ Ý chỉ đồng bộ đúng `compareAtPrice`, không đụng color:
+      // màu của một số biến thể đã được sửa tay cho khớp với ảnh thật lấy từ
+      // trang chính hãng (xem CLAUDE.md) — ghi đè lại theo code sẽ làm lệch
+      // màu so với ảnh đang gắn cho chính biến thể đó. Nhưng để `{}` no-op
+      // hoàn toàn thì giá niêm yết mới thêm vào code sẽ KHÔNG bao giờ tới
+      // được các biến thể đã tồn tại (đúng lớp lỗi `update: {}` đã gặp vài
+      // lần với categoryId/description), tức badge giảm giá không hiện ra.
       await prisma.productVariant.upsert({
         where: { sku: v.sku },
-        update: {},
+        update: { compareAtPrice: v.compareAtPrice },
         create: {
           productId: product.id,
           sku: v.sku,
           color: v.color,
           storage: v.storage,
           price: v.price,
+          compareAtPrice: v.compareAtPrice,
         },
       });
     }

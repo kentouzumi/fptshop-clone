@@ -220,9 +220,14 @@ export default function ProductGalleryAndBuy({
         <div className="mb-5 flex items-baseline gap-3">
           <span className="text-3xl font-bold tracking-tight text-accent">{formatPrice(price)}</span>
           {compareAtPrice && compareAtPrice > price && (
-            <span className="text-base text-zinc-400 line-through">
-              {formatPrice(compareAtPrice)}
-            </span>
+            <>
+              <span className="text-base text-zinc-400 line-through">
+                {formatPrice(compareAtPrice)}
+              </span>
+              <span className="rounded-full bg-red-600/10 px-2 py-0.5 text-sm font-semibold text-red-500">
+                -{Math.round(((compareAtPrice - price) / compareAtPrice) * 100)}%
+              </span>
+            </>
           )}
         </div>
 

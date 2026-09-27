@@ -14,6 +14,14 @@ export interface ProductListItem {
   imageUrl: string | null;
   minPrice: number;
   maxPrice: number;
+  /** Giá niêm yết (gạch ngang) của ĐÚNG biến thể rẻ nhất — tức biến thể ứng
+   * với `minPrice` đang hiển thị trên card. null khi biến thể đó không giảm
+   * giá. Lấy theo biến thể rẻ nhất chứ không phải giá trị lớn nhất trong
+   * các biến thể, nếu không sẽ ghép giá bán của bản 256GB với giá niêm yết
+   * của bản 512GB và ra mức giảm bịa. */
+  compareAtPrice: number | null;
+  /** % giảm đã làm tròn, chỉ có khi compareAtPrice > minPrice. */
+  discountPercent: number | null;
   isFeatured: boolean;
   averageRating: number;
   reviewCount: number;
@@ -58,7 +66,7 @@ interface ProductRowForMapping {
   brand: { name: string } | null;
   category: { name: string; slug: string };
   images: { url: string }[];
-  variants: { price: Prisma.Decimal }[];
+  variants: { price: Prisma.Decimal; compareAtPrice: Prisma.Decimal | null }[];
   reviews: { rating: number }[];
 }
 
@@ -66,6 +74,18 @@ export function mapProductToListItem(p: ProductRowForMapping): ProductListItem {
   const prices = p.variants.map((v) => Number(v.price));
   const minPrice = prices.length ? Math.min(...prices) : Number(p.basePrice);
   const maxPrice = prices.length ? Math.max(...prices) : Number(p.basePrice);
+
+  // Giá gạch ngang phải là của CHÍNH biến thể rẻ nhất (biến thể mà card đang
+  // hiển thị giá) — xem ghi chú ở ProductListItem.compareAtPrice.
+  const cheapest = p.variants.reduce<(typeof p.variants)[number] | null>(
+    (best, v) => (best === null || Number(v.price) < Number(best.price) ? v : best),
+    null
+  );
+  const rawCompare = cheapest?.compareAtPrice != null ? Number(cheapest.compareAtPrice) : null;
+  const compareAtPrice = rawCompare !== null && rawCompare > minPrice ? rawCompare : null;
+  const discountPercent =
+    compareAtPrice !== null ? Math.round(((compareAtPrice - minPrice) / compareAtPrice) * 100) : null;
+
   const reviewCount = p.reviews.length;
   const averageRating = reviewCount
     ? p.reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount
@@ -80,6 +100,8 @@ export function mapProductToListItem(p: ProductRowForMapping): ProductListItem {
     imageUrl: p.images[0]?.url ?? null,
     minPrice,
     maxPrice,
+    compareAtPrice,
+    discountPercent,
     isFeatured: p.isFeatured,
     averageRating,
     reviewCount,
@@ -209,7 +231,7 @@ async function getProductsUncached(
         brand: { select: { name: true } },
         category: { select: { name: true, slug: true } },
         images: { orderBy: { sortOrder: "asc" }, take: 1 },
-        variants: { select: { price: true }, where: { isActive: true } },
+        variants: { select: { price: true, compareAtPrice: true }, where: { isActive: true } },
         reviews: { where: { isVisible: true }, select: { rating: true } },
       },
     }),
@@ -392,7 +414,7 @@ export async function getProductsForCompare(ids: string[]): Promise<CompareProdu
       brand: { select: { name: true } },
       category: { select: { name: true, slug: true } },
       images: { orderBy: { sortOrder: "asc" }, take: 1 },
-      variants: { select: { price: true }, where: { isActive: true } },
+      variants: { select: { price: true, compareAtPrice: true }, where: { isActive: true } },
       reviews: { where: { isVisible: true }, select: { rating: true } },
       attributes: { orderBy: { sortOrder: "asc" } },
     },
