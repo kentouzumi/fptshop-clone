@@ -115,7 +115,7 @@ export default async function Header() {
               <>
                 {isAdmin && (
                   <Link
-                    href="/admin/products"
+                    href="/admin"
                     className="hidden rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:border-accent hover:text-zinc-900 sm:inline-block"
                   >
                     Quản trị

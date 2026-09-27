@@ -4094,6 +4094,78 @@
       dùng ảnh sản phẩm thật) — cần 1 ảnh thiết kế riêng 1200x630.
 
 
+- [x] Trang tổng quan /admin (trước đó `/admin` BỊ 404: thư mục src/app/admin/
+      chỉ có layout.tsx + AdminSidebarNav.tsx, không hề có page.tsx — phát hiện
+      trong bản rà soát so với fptshop.com.vn. Nghĩa là admin không có chỗ nào
+      thấy doanh thu / đơn mới / hàng sắp hết, phải tự đi từng trang mà đoán).
+
+      src/lib/dashboard.ts (mới): `getAdminDashboard()` gom 13 query trong 1
+      Promise.all. CỐ Ý KHÔNG cache (khác mọi hàm public ở lib/products.ts,
+      categories.ts...): trang báo cáo hiện doanh thu cũ 60 giây là vô dụng, mà
+      trang này chỉ vài người mở nên không có lý do đánh đổi.
+
+      Đơn CANCELLED và RETURNED bị loại khỏi MỌI con số doanh thu (đơn đã hủy/
+      đã trả không phải tiền thu được) — đây là lý do không dùng thẳng `_sum`
+      trên toàn bảng Order. `_sum` trả null khi không có đơn nào khớp mốc thời
+      gian nên quy về 0 ngay trong lib, tầng UI không phải xử lý null cho từng
+      mốc. Mốc "7 ngày" tính từ đầu ngày của 6 ngày trước (gồm cả hôm nay =
+      đúng 7 ngày), không phải `Date.now() - 7*24h` (mốc đó cắt giữa ngày).
+
+      Danh sách "sắp hết hàng" CHỈ lấy biến thể còn bán của sản phẩm còn bán
+      (`variant.isActive` + `product.status: ACTIVE`) — kho cạn của sản phẩm đã
+      ngừng bán không phải việc cần xử lý, để lẫn vào thì danh sách mất tác
+      dụng nhắc việc. Ngưỡng LOW_STOCK_THRESHOLD = 5, tính RIÊNG theo từng cửa
+      hàng (đúng cách Inventory đang lưu: 1 dòng cho mỗi cặp biến thể × cửa
+      hàng, xem lib/inventory.ts).
+
+      src/app/admin/page.tsx (mới): khối "Cần xử lý" đặt TRÊN các con số —
+      mở trang quản trị ra thì thứ cần biết đầu tiên là "có gì đang chờ mình",
+      không phải doanh thu. Khối này tự BIẾN MẤT khi không có việc nào thay vì
+      hiện 5 dòng số 0 vô nghĩa. Gồm: chuyển khoản chờ xác nhận, yêu cầu hỗ trợ
+      OPEN, yêu cầu bảo hành RECEIVED, thu cũ QUOTED, biến thể sắp hết hàng —
+      mỗi chip là link tới đúng trang xử lý việc đó.
+
+      Chuyển khoản chờ xác nhận có bảng RIÊNG kèm nội dung chuyển khoản
+      (`transactionRef`) vì đây là việc admin BẮT BUỘC tự làm — không có webhook
+      đối chiếu tự động (xem mục SePay đã hủy bỏ), trước đây admin phải tự nhớ
+      vào lọc trong danh sách đơn mới thấy.
+
+      Dùng LẠI đúng bộ STATUS_STYLES của /admin/orders để cùng 1 trạng thái
+      không mang 2 màu khác nhau ở 2 trang quản trị. Chip trạng thái chỉ hiện 5
+      trạng thái CẦN ĐỘNG TAY (PENDING/CONFIRMED/PROCESSING/SHIPPING/
+      RETURN_REQUESTED), không liệt kê cả 9 giá trị enum — DELIVERED/COMPLETED/
+      CANCELLED/RETURNED là trạng thái kết thúc, đếm chúng ở đây không giúp làm
+      gì.
+
+      AdminSidebarNav.tsx: thêm mục "Tổng quan" (cả sidebar desktop lẫn thanh
+      chip mobile). LỖI TIỀM ẨN đã lường trước: điều kiện active dùng chung
+      trước đó là `pathname === href || pathname.startsWith(href + "/")` —
+      "/admin" là tiền tố của MỌI trang quản trị nên dùng chung sẽ khiến "Tổng
+      quan" lúc nào cũng được tô đậm. Đã tách hàm `isActive()` so khớp TUYỆT
+      ĐỐI riêng cho "/admin". Đồng thời đổi link vào khu quản trị (logo trong
+      admin/layout.tsx và nút "Quản trị" ở Header.tsx) từ /admin/products sang
+      /admin — trước đây phải trỏ thẳng vào trang sản phẩm vì /admin là 404.
+
+      Đã test qua dev server bằng DB thật (tạo SUPER_ADMIN + session test tạm,
+      dọn sạch sau khi xong): `/admin` chưa đăng nhập -> 307 redirect; có session
+      admin -> 200, đủ 4 thẻ số liệu, tiêu đề đúng. ĐỐI CHIẾU TỪNG SỐ VỚI DB
+      (không chỉ xem trang có render): chip trạng thái hiện "Chờ xác nhận 1 /
+      Đã xác nhận 2" khớp đúng groupBy của Prisma (PENDING=1, CONFIRMED=2);
+      doanh thu 30 ngày 55.760.000₫ / 3 đơn khớp đúng aggregate `_sum` loại
+      CANCELLED+RETURNED; "13/14 sản phẩm đang bán · 5 khách" khớp count thật
+      (14 = 13 ACTIVE + 1 DISCONTINUED của đơn hàng thật). Test cả nhánh sắp
+      hết hàng bằng cách tạm đặt tồn kho 1 dòng thật (XPS13-16-512 @ Cầu Giấy)
+      từ 20 -> 2: bảng hiện đúng sản phẩm + badge "Còn 2" + chip "Cần xử lý"
+      xuất hiện; đặt tiếp = 0 thì badge đổi đúng thành "Hết hàng"; HOÀN NGUYÊN
+      về 20 và xác nhận lại (script bọc try/finally nên hoàn nguyên chạy cả khi
+      lỗi giữa chừng). `tsc --noEmit` sạch, `npm run build` exit 0 và `/admin`
+      xuất hiện đúng trong danh sách route.
+
+      CHƯA LÀM: không có biểu đồ doanh thu theo ngày (cần thêm thư viện chart
+      hoặc tự vẽ SVG — dự án vốn ưu tiên không thêm dependency khi chưa thật
+      cần), và không có bộ chọn khoảng thời gian tùy ý (3 mốc cố định hôm nay/
+      7 ngày/30 ngày là đủ cho quy mô này).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4159,9 +4231,10 @@
 - [ ] **Không hiện tình trạng còn hàng cho khách.** `Inventory` hiện CHỈ dùng
       để chặn lúc đặt (reserveStockOrThrow), trang sản phẩm không hiện gì. FPT
       Shop hiện "Còn hàng tại N cửa hàng" + tra tồn kho theo từng cửa hàng.
-- [ ] **`/admin` bị 404** — thư mục `src/app/admin/` chỉ có `layout.tsx` +
-      `AdminSidebarNav.tsx`, không có `page.tsx`. Tức KHÔNG có trang tổng quan
-      (doanh thu, đơn mới, sản phẩm sắp hết hàng).
+- [x] **Trang tổng quan `/admin`** — ĐÃ LÀM (trước đó `/admin` bị 404 vì thiếu
+      `page.tsx`): doanh thu 3 mốc, đơn theo trạng thái, đơn mới nhất, chuyển
+      khoản chờ xác nhận, hàng sắp hết. Còn thiếu biểu đồ theo ngày và bộ chọn
+      khoảng thời gian tùy ý.
 - [ ] **Phụ kiện mua kèm / sản phẩm liên quan chọn tay**: model
       `ProductRelation` chưa dùng, "sản phẩm liên quan" hiện chỉ là 4 máy cùng
       danh mục.

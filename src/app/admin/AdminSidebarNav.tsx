@@ -3,6 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const OVERVIEW = { href: "/admin", label: "Tổng quan" };
+
+/**
+ * "/admin" là tiền tố của MỌI trang quản trị nên không thể dùng chung điều
+ * kiện startsWith như các mục khác — nếu dùng thì "Tổng quan" lúc nào cũng
+ * được tô đậm. Riêng nó phải so khớp tuyệt đối.
+ */
+function isActive(pathname: string, href: string) {
+  if (href === OVERVIEW.href) return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 const NAV_GROUPS: { title: string; items: { href: string; label: string }[] }[] = [
   {
     title: "Bán hàng",
@@ -44,6 +56,17 @@ export default function AdminSidebarNav() {
 
   return (
     <nav className="flex flex-col gap-5">
+      <Link
+        href={OVERVIEW.href}
+        className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+          isActive(pathname, OVERVIEW.href)
+            ? "bg-zinc-900 text-white"
+            : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+        }`}
+      >
+        {OVERVIEW.label}
+      </Link>
+
       {NAV_GROUPS.map((group) => (
         <div key={group.title}>
           <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
@@ -51,7 +74,7 @@ export default function AdminSidebarNav() {
           </p>
           <div className="flex flex-col gap-0.5">
             {group.items.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = isActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}
@@ -75,12 +98,12 @@ export default function AdminSidebarNav() {
 
 export function AdminMobileNav() {
   const pathname = usePathname();
-  const flatItems = NAV_GROUPS.flatMap((g) => g.items);
+  const flatItems = [OVERVIEW, ...NAV_GROUPS.flatMap((g) => g.items)];
 
   return (
     <div className="-mx-6 mb-4 flex gap-2 overflow-x-auto border-b border-zinc-200 px-6 pb-4 md:hidden">
       {flatItems.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const active = isActive(pathname, item.href);
         return (
           <Link key={item.href} href={item.href} className={`chip shrink-0 ${active ? "chip-active" : "chip-inactive"}`}>
             {item.label}

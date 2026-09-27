@@ -18,7 +18,7 @@ export default async function AdminLayout({
       <aside className="hidden w-56 shrink-0 md:block">
         <div className="sticky top-20">
           <div className="mb-6 px-3">
-            <Link href="/admin/products" className="text-lg font-semibold tracking-tight text-zinc-900">
+            <Link href="/admin" className="text-lg font-semibold tracking-tight text-zinc-900">
               Quản trị
             </Link>
             <p className="mt-0.5 truncate text-xs text-zinc-500">{admin.fullName}</p>
