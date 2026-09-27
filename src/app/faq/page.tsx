@@ -1,4 +1,12 @@
+import type { Metadata } from "next";
 import { getAllFaqItems } from "@/lib/content";
+
+export const metadata: Metadata = {
+  title: "Câu hỏi thường gặp",
+  description:
+    "Giải đáp thắc mắc thường gặp về đặt hàng, thanh toán, giao nhận, bảo hành và thu cũ đổi mới.",
+  alternates: { canonical: "/faq" },
+};
 
 export default async function FaqPage() {
   const items = await getAllFaqItems();

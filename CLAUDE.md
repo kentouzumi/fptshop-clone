@@ -3882,6 +3882,218 @@
       của điện thoại (cả 4 máy đều 120Hz). Lọc theo nó không thu hẹp được gì
       cho tới khi thêm máy có tần số khác (tivi 120Hz, điện thoại 90/60Hz).
 
+- [x] Giá niêm yết gạch ngang + badge mức giảm % xuyên suốt (rà lại dự án so
+      với fptshop.com.vn thật theo yêu cầu user, rồi tự chọn làm mục đáng làm
+      nhất trong danh sách thiếu sót). Đây là thứ khiến trang khác biệt rõ
+      nhất so với bản gốc: ở FPT Shop thật MỌI card sản phẩm đều có giá gốc
+      gạch ngang + "-x%", còn ở đây mỗi card chỉ có đúng 1 con số.
+
+      NỀN ĐÃ CÓ SẴN gần hết, chỉ thiếu 3 mắt xích: `ProductVariant.compareAtPrice`
+      có trong schema từ đầu dự án, admin đã nhập được qua VariantsManager, và
+      trang chi tiết đã hiển thị gạch ngang từ trước — nhưng (1) `ProductCard`
+      không hề biết tới field này nên trang chủ/danh mục/tìm kiếm/wishlist đều
+      không hiện, (2) seed KHÔNG set giá trị nào nên thực tế 0/13 sản phẩm có
+      giá gốc (tính năng coi như chưa từng chạy), (3) không có badge %.
+
+      lib/products.ts: `ProductListItem` thêm `compareAtPrice` + `discountPercent`.
+      QUYẾT ĐỊNH QUAN TRỌNG — lấy compareAtPrice của ĐÚNG BIẾN THỂ RẺ NHẤT
+      (biến thể ứng với `minPrice` mà card đang hiển thị), KHÔNG lấy max/first
+      trong mảng variants: iPhone 15 Pro Max bán 256GB giá 29.99tr (niêm yết
+      34.99tr) và 512GB giá 32.99tr (niêm yết 40.99tr) — ghép giá bán bản 256
+      với giá niêm yết bản 512 sẽ ra "-27%" hoàn toàn bịa. `discountPercent`
+      chỉ tính khi compareAtPrice > minPrice, nếu không thì cả 2 field là null
+      (không dựng badge "-0%" cho sản phẩm bán đúng giá niêm yết).
+      `mapProductToListItem()` dùng CHUNG ở 3 query nên phải thêm
+      `compareAtPrice: true` vào select variants ở CẢ 3 (getProducts +
+      getProductsForCompare trong products.ts, getWishlistProducts trong
+      wishlist.ts) — sửa 1 chỗ thì tsc báo lỗi ngay ở 2 chỗ còn lại nhờ
+      `ProductRowForMapping` là type dùng chung (đã gặp đúng lỗi này lúc làm,
+      tsc bắt được getProductsForCompare mà mắt bỏ sót).
+
+      ProductCard.tsx: thêm dòng giá gạch ngang + badge `-x%` (nền đỏ nhạt)
+      dưới giá bán. Khối này để `min-h-[1.25rem]` và nằm ngoài luồng chữ chính
+      — sản phẩm không giảm giá vẫn chiếm đúng chiều cao đó, nếu không card
+      trong cùng 1 hàng sẽ cao thấp so le. Dùng `text-red-500` (màu ngữ nghĩa
+      "giảm giá/khuyến mãi") chứ KHÔNG dùng `text-accent` hổ phách — accent
+      đang là màu của GIÁ BÁN, để cùng màu thì 2 con số cạnh nhau không phân
+      biệt được cái nào là giá thật. ProductGalleryAndBuy.tsx (trang chi tiết)
+      thêm badge % cạnh giá gạch ngang vốn đã có, cho khớp với card.
+
+      prisma/seed.ts: điền `compareAtPrice` cho đủ 16 biến thể bằng giá niêm
+      yết THẬT/hợp lý của đúng model (iPhone 256GB 34.99tr, S24 Ultra 33.99tr,
+      tivi giảm sâu 25-28% đúng thực tế thị trường VN). CỐ Ý để `null` cho
+      MacBook Air M3 và Philips 6900 — Apple gần như không giảm giá, và có
+      sản phẩm không badge mới thấy badge là thông tin thật chứ không phải
+      trang trí dán đều mọi card.
+
+      LỖI TIỀM ẨN đã chặn được (cùng lớp lỗi `update: {}` no-op đã gặp vài lần
+      với categoryId/description): vòng upsert variant trong seed cố ý dùng
+      `update: {}` để KHÔNG ghi đè `color` — màu một số biến thể đã sửa tay cho
+      khớp ảnh thật lấy từ trang chính hãng. Nếu giữ nguyên `{}` thì 16 biến
+      thể ĐÃ TỒN TẠI sẽ không bao giờ nhận giá niêm yết mới, chạy seed xong
+      badge vẫn không hiện mà không báo lỗi gì. Đã sửa thành
+      `update: { compareAtPrice: v.compareAtPrice }` — đồng bộ ĐÚNG 1 field,
+      vẫn không đụng color.
+
+      ProductForm.tsx (admin, khối "Biến thể đầu tiên" lúc TẠO sản phẩm): thêm
+      ô "Giá niêm yết (không bắt buộc)" — trước đó chỉ có SKU/Màu/Dung lượng,
+      admin muốn đặt giá gốc phải tạo sản phẩm rồi vào trang Sửa. Grid đổi
+      `grid-cols-3` -> `grid-cols-2 sm:grid-cols-4` cho 4 ô.
+
+      Đã test qua dev server bằng DB thật (xóa `.next` + restart trước khi
+      test vì seed bỏ qua revalidateTag): script audit in bảng giá của cả 17
+      biến thể trong DB xác nhận đúng từng cặp giá bán/niêm yết + đúng % (14
+      biến thể có giảm, 2 để null đúng chủ ý, 1 biến thể DISCONTINUED của đơn
+      hàng thật không đụng tới); trang chủ hiện đúng giá gạch ngang; grep HTML
+      thật của `/products?category=tivi` xác nhận đúng 5/6 tivi có badge
+      (-19/-14/-25/-28/-27%) và Philips KHÔNG có badge; trang chi tiết LG hiện
+      đúng 11.490.000₫ + 15.900.000₫ + -28%, iPhone đúng 29.990.000₫ +
+      34.990.000₫ + -14%, MacBook không có giá gạch ngang. `tsc --noEmit` sạch,
+      `npm run build` compile thành công. (`eslint` còn đúng 1 warning `_page`
+      ở products/page.tsx — có từ trước, không liên quan thay đổi này.)
+
+      CỐ Ý KHÔNG LÀM trong cùng đợt: "Trả góp 0% từ x đ/tháng" (FPT Shop in
+      ngay trên card). Model `InstallmentPlan` có trong schema nhưng in nhãn
+      trả góp mà `/checkout` không có phương thức trả góp nào là hứa với khách
+      một thứ không mua được — cần cả luồng chọn kỳ hạn/nhà cấp vốn ở checkout
+      mới đúng, không phải chỉ thêm 1 dòng chữ. Bảng `/compare` cũng chưa hiện
+      giá gạch ngang (CompareProductDetail có type riêng, không dùng
+      ProductListItem) — không cần thiết vì bảng so sánh hướng tới thông số.
+
+- [x] SEO: sitemap.xml + robots.txt + metadata từng trang + JSON-LD (mục thiếu
+      sót nặng nhất trong bản rà soát so với fptshop.com.vn — trước đó TOÀN SITE
+      chỉ có đúng 1 khai báo metadata ở layout.tsx, không có sitemap/robots/dữ
+      liệu có cấu trúc nào, nghĩa là Google gần như chỉ index được trang chủ).
+
+      src/lib/siteUrl.ts (mới): SITE_URL + absoluteUrl(). Canonical/sitemap/OG
+      BẮT BUỘC là URL tuyệt đối. Thứ tự ưu tiên: NEXT_PUBLIC_SITE_URL ->
+      VERCEL_PROJECT_PRODUCTION_URL -> hardcode domain hiện tại. Dùng
+      VERCEL_PROJECT_PRODUCTION_URL chứ KHÔNG dùng VERCEL_URL: biến sau trỏ
+      chính deployment đang build (mỗi lần deploy 1 URL khác) nên làm canonical
+      sẽ tự sinh ra vô số "URL chính thức" khác nhau cho cùng 1 trang. Nhánh
+      hardcode cuối để KHÔNG phải thêm biến env nào trên Vercel mà vẫn đúng ngay.
+
+      layout.tsx: thêm metadataBase (thiếu nó thì Next.js ÂM THẦM bỏ mọi URL
+      tương đối trong canonical/openGraph, chỉ cảnh báo lúc build chứ không
+      lỗi), title.template "%s | FPT Shop Clone", description thật, openGraph
+      mặc định, và robots.googleBot max-image-preview large + max-snippet -1
+      (mặc định của Google với site không khai báo là hạn chế hơn).
+
+      src/app/robots.ts (mới): chặn /admin, /api và toàn bộ trang chỉ có nghĩa
+      với user đã đăng nhập (cart/checkout/orders/profile/...). Các trang đó vốn
+      đã redirect về /login nên bot không lấy được gì, nhưng khai ở robots.txt
+      để Google không đốt crawl budget vào URL luôn trả redirect. KHÔNG chặn
+      /products dù có query lọc — xử lý bằng noindex + canonical chính xác hơn
+      (xem dưới). Route này là STATIC sau build (không query DB), đúng mong đợi.
+
+      src/app/sitemap.ts (mới): 19 URL (trang chủ + 3 danh mục + 13 sản phẩm +
+      /stores + /faq + trang tĩnh), lastModified lấy từ updatedAt THẬT của bản
+      ghi chứ không phải new Date() — bơm ngày hiện tại cho mọi URL mỗi lần bot
+      ghé là nói dối rằng cả site vừa đổi, Google học được là trường đó không
+      đáng tin rồi bỏ qua luôn. KHÔNG liệt kê URL có query lọc.
+
+      LỖI THẬT phát hiện lúc build (quan trọng, dễ gặp lại): Next.js mặc định
+      coi sitemap là route TĨNH và PRERENDER NGAY LÚC BUILD — tức là lần đầu
+      tiên trong dự án có query DB ở thời điểm build. `npm run build` chết hẳn ở
+      bước "prerendering /sitemap.xml" với (EMAXCONNSESSION) max clients reached
+      ... pool_size: 15. Đây không chỉ là chuyện pool local: nó phá vỡ tính chất
+      "toàn bộ ~85 route đều Dynamic nên build KHÔNG cần kết nối DB" đã ghi ở
+      mục "Chuẩn bị deploy lên Vercel". Đã sửa bằng
+      `export const dynamic = "force-dynamic"` + gói 3 query trong
+      unstable_cache(["sitemap-entries"], { tags: [PRODUCTS_TAG], revalidate:
+      3600 }) — build không đụng DB nữa, runtime vẫn không query lại mỗi lần bot
+      ghé, và dùng chung PRODUCTS_TAG nên admin thêm/sửa/xóa sản phẩm là sitemap
+      tự mới ngay (không cần thêm code invalidate nào). Sau khi sửa, build in
+      đúng `○ /robots.txt` (static) và `ƒ /sitemap.xml` (dynamic).
+
+      products/[slug]/page.tsx: thêm generateMetadata (title/description/
+      canonical/openGraph/twitter, ảnh OG lấy ảnh đầu của sản phẩm). Query sản
+      phẩm được bọc cache() của React và dùng CHUNG cho generateMetadata lẫn
+      component — không bọc thì MỖI lần render trang là 2 query y hệt nhau
+      (cùng cách đã làm với getCurrentUser() ở lib/auth.ts). Dùng metaTitle/
+      metaDesc của Product làm nguồn ưu tiên — 2 field này có trong schema TỪ
+      ĐẦU DỰ ÁN nhưng CHƯA TỪNG được đọc/ghi ở đâu — dự phòng là tên + mô tả
+      sản phẩm, nên mọi sản phẩm đều có metadata tử tế dù admin không nhập gì.
+
+      src/components/JsonLd.tsx (mới) + 3 khối dữ liệu có cấu trúc: Product
+      (kèm AggregateOffer lowPrice/highPrice vì 1 sản phẩm nhiều biến thể nhiều
+      giá — khai 1 giá duy nhất sẽ lệch với giá hiện trên trang khi khách đổi
+      biến thể; aggregateRating CHỈ khai khi reviewCount > 0 vì Google từ chối
+      cả khối nếu count = 0), BreadcrumbList ở trang sản phẩm, và WebSite +
+      SearchAction ở trang chủ (điều kiện để Google hiện ô tìm kiếm của site
+      ngay trong kết quả — target trỏ đúng form GET thật /products?search=).
+
+      availability của JSON-LD tính từ TỒN KHO THẬT (prisma.inventory.aggregate
+      thêm vào đúng Promise.all có sẵn, không thêm round-trip tuần tự) chứ không
+      mặc định InStock — khai còn hàng cho máy đã hết kho là khai sai với cả
+      Google lẫn khách, mà tồn kho thì đã có trong DB nên không có lý do gì
+      đoán. _sum trả null khi chưa có dòng Inventory nào -> coi là còn hàng,
+      khớp với việc reserveStockOrThrow() cố ý fail-open ở trường hợp đó.
+
+      BẢO MẬT — đây là chỗ DUY NHẤT trong dự án dùng dangerouslySetInnerHTML
+      (mục rà soát bảo mật trước đó ghi rõ "không dangerouslySetInnerHTML").
+      Bắt buộc phải dùng: JSON-LD phải là nội dung THÔ trong thẻ script, để
+      React render như text con thì dấu ngoặc kép bị escape thành &quot; và
+      Google không parse được. Đã chặn đường XSS lưu trữ kinh điển của JSON-LD
+      bằng JSON.stringify(data).replace(/</g, "\\u003c") — nếu tên sản phẩm
+      (admin nhập) chứa đúng chuỗi đóng thẻ script thì trình duyệt đóng script
+      sớm và phần còn lại thành HTML thật. "<" vẫn là "<" hợp lệ với JSON
+      parser. CSP hiện có script-src 'unsafe-inline' (cần cho RSC payload của
+      Next) nên không phải nới thêm gì cho JSON-LD.
+
+      products/page.tsx generateMetadata — CHỐNG NỘI DUNG TRÙNG LẶP, phần quan
+      trọng nhất về SEO của trang danh mục:
+      + ?category=<slug> trần: index, canonical về chính nó, title
+        "<Danh mục> chính hãng", description viết tay riêng cho từng danh mục (3
+        danh mục thì viết tay được, và mô tả đặc thù hữu ích hơn hẳn 1 câu chung
+        ghép tên danh mục; danh mục admin tự tạo rơi về câu dự phòng).
+      + Có thêm brand/spec_*/giá/sort/page: noindex, follow NHƯNG canonical vẫn
+        trỏ URL danh mục gốc — cùng tập sản phẩm nhìn qua hàng chục URL là đúng
+        định nghĩa nội dung trùng lặp; follow để bot vẫn đi tiếp vào sản phẩm.
+      + ?search=: noindex (mỗi từ khóa 1 URL, nội dung mỏng).
+      + /products trần: noindex — site đã CỐ Ý bỏ hết lối vào "tất cả sản phẩm"
+        nên cũng không để nó vào index, nhưng URL vẫn phải sống vì đây đồng thời
+        là trang tìm kiếm và trang lọc theo danh mục.
+
+      Thêm metadata + canonical cho /faq, /stores, và generateMetadata cho
+      /pages/[slug] (getStaticPage đã cache theo slug nên không thêm query).
+
+      Mở khóa 2 field SEO cho admin (nếu không thì generateMetadata đọc 2 field
+      không ai điền được — đúng cái "field schema chết" vừa phê trong bản rà
+      soát): lib/productInput.ts parse thêm metaTitle (cắt 70 ký tự) / metaDesc
+      (cắt 160) theo đúng giới hạn Google thường hiển thị, 2 route admin
+      products (POST + PATCH) ghi vào DB, ProductForm.tsx thêm khối "Hiển thị
+      trên Google" với bộ đếm ký tự ngay trên nhãn, trang edit nạp giá trị cũ.
+
+      Đã test qua dev server bằng DB thật: /robots.txt trả đúng 16 dòng Disallow
+      + Host + Sitemap; /sitemap.xml trả 200 với đúng 19 URL và lastmod là thời
+      gian thật; trang sản phẩm có đủ title/description/canonical/og:image (URL
+      Supabase thật) và 2 khối JSON-LD parse được (đã in ra kiểm tra từng field:
+      AggregateOffer lowPrice 29990000 / highPrice 32990000 / offerCount 2 /
+      InStock, BreadcrumbList 3 cấp, KHÔNG có aggregateRating vì sản phẩm chưa
+      có đánh giá — đúng chủ ý). Kiểm 4 trạng thái của trang danh mục:
+      ?category=tivi -> "index, follow" + canonical đúng;
+      ?category=tivi&brand=xiaomi -> "noindex, follow" + canonical VẪN về
+      ?category=tivi; ?search=iphone -> noindex; /products trần -> noindex; thêm
+      ?spec_do-phan-giai=4k cũng đúng noindex. Test luồng admin THẬT (tạo
+      SUPER_ADMIN + session test tạm, POST sản phẩm test qua API): metaTitle/
+      metaDesc lưu đúng DB và hiện đúng trong title/meta description của trang;
+      xóa 2 field đó đi thì tự rơi về tên + mô tả sản phẩm — xác nhận cả 2
+      nhánh. `tsc --noEmit` sạch, `npm run build` exit 0, 0 lỗi. Đã dọn sạch
+      sản phẩm test + 4 user/session test (3 user sót lại từ các lần script lỗi
+      giữa chừng cũng đã xóa — xác nhận lại tổng 8 user thật / 14 sản phẩm).
+
+      LƯU Ý cho lần sau: viết script test gọi API admin thì Session cần
+      refreshToken (KHÔNG phải `token` — model Session không có field `token`)
+      và cookie tên `session_token`, xem lib/auth.ts.
+
+      CHƯA LÀM (cần thao tác ngoài code): chưa gắn Google Search Console (xác
+      minh domain + submit sitemap) — Google vẫn tự tìm được sitemap qua
+      robots.txt nhưng có Search Console mới xem được trang nào đã index/lỗi gì.
+      Cũng chưa có ảnh OG mặc định cho trang chủ/danh mục (trang sản phẩm thì đã
+      dùng ảnh sản phẩm thật) — cần 1 ảnh thiết kế riêng 1200x630.
+
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -3932,6 +4144,50 @@
       cửa hàng, khuyến mãi, bảo hành, thu cũ đổi mới, hỗ trợ, trang tĩnh,
       FAQ) — mới làm mẫu bố cục .card/.btn-primary ở danh sách sản phẩm +
       đơn hàng, xem mục "Làm đẹp giao diện toàn site" ở trên
+### Khoảng cách so với fptshop.com.vn thật (rà soát có hệ thống, 2026-09-27)
+Đã đối chiếu toàn bộ route/schema/component. 2 mục "giá gạch ngang + %giảm" và
+"SEO" đã làm xong (xem 2 mục cuối phần Tiến độ). Còn lại, xếp theo mức đáng làm:
+
+- [x] **SEO** — ĐÃ LÀM: sitemap.xml, robots.txt, generateMetadata + canonical
+      cho mọi trang công khai, JSON-LD Product/BreadcrumbList/WebSite, chống
+      nội dung trùng lặp cho URL có filter. Còn lại 2 việc ngoài code: gắn
+      Google Search Console và làm 1 ảnh OG mặc định 1200x630.
+- [ ] **Trả góp 0%.** Model `InstallmentPlan` có trong schema nhưng KHÔNG một
+      dòng code nào dùng. FPT Shop in "Trả góp từ x đ/tháng" ngay trên card.
+      Làm cho đúng thì cần cả luồng chọn kỳ hạn/nhà cấp vốn ở /checkout, không
+      phải chỉ thêm nhãn (xem lý do cố ý chưa làm ở mục giá gạch ngang).
+- [ ] **Không hiện tình trạng còn hàng cho khách.** `Inventory` hiện CHỈ dùng
+      để chặn lúc đặt (reserveStockOrThrow), trang sản phẩm không hiện gì. FPT
+      Shop hiện "Còn hàng tại N cửa hàng" + tra tồn kho theo từng cửa hàng.
+- [ ] **`/admin` bị 404** — thư mục `src/app/admin/` chỉ có `layout.tsx` +
+      `AdminSidebarNav.tsx`, không có `page.tsx`. Tức KHÔNG có trang tổng quan
+      (doanh thu, đơn mới, sản phẩm sắp hết hàng).
+- [ ] **Phụ kiện mua kèm / sản phẩm liên quan chọn tay**: model
+      `ProductRelation` chưa dùng, "sản phẩm liên quan" hiện chỉ là 4 máy cùng
+      danh mục.
+- [ ] **Địa chỉ nhập tay hoàn toàn** — `province`/`district`/`ward` trong
+      lib/addresses.ts là text tự do, không có danh sách hành chính VN. Kéo
+      theo: phí ship cố định 30.000đ (`SHIPPING_FEE`), không tính theo khu
+      vực, không có "giao nhanh 1h/giao trong ngày", và Header không cho chọn
+      tỉnh/thành (FPT Shop hỏi ngay từ đầu để hiện đúng tồn kho + phí ship).
+- [ ] **Không tra cứu đơn cho khách chưa đăng nhập** (FPT Shop cho tra bằng
+      mã đơn + SĐT).
+- [ ] **`Shipment` không dùng** → không có mã vận đơn/theo dõi giao hàng.
+      **`AuditLog` không dùng** → không có nhật ký thao tác admin (ai sửa giá,
+      ai đổi trạng thái đơn).
+- [ ] **Không có mục tin tức/blog** (fptshop.com.vn/tin-tuc là nguồn truy cập
+      rất lớn của họ), **không có Hỏi–đáp (Q&A) dưới sản phẩm** (mới có đánh
+      giá), **không có trang thương hiệu** và không có danh mục con thật (vd
+      iPhone 15 Series / iPhone 16 Series).
+- [ ] **Mã giảm giá phải tự biết mới nhập được** ở /checkout — FPT Shop liệt
+      kê sẵn các mã đang chạy cho khách bấm áp.
+- [ ] Đăng nhập chỉ có Google; FPT Shop dùng SĐT/OTP là chính — KHÔNG tính là
+      thiếu sót kỹ thuật, đã bỏ có lý do (cả 4 nhà cung cấp SMS thử qua đều
+      đòi thẻ/brandname, xem chuỗi mục đổi auth ở trên).
+- [ ] Sai lệch dữ liệu nhỏ, chưa sửa: biến thể `S24U-256-BLK` của Galaxy S24
+      Ultra có `storage: "512GB"` (SKU nói 256) và cùng giá với bản 512GB. SKU
+      là khóa unique và đang có ảnh gắn theo biến thể nên KHÔNG đổi tên SKU
+      (sẽ tạo biến thể mới + bỏ rơi ảnh cũ); muốn sạch thì sửa trong DB.
 
 ## Lưu ý quan trọng
 - Trên máy Windows này, `pkill -f "next dev"` (Git Bash) KHÔNG kill được tiến
@@ -3983,7 +4239,16 @@
   store/promotion/FAQ/sản phẩm — trang vẫn hiện dữ liệu cũ dù DB đã đúng
   (đã gặp thật: seed thêm category "Điện máy" xong không hiện ra, phải xóa
   hẳn thư mục `.next` rồi restart `npm run dev` mới thấy). Local thì xóa
-  `.next` là xong; trên Vercel thì cứ đợi hết TTL (`revalidate: 60` ở
-  getProducts/getActivePromotions) hoặc deploy lại (build mới luôn sạch
-  cache) — không cần và không nên cố gọi revalidateTag thủ công từ ngoài
-  app cho việc này.
+  `.next` là xong; trên Vercel thì chỉ còn cách đợi hết TTL.
+  CẢNH BÁO — ghi chú cũ ở đây từng viết "deploy lại thì build mới luôn sạch
+  cache": ĐIỀU ĐÓ SAI, đã xác minh trên production. **Data Cache của Vercel
+  SỐNG QUA CÁC LẦN DEPLOY.** Hệ quả nặng: hàm cache khai `tags` mà KHÔNG khai
+  `revalidate` thì bản ghi được lưu với `revalidate: false` (không hạn) —
+  sửa dữ liệu bằng script (bỏ qua revalidateTag) là kẹt VĨNH VIỄN, deploy lại
+  bao nhiêu lần cũng vô ích, chỉ `revalidateTag` hoặc ĐỔI KEY (`keyParts`)
+  mới thay được. Đã gặp thật: đổi "Điện máy" -> "Tivi" và xóa "Phụ kiện" bằng
+  script, production vẫn hiện 5 danh mục cũ nhiều lần deploy liền, trong khi
+  sản phẩm (cache có `revalidate: 60`) thì cập nhật bình thường. Vì vậy MỌI
+  hàm `unstable_cache` trong dự án giờ đều có `revalidate` bên cạnh `tags`
+  (xem lib/categories.ts, brands.ts, stores.ts, content.ts) — thêm cache mới
+  cho model khác thì cũng phải làm đúng vậy, đừng chỉ khai tag.

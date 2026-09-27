@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getProducts, getAttributeFacets, getBrandsByCategory, type ProductSort } from "@/lib/products";
 import { getCurrentUser } from "@/lib/auth";
@@ -18,6 +19,81 @@ function buildHref(
   }
   const query = qs.toString();
   return query ? `/products?${query}` : "/products";
+}
+
+// Mô tả riêng cho từng danh mục: đoạn snippet Google hiện dưới tiêu đề. Dùng
+// bản viết tay theo danh mục thay vì 1 câu chung chung ghép tên danh mục vào —
+// 3 danh mục thì viết tay được, và mô tả đặc thù có ích hơn hẳn cho người đọc
+// kết quả tìm kiếm. Danh mục mới (admin tự tạo) tự rơi về câu dự phòng.
+const CATEGORY_META_DESC: Record<string, string> = {
+  "dien-thoai":
+    "Điện thoại chính hãng đủ mức giá: iPhone, Samsung, Xiaomi, OPPO. Lọc nhanh theo dung lượng ROM, RAM, dung lượng pin và tần số quét.",
+  laptop:
+    "Laptop chính hãng Apple, Dell, Asus cho học tập và làm việc. Lọc theo CPU, RAM, ổ cứng, card đồ họa và kích thước màn hình.",
+  tivi: "Smart Tivi và Google Tivi chính hãng Samsung, LG, TCL, Xiaomi, Philips. Lọc theo kích thước màn hình, độ phân giải và loại tivi.",
+};
+
+/** Các query KHÔNG làm đổi "trang này nói về cái gì" — chỉ đổi cách xem. */
+const NON_CANONICAL_PARAMS = ["brand", "minPrice", "maxPrice", "sort", "page"];
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}): Promise<Metadata> {
+  const params = await searchParams;
+
+  if (params.search) {
+    // Trang kết quả tìm kiếm không bao giờ nên vào index: nội dung thay đổi
+    // theo từ khóa, và mỗi từ khóa lại là 1 URL — đúng định nghĩa nội dung
+    // mỏng/trùng lặp mà Google khuyên chặn.
+    return {
+      title: `Tìm kiếm: ${params.search}`,
+      robots: { index: false, follow: true },
+    };
+  }
+
+  if (!params.category) {
+    // /products trần = "tất cả sản phẩm". Site đã CỐ Ý bỏ hết lối vào trang
+    // này (xem mục thu gọn 3 danh mục) nên cũng không để nó vào index —
+    // nhưng URL vẫn phải sống vì đây đồng thời là trang tìm kiếm và trang lọc
+    // theo danh mục.
+    return {
+      title: "Tất cả sản phẩm",
+      robots: { index: false, follow: true },
+    };
+  }
+
+  const category = (await getActiveCategories()).find((c) => c.slug === params.category);
+  if (!category) {
+    return { title: "Sản phẩm", robots: { index: false, follow: true } };
+  }
+
+  // Có lọc/sắp xếp/phân trang = cùng tập sản phẩm nhìn qua URL khác → không
+  // index bản đó, nhưng canonical vẫn trỏ về URL danh mục gốc để Google dồn
+  // hết tín hiệu về 1 trang, và `follow` để bot vẫn đi tiếp vào sản phẩm.
+  const hasViewParams =
+    NON_CANONICAL_PARAMS.some((k) => params[k] && params[k] !== "1") ||
+    Object.keys(params).some((k) => k.startsWith("spec_"));
+
+  const title = `${category.name} chính hãng`;
+  const description =
+    CATEGORY_META_DESC[category.slug] ??
+    `Mua ${category.name.toLowerCase()} chính hãng, giá tốt, bảo hành 12 tháng.`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/products?category=${category.slug}` },
+    ...(hasViewParams ? { robots: { index: false, follow: true } } : {}),
+    openGraph: {
+      type: "website",
+      title,
+      description,
+      url: `/products?category=${category.slug}`,
+      locale: "vi_VN",
+    },
+  };
 }
 
 export default async function ProductsPage({

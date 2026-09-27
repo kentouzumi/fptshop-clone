@@ -8,6 +8,12 @@ import { getActivePromotions } from "@/lib/promotions";
 import { getActiveCategories } from "@/lib/categories";
 import ProductCard from "@/components/ProductCard";
 import HeroBanner from "@/components/HeroBanner";
+import JsonLd from "@/components/JsonLd";
+import { SITE_NAME, absoluteUrl } from "@/lib/siteUrl";
+
+export const metadata = {
+  alternates: { canonical: "/" },
+};
 
 // Banner không có trang admin quản lý (chỉ tạo qua seed/Prisma Studio) nên
 // không có điểm nào để gọi revalidateTag — cache thuần theo thời gian (5
@@ -41,6 +47,26 @@ export default async function Home() {
 
   return (
     <div className="flex flex-col gap-14 pb-16">
+      {/* SearchAction cho Google biết ô tìm kiếm của site nằm ở đâu — điều
+          kiện để hiện sitelinks searchbox (ô tìm kiếm ngay trong kết quả
+          Google). Target trỏ đúng form GET thật ở Header: /products?search= */}
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: SITE_NAME,
+          url: absoluteUrl("/"),
+          inLanguage: "vi-VN",
+          potentialAction: {
+            "@type": "SearchAction",
+            target: {
+              "@type": "EntryPoint",
+              urlTemplate: absoluteUrl("/products?search={search_term_string}"),
+            },
+            "query-input": "required name=search_term_string",
+          },
+        }}
+      />
       {banners.length > 0 && (
         <HeroBanner
           banners={banners.map((b) => ({ id: b.id, imageUrl: b.imageUrl, linkUrl: b.linkUrl }))}

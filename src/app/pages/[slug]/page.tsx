@@ -1,5 +1,28 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getStaticPage } from "@/lib/content";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  // getStaticPage đã được cache theo slug (unstable_cache, tag STATIC_PAGES_TAG)
+  // nên gọi lại ở đây không phát sinh thêm query.
+  const page = await getStaticPage(slug);
+  if (!page) {
+    return { title: "Không tìm thấy trang", robots: { index: false, follow: false } };
+  }
+
+  const description = page.content.replace(/\s+/g, " ").trim().slice(0, 200);
+  return {
+    title: page.title,
+    description,
+    alternates: { canonical: `/pages/${slug}` },
+    openGraph: { type: "article", title: page.title, description, url: `/pages/${slug}` },
+  };
+}
 
 export default async function StaticContentPage({
   params,

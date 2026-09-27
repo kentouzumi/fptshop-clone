@@ -21,6 +21,8 @@ export interface ProductFormValues {
   basePrice: string;
   status: string;
   isFeatured: boolean;
+  metaTitle: string;
+  metaDesc: string;
   images: string[];
   attributes: ProductAttributeRow[];
 }
@@ -57,6 +59,8 @@ export default function ProductForm({
   const [basePrice, setBasePrice] = useState(initial?.basePrice ?? "");
   const [status, setStatus] = useState(initial?.status ?? "ACTIVE");
   const [isFeatured, setIsFeatured] = useState(initial?.isFeatured ?? false);
+  const [metaTitle, setMetaTitle] = useState(initial?.metaTitle ?? "");
+  const [metaDesc, setMetaDesc] = useState(initial?.metaDesc ?? "");
   const [images, setImages] = useState<string[]>(initial?.images ?? []);
   const [manualImageUrl, setManualImageUrl] = useState("");
   const [attributes, setAttributes] = useState<ProductAttributeRow[]>(initial?.attributes ?? []);
@@ -71,6 +75,7 @@ export default function ProductForm({
   const [variantSku, setVariantSku] = useState("");
   const [variantColor, setVariantColor] = useState("");
   const [variantStorage, setVariantStorage] = useState("");
+  const [variantCompareAtPrice, setVariantCompareAtPrice] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -152,6 +157,8 @@ export default function ProductForm({
         basePrice: Number(basePrice),
         status,
         isFeatured,
+        metaTitle,
+        metaDesc,
         images,
         attributes,
       };
@@ -185,6 +192,7 @@ export default function ProductForm({
             color: variantColor.trim() || null,
             storage: variantStorage.trim() || null,
             price: Number(basePrice),
+            compareAtPrice: variantCompareAtPrice ? Number(variantCompareAtPrice) : null,
             isActive: true,
           }),
         });
@@ -297,7 +305,7 @@ export default function ProductForm({
       {!isEdit && (
         <div className="rounded-lg border border-zinc-200 p-3">
           <p className="mb-2 text-sm font-medium">Biến thể đầu tiên</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs text-zinc-500">
                 SKU (không bắt buộc)
@@ -327,13 +335,28 @@ export default function ProductForm({
                 onChange={(e) => setVariantStorage(e.target.value)}
               />
             </div>
+            <div>
+              <label className="mb-1 block text-xs text-zinc-500">
+                Giá niêm yết (không bắt buộc)
+              </label>
+              <input
+                type="number"
+                min={0}
+                className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+                placeholder="Giá gốc để gạch ngang"
+                value={variantCompareAtPrice}
+                onChange={(e) => setVariantCompareAtPrice(e.target.value)}
+              />
+            </div>
           </div>
           <p className="mt-2 text-xs text-zinc-500">
             SKU là mã quản lý kho nội bộ, không hiện cho khách xem — để trống
             sẽ được tự tạo, không cần quan tâm nếu không rành khái niệm này.
-            Biến thể dùng chung giá (ở trên) và ảnh chung của sản phẩm (không
-            gắn ảnh riêng) — vào trang Sửa nếu cần đổi giá riêng hoặc gắn ảnh
-            riêng theo màu.
+            Biến thể dùng chung giá bán (ở trên) và ảnh chung của sản phẩm
+            (không gắn ảnh riêng) — vào trang Sửa nếu cần đổi giá riêng hoặc
+            gắn ảnh riêng theo màu. &quot;Giá niêm yết&quot; là giá gốc hiện
+            gạch ngang cạnh giá bán kèm mức giảm %; để trống thì sản phẩm hiện
+            đúng một giá, không có badge giảm giá.
           </p>
         </div>
       )}
@@ -346,6 +369,40 @@ export default function ProductForm({
         />
         Sản phẩm nổi bật
       </label>
+
+      <div className="rounded-xl border border-zinc-200 bg-zinc-100 p-4">
+        <p className="mb-1 text-sm font-medium">Hiển thị trên Google (không bắt buộc)</p>
+        <p className="mb-3 text-xs text-zinc-500">
+          Để trống thì tự dùng tên và mô tả sản phẩm ở trên — chỉ điền khi muốn
+          câu hiện trên Google khác với tên/mô tả hiển thị cho khách.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">
+              Tiêu đề SEO ({metaTitle.length}/70)
+            </label>
+            <input
+              className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              maxLength={70}
+              placeholder="iPhone 15 Pro Max 256GB chính hãng"
+              value={metaTitle}
+              onChange={(e) => setMetaTitle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">
+              Mô tả SEO ({metaDesc.length}/160)
+            </label>
+            <input
+              className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+              maxLength={160}
+              placeholder="Đoạn mô tả ngắn hiện dưới tiêu đề trong kết quả tìm kiếm"
+              value={metaDesc}
+              onChange={(e) => setMetaDesc(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
 
       <div>
         <label className="mb-1 block text-sm font-medium">

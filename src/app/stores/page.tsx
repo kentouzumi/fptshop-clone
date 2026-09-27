@@ -1,4 +1,12 @@
+import type { Metadata } from "next";
 import { getActiveStores } from "@/lib/stores";
+
+export const metadata: Metadata = {
+  title: "Hệ thống cửa hàng",
+  description:
+    "Địa chỉ, số điện thoại và giờ mở cửa của các cửa hàng — nơi bạn có thể tới nhận hàng trực tiếp thay vì giao tận nơi.",
+  alternates: { canonical: "/stores" },
+};
 
 export default async function StoresPage() {
   const stores = await getActiveStores();

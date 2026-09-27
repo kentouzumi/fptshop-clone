@@ -42,6 +42,8 @@ export default async function EditProductPage({
           basePrice: String(product.basePrice),
           status: product.status,
           isFeatured: product.isFeatured,
+          metaTitle: product.metaTitle ?? "",
+          metaDesc: product.metaDesc ?? "",
           images: product.images.map((img) => img.url),
           attributes: product.attributes.map((a) => ({
             groupName: a.groupName,

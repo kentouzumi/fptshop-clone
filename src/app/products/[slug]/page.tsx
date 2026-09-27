@@ -1,6 +1,10 @@
+import type { Metadata } from "next";
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { SITE_NAME, absoluteUrl } from "@/lib/siteUrl";
+import JsonLd from "@/components/JsonLd";
 import { getProducts } from "@/lib/products";
 import { getProductReviews, getUserReviewForProduct } from "@/lib/reviews";
 import { isInWishlist, getWishlistedProductIds } from "@/lib/wishlist";
@@ -13,14 +17,12 @@ import ProductCard from "@/components/ProductCard";
 import StarRating from "@/components/StarRating";
 import CompareToggle from "@/components/CompareToggle";
 
-export default async function ProductDetailPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-
-  const product = await prisma.product.findUnique({
+// Bọc `cache()` của React: generateMetadata và chính component cùng cần đủ dữ
+// liệu sản phẩm, gọi riêng lẻ sẽ thành 2 lượt query y hệt nhau cho MỖI lần
+// render. cache() dedupe trong cùng 1 lượt render server (cùng cách đã làm với
+// getCurrentUser() ở lib/auth.ts), nên chỉ còn đúng 1 query.
+const getProductBySlug = cache(async (slug: string) =>
+  prisma.product.findUnique({
     where: { slug },
     include: {
       category: true,
@@ -29,7 +31,67 @@ export default async function ProductDetailPage({
       variants: { where: { isActive: true }, orderBy: { price: "asc" } },
       attributes: { orderBy: { sortOrder: "asc" } },
     },
-  });
+  })
+);
+
+function plainDescription(text: string, max = 300) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const product = await getProductBySlug(slug);
+
+  if (!product || product.status === "DISCONTINUED") {
+    // Trang sẽ notFound() ngay sau đó — không để Google index tiêu đề rỗng.
+    return { title: "Không tìm thấy sản phẩm", robots: { index: false, follow: false } };
+  }
+
+  // metaTitle/metaDesc có trong schema Product từ đầu dự án nhưng CHƯA TỪNG
+  // được dùng ở đâu — giờ là nguồn ưu tiên, còn tên/mô tả sản phẩm là phương
+  // án dự phòng để mọi sản phẩm đều có metadata tử tế dù admin không nhập gì.
+  const title = product.metaTitle?.trim() || `${product.name} chính hãng`;
+  const description = product.metaDesc?.trim() || plainDescription(product.description);
+  const image = product.images[0]?.url;
+
+  return {
+    title,
+    description,
+    // Canonical tuyệt đối: cùng 1 sản phẩm có thể tới từ nhiều đường (link
+    // trong danh mục, trang so sánh, chia sẻ kèm tham số tracking) — chỉ 1 URL
+    // được tính là chính thức.
+    alternates: { canonical: `/products/${product.slug}` },
+    openGraph: {
+      type: "website",
+      title,
+      description,
+      url: `/products/${product.slug}`,
+      siteName: SITE_NAME,
+      locale: "vi_VN",
+      ...(image ? { images: [{ url: image, alt: product.name }] } : {}),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      ...(image ? { images: [image] } : {}),
+    },
+  };
+}
+
+export default async function ProductDetailPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+
+  const product = await getProductBySlug(slug);
 
   if (!product || product.status === "DISCONTINUED") {
     notFound();
@@ -66,6 +128,7 @@ export default async function ProductDetailPage({
     userReview,
     inWishlist,
     relatedWishlistedIds,
+    stockSum,
   ] = await Promise.all([
     getProductReviews(product.id, currentUser?.id),
     currentUser ? getUserReviewForProduct(currentUser.id, product.id) : Promise.resolve(null),
@@ -73,10 +136,82 @@ export default async function ProductDetailPage({
     currentUser
       ? getWishlistedProductIds(currentUser.id, related.map((p) => p.id))
       : Promise.resolve(new Set<string>()),
+    // Chỉ dùng cho `availability` của JSON-LD. Khai "còn hàng" cho máy đã hết
+    // kho là khai sai với Google (và đúng ra là với khách), mà tồn kho thì đã
+    // có sẵn trong DB nên không có lý do gì đoán.
+    prisma.inventory.aggregate({
+      _sum: { quantity: true },
+      where: { variant: { productId: product.id } },
+    }),
   ]);
+
+  const prices = product.variants.map((v) => Number(v.price));
+  const minPrice = prices.length ? Math.min(...prices) : Number(product.basePrice);
+  const maxPrice = prices.length ? Math.max(...prices) : Number(product.basePrice);
+  // `_sum` trả null khi KHÔNG có dòng Inventory nào cho sản phẩm (vd biến thể
+  // vừa tạo, chưa seed kho) — coi là còn hàng, khớp với cách
+  // reserveStockOrThrow() ở lib/inventory.ts cố ý fail-open trong trường hợp
+  // này thay vì chặn bán.
+  const totalStock = stockSum._sum.quantity;
+  const inStock = totalStock === null || totalStock > 0;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "Product",
+          name: product.name,
+          description: plainDescription(product.description),
+          image: product.images.map((img) => img.url),
+          sku: product.variants[0]?.sku,
+          ...(product.brand ? { brand: { "@type": "Brand", name: product.brand.name } } : {}),
+          category: product.category.name,
+          // AggregateOffer (không phải Offer) vì 1 sản phẩm có nhiều biến thể
+          // với giá khác nhau — khai 1 giá duy nhất sẽ lệch với giá hiện trên
+          // trang khi khách chọn biến thể khác.
+          offers: {
+            "@type": "AggregateOffer",
+            priceCurrency: "VND",
+            lowPrice: minPrice,
+            highPrice: maxPrice,
+            offerCount: Math.max(1, product.variants.length),
+            availability: inStock
+              ? "https://schema.org/InStock"
+              : "https://schema.org/OutOfStock",
+            url: absoluteUrl(`/products/${product.slug}`),
+          },
+          // Google từ chối toàn bộ khối AggregateRating nếu reviewCount = 0,
+          // nên chỉ khai khi thực sự có đánh giá.
+          ...(reviewCount > 0
+            ? {
+                aggregateRating: {
+                  "@type": "AggregateRating",
+                  ratingValue: Number(averageRating.toFixed(1)),
+                  reviewCount,
+                  bestRating: 5,
+                  worstRating: 1,
+                },
+              }
+            : {}),
+        }}
+      />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Trang chủ", item: absoluteUrl("/") },
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: product.category.name,
+              item: absoluteUrl(`/products?category=${product.category.slug}`),
+            },
+            { "@type": "ListItem", position: 3, name: product.name },
+          ],
+        }}
+      />
       <nav className="mb-6 flex flex-wrap items-center gap-1 text-sm text-zinc-500">
         <Link href="/" className="hover:underline">
           Trang chủ

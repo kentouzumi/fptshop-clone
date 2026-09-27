@@ -4,6 +4,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { CompareProvider } from "@/components/CompareProvider";
 import CompareFloatingBar from "@/components/CompareFloatingBar";
+import { SITE_NAME, SITE_URL } from "@/lib/siteUrl";
 import "./globals.css";
 
 const displayFont = Unbounded({
@@ -23,8 +24,33 @@ const monoFont = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FPT Shop Clone",
-  description: "Website thương mại điện tử clone chức năng FPT Shop",
+  // metadataBase: bắt buộc phải có để mọi đường dẫn tương đối trong canonical/
+  // openGraph của các trang con tự thành URL tuyệt đối. Thiếu nó, Next.js bỏ
+  // qua các URL tương đối kèm cảnh báo lúc build chứ không báo lỗi.
+  metadataBase: new URL(SITE_URL),
+  // "%s" được thay bằng `title` của từng trang con; trang nào không tự khai
+  // title thì dùng `default`.
+  title: {
+    default: `${SITE_NAME} — Điện thoại, Laptop, Tivi chính hãng`,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description:
+    "Mua điện thoại, laptop và tivi chính hãng với giá tốt. Bảo hành 12 tháng, thu cũ đổi mới, nhận hàng tại cửa hàng hoặc giao tận nơi.",
+  applicationName: SITE_NAME,
+  openGraph: {
+    type: "website",
+    locale: "vi_VN",
+    siteName: SITE_NAME,
+    url: "/",
+  },
+  twitter: { card: "summary_large_image" },
+  robots: {
+    index: true,
+    follow: true,
+    // Cho phép Google hiện ảnh lớn + toàn bộ đoạn mô tả trong kết quả tìm
+    // kiếm; mặc định của Google với site không khai báo là hạn chế hơn.
+    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

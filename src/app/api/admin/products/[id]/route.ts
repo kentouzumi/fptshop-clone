@@ -43,6 +43,8 @@ export async function PATCH(
       basePrice: values.basePrice,
       status: values.status,
       isFeatured: values.isFeatured,
+      metaTitle: values.metaTitle,
+      metaDesc: values.metaDesc,
     },
   });
 
