@@ -28,6 +28,7 @@ interface Coupon {
   startsAt: string;
   endsAt: string;
   isActive: boolean;
+  isPublic: boolean;
   status: CouponStatus;
   /** Số đơn đã dùng mã này — mã đã có đơn thì không xóa được, chỉ tắt. */
   orderCount: number;
@@ -43,6 +44,7 @@ interface FormState {
   startsAt: string;
   endsAt: string;
   isActive: boolean;
+  isPublic: boolean;
 }
 
 const TYPE_LABELS: Record<CouponType, string> = {
@@ -83,6 +85,7 @@ const EMPTY: FormState = {
   usageLimit: "",
   ...defaultRange(),
   isActive: true,
+  isPublic: true,
 };
 
 export default function CouponsManager({ coupons }: { coupons: Coupon[] }) {
@@ -110,6 +113,7 @@ export default function CouponsManager({ coupons }: { coupons: Coupon[] }) {
       startsAt: toLocalInput(c.startsAt),
       endsAt: toLocalInput(c.endsAt),
       isActive: c.isActive,
+      isPublic: c.isPublic,
     });
     setError(null);
   }
@@ -129,6 +133,7 @@ export default function CouponsManager({ coupons }: { coupons: Coupon[] }) {
         startsAt: form.startsAt,
         endsAt: form.endsAt,
         isActive: form.isActive,
+        isPublic: form.isPublic,
       };
       const res = await fetch(isNew ? "/api/admin/coupons" : `/api/admin/coupons/${editingId}`, {
         method: isNew ? "POST" : "PATCH",
@@ -262,14 +267,28 @@ export default function CouponsManager({ coupons }: { coupons: Coupon[] }) {
           </div>
         </div>
 
-        <label className="flex items-center gap-1 text-xs">
-          <input
-            type="checkbox"
-            checked={form.isActive}
-            onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-          />
-          Đang hoạt động
-        </label>
+        <div className="flex flex-col gap-1">
+          <label className="flex items-center gap-1 text-xs">
+            <input
+              type="checkbox"
+              checked={form.isActive}
+              onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+            />
+            Đang hoạt động
+          </label>
+          <label className="flex items-center gap-1 text-xs">
+            <input
+              type="checkbox"
+              checked={form.isPublic}
+              onChange={(e) => setForm({ ...form, isPublic: e.target.checked })}
+            />
+            Hiện công khai cho khách ở trang thanh toán
+          </label>
+          <p className="text-xs text-zinc-500">
+            Bỏ chọn nếu đây là mã riêng gửi cho một khách cụ thể — mã vẫn dùng được bình thường
+            nhưng không xuất hiện trong danh sách gợi ý.
+          </p>
+        </div>
 
         <div className="flex gap-2">
           <button
@@ -311,10 +330,10 @@ export default function CouponsManager({ coupons }: { coupons: Coupon[] }) {
         )}
       </div>
 
-      <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
-        Mọi mã <b>đang hoạt động</b> và còn trong thời hạn đều được liệt kê công khai cho khách ở
-        trang thanh toán. Hiện chưa có cơ chế mã riêng cho từng khách — đừng tạo mã ở đây nếu chỉ
-        muốn gửi riêng cho một người.
+      <p className="mb-4 rounded-lg border border-zinc-200 bg-zinc-100 p-3 text-xs text-zinc-600">
+        Mã <b>đang hoạt động</b>, còn trong thời hạn và được đánh dấu <b>công khai</b> sẽ hiện sẵn
+        cho mọi khách ở trang thanh toán. Mã riêng gửi cho một người thì bỏ chọn ô công khai —
+        khách vẫn nhập mã dùng được, chỉ là không ai khác nhìn thấy.
       </p>
 
       {editingId === "__new__" && <div className="mb-4">{FormFields()}</div>}
@@ -344,6 +363,7 @@ export default function CouponsManager({ coupons }: { coupons: Coupon[] }) {
                   <span className={STATUS_LABELS[c.status].className}>
                     {STATUS_LABELS[c.status].text}
                   </span>
+                  {!c.isPublic && <span className="text-zinc-400"> · Mã riêng</span>}
                 </p>
               </div>
               <div className="flex gap-3 text-sm">

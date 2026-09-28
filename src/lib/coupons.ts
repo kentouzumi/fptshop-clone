@@ -96,10 +96,9 @@ function describeCoupon(coupon: {
  * tầng UI; mọi mã dù sao cũng được `validateCoupon()` kiểm tra lại ở server lúc
  * tạo đơn nên không có rủi ro áp mã sai điều kiện.
  *
- * LƯU Ý: model Coupon KHÔNG có cờ công khai/riêng tư hay đối tượng áp dụng, nên
- * mọi mã đang active đều được liệt kê ở đây. Nếu sau này cần mã riêng cho từng
- * khách (vd mã bù đơn lỗi) thì phải thêm cờ vào schema rồi lọc ở hàm này,
- * không thì mã đó sẽ lộ cho tất cả mọi người.
+ * CHỈ liệt kê mã `isPublic: true`. Mã riêng (isPublic false — vd mã bù cho đơn
+ * giao lỗi gửi riêng cho 1 khách) vẫn dùng bình thường nếu khách tự nhập đúng
+ * mã, chỉ là không bao giờ xuất hiện trong danh sách gợi ý này.
  *
  * KHÔNG cache: `usedCount` đổi theo từng đơn, mã có thể hết lượt bất cứ lúc nào.
  */
@@ -108,6 +107,7 @@ export async function getSuggestedCoupons(): Promise<SuggestedCoupon[]> {
   const coupons = await prisma.coupon.findMany({
     where: {
       isActive: true,
+      isPublic: true,
       startsAt: { lte: now },
       endsAt: { gte: now },
     },
@@ -143,6 +143,8 @@ export interface CouponInput {
   startsAt: Date;
   endsAt: Date;
   isActive: boolean;
+  /** true = hiện trong danh sách gợi ý ở /checkout; false = mã riêng, phải tự biết mã. */
+  isPublic: boolean;
 }
 
 /** Mã chỉ cho chữ HOA/số/gạch để khách gõ lại được — validateCoupon() vốn tự uppercase. */
@@ -208,6 +210,7 @@ export function parseCouponInput(body: unknown): CouponInput | null {
     startsAt,
     endsAt,
     isActive: b?.isActive !== false,
+    isPublic: b?.isPublic !== false,
   };
 }
 

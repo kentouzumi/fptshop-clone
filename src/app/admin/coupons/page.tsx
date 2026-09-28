@@ -42,6 +42,7 @@ export default async function AdminCouponsPage() {
         startsAt: c.startsAt.toISOString(),
         endsAt: c.endsAt.toISOString(),
         isActive: c.isActive,
+        isPublic: c.isPublic,
         status: resolveStatus(c),
         orderCount: orderCounts[c.id] ?? 0,
       }))}

@@ -4544,6 +4544,49 @@
       chỉ có 1 mã; danh sách mã giảm giá của 1 shop quy mô này khó vượt vài chục
       dòng). Cũng chưa có thống kê "mã này đã giảm tổng bao nhiêu tiền".
 
+- [x] Cờ mã CÔNG KHAI / MÃ RIÊNG cho Coupon (`isPublic`) — đóng nốt điểm còn
+      thiếu tự ghi ra ở 2 mục trên: trước đó MỌI mã đang chạy đều bị liệt kê
+      công khai ở /checkout, nên không có cách nào tạo 1 mã riêng gửi cho đúng 1
+      khách (vd mã bù cho đơn giao lỗi) mà không lộ cho tất cả mọi người.
+
+      ĐỔI SCHEMA: thêm `isPublic Boolean @default(true)` vào model Coupon rồi
+      `npx prisma db push --config prisma7.config.ts`. Đây là thêm CỘT MỚI CÓ
+      GIÁ TRỊ MẶC ĐỊNH nên KHÔNG mất dữ liệu và KHÔNG cần `--accept-data-loss`
+      (khác lần thêm unique constraint cho Review trước đây) — Prisma chạy thẳng,
+      không hỏi gì. Mặc định `true` nên mã FPT10 đang có giữ nguyên hành vi cũ
+      (đã kiểm tra lại trong DB sau khi push). Sau đó `npx prisma generate` +
+      restart hẳn dev server theo đúng lưu ý ở mục "Lưu ý quan trọng".
+
+      lib/coupons.ts: `getSuggestedCoupons()` thêm `isPublic: true` vào where —
+      ĐÂY LÀ CHỖ DUY NHẤT cờ này có tác dụng. `validateCoupon()` CỐ Ý KHÔNG đụng
+      tới `isPublic`: mã riêng vẫn phải áp được bình thường khi khách tự nhập
+      đúng mã, nó chỉ không xuất hiện trong danh sách gợi ý. Nếu chặn luôn ở
+      validateCoupon thì mã riêng thành vô dụng.
+
+      UI admin: thêm ô "Hiện công khai cho khách ở trang thanh toán" (mặc định
+      tích sẵn) kèm 1 dòng giải thích ngay dưới, và nhãn "· Mã riêng" trong danh
+      sách cho mã đã bỏ tích. Banner cảnh báo màu vàng viết ở đợt trước ("mọi mã
+      đều bị liệt kê công khai, đừng tạo mã riêng ở đây") giờ đã sai nên đổi hẳn
+      thành dòng hướng dẫn trung tính màu xám: bỏ chọn ô công khai nếu là mã gửi
+      riêng cho một người.
+
+      Đã test qua dev server bằng DB THẬT (tạo admin/khách/đơn hàng test, dọn
+      sạch và khôi phục tồn kho sau khi xong — DB còn đúng 1 mã thật / 3 đơn thật
+      / 8 user thật): tạo 1 mã công khai + 1 mã riêng qua API admin, DB lưu đúng
+      `isPublic` từng cái; /checkout của khách CÓ mã công khai và KHÔNG có mã
+      riêng; mã riêng VẪN áp được khi tự nhập (`/api/coupons/validate` trả 200
+      giảm đúng 150.000đ) và đặt được đơn THẬT với đúng mức giảm đó; sửa mã công
+      khai thành mã riêng qua PATCH thì nó biến mất khỏi gợi ý ngay lần tải trang
+      sau; mã FPT10 có sẵn từ trước tự mang `isPublic: true` nên không đổi hành
+      vi. `tsc --noEmit`/`eslint`/`npm run build` sạch.
+
+      LƯU Ý khi viết test: ô checkbox mới nằm trong form, mà form chỉ render khi
+      bấm "+ Thêm"/"Sửa" — nên grep chuỗi nhãn trong HTML của trang lúc nghỉ sẽ
+      KHÔNG thấy (lần đầu đã tưởng nhầm là lỗi). Muốn kiểm tra thì grep trong
+      chunk JS mà Next gửi xuống client
+      (`.next/**/chunks/**/CouponsManager*.js`), hoặc dựng test có thao tác mở
+      form thật.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4634,10 +4677,10 @@
       rất lớn của họ), **không có Hỏi–đáp (Q&A) dưới sản phẩm** (mới có đánh
       giá), **không có trang thương hiệu** và không có danh mục con thật (vd
       iPhone 15 Series / iPhone 16 Series).
-- [x] **Mã giảm giá phải tự biết mới nhập được** — ĐÃ LÀM: /checkout liệt kê sẵn
-      mã đang chạy, bấm là áp; và /admin/coupons quản lý mã đầy đủ. Còn thiếu:
-      cờ mã riêng-tư trong schema Coupon (hiện mọi mã đang chạy đều bị liệt kê
-      công khai cho khách).
+- [x] **Mã giảm giá phải tự biết mới nhập được** — ĐÃ LÀM TRỌN: /checkout liệt kê
+      sẵn mã đang chạy (bấm là áp), /admin/coupons quản lý mã đầy đủ, và cờ
+      `isPublic` cho phép tạo mã riêng không lộ công khai. Chưa làm: tìm kiếm/
+      phân trang trong trang admin và thống kê tổng tiền đã giảm theo từng mã.
 - [ ] Đăng nhập chỉ có Google; FPT Shop dùng SĐT/OTP là chính — KHÔNG tính là
       thiếu sót kỹ thuật, đã bỏ có lý do (cả 4 nhà cung cấp SMS thử qua đều
       đòi thẻ/brandname, xem chuỗi mục đổi auth ở trên).

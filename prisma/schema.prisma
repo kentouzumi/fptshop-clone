@@ -503,6 +503,8 @@ model Coupon {
   startsAt     DateTime
   endsAt       DateTime
   isActive     Boolean    @default(true)
+  // false = mã riêng, chỉ ai biết mã mới nhập được; không liệt kê ở /checkout.
+  isPublic     Boolean    @default(true)
 
   orders Order[]
 }
