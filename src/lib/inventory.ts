@@ -175,3 +175,86 @@ export async function setInventoryQuantity(
     create: { storeId, variantId, quantity },
   });
 }
+
+// ============================================================================
+// Hiển thị tồn kho CHO KHÁCH (trang chi tiết sản phẩm)
+// ============================================================================
+
+/** Dưới ngưỡng này thì hiện thẳng con số để tạo cảm giác khan hàng thật. */
+export const LOW_STOCK_DISPLAY_THRESHOLD = 5;
+
+
+export interface VariantStockInfo {
+  /** Tổng tồn kho ở MỌI cửa hàng đang hoạt động. */
+  total: number;
+  /** Tồn kho tại kho phục vụ GIAO TẬN NƠI (cửa hàng đầu tiên đang hoạt động). */
+  deliverable: number;
+  /** Các cửa hàng đang còn hàng — dùng cho "nhận tại cửa hàng". */
+  stores: { name: string; quantity: number }[];
+}
+
+export interface ProductStock {
+  /**
+   * Không còn cửa hàng nào đang hoạt động -> hệ thống KHÔNG quản lý tồn kho,
+   * mọi biến thể đều bán được. Đây là trường hợp DUY NHẤT fail-open, khớp
+   * đúng với reserveStockOrThrow() ở trên.
+   */
+  untracked: boolean;
+  byVariant: Record<string, VariantStockInfo>;
+}
+
+/**
+ * Tồn kho của TỪNG biến thể trong 1 sản phẩm, để trang chi tiết hiện đúng
+ * "còn hàng / chỉ còn N / hết hàng" thay vì để khách bỏ vào giỏ rồi mới bị
+ * chặn lúc đặt hàng.
+ *
+ * `deliverable` tách riêng khỏi `total` là điểm quan trọng: một biến thể có
+ * thể hết hàng ở KHO GIAO HÀNG (cửa hàng đầu tiên — xem resolveInventoryStoreId)
+ * nhưng vẫn còn ở cửa hàng khác. Lúc đó đơn giao tận nơi bị chặn còn đơn nhận
+ * tại cửa hàng thì không — gộp chung 1 con số sẽ nói dối khách đúng ở trường
+ * hợp này.
+ *
+ * Biến thể KHÔNG có dòng Inventory nào = HẾT HÀNG (không phải "không giới
+ * hạn"): reserveStockOrThrow() đọc `inventory?.quantity ?? 0` nên cũng chặn
+ * đơn — 2 bên phải hiểu giống nhau.
+ *
+ * KHÔNG cache: tồn kho thay đổi theo từng đơn hàng, hiện số cũ còn tệ hơn
+ * không hiện gì.
+ */
+export async function getProductStockInfo(productId: string): Promise<ProductStock> {
+  const [stores, rows] = await Promise.all([
+    prisma.store.findMany({
+      where: { isActive: true },
+      orderBy: { id: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.inventory.findMany({
+      where: { variant: { productId } },
+      select: { variantId: true, storeId: true, quantity: true },
+    }),
+  ]);
+
+  const activeStoreIds = new Set(stores.map((s) => s.id));
+  // Cùng quy ước với resolveInventoryStoreId(): cửa hàng đầu tiên theo id là
+  // kho dùng cho giao hàng tận nơi.
+  const warehouseId = stores[0]?.id ?? null;
+  const storeNameById = new Map(stores.map((s) => [s.id, s.name]));
+
+  const byVariant: Record<string, VariantStockInfo> = {};
+  for (const row of rows) {
+    // Bỏ qua tồn kho ở cửa hàng đã ngừng hoạt động — đơn hàng cũng không lấy
+    // từ đó, hiện ra sẽ thành hứa hàng không giao được.
+    if (!activeStoreIds.has(row.storeId)) continue;
+
+    const entry = (byVariant[row.variantId] ??= { total: 0, deliverable: 0, stores: [] });
+    entry.total += row.quantity;
+    if (row.storeId === warehouseId) entry.deliverable = row.quantity;
+    if (row.quantity > 0) {
+      entry.stores.push({ name: storeNameById.get(row.storeId) ?? "", quantity: row.quantity });
+    }
+  }
+
+  return { untracked: warehouseId === null, byVariant };
+}
+
+export const EMPTY_VARIANT_STOCK: VariantStockInfo = { total: 0, deliverable: 0, stores: [] };

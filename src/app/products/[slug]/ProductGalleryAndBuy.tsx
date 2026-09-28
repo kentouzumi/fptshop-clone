@@ -10,7 +10,16 @@ interface VariantOption {
   storage: string | null;
   price: number;
   compareAtPrice: number | null;
+  /**
+   * Tồn kho của đúng biến thể này. `null` = hệ thống không quản lý tồn kho
+   * (không còn cửa hàng nào hoạt động) nên không hiện gì và không chặn mua —
+   * khớp đúng với nhánh fail-open của reserveStockOrThrow() ở lib/inventory.ts.
+   */
+  stock: { total: number; deliverable: number; stores: { name: string; quantity: number }[] } | null;
 }
+
+/** Dưới mức này thì hiện thẳng con số còn lại thay vì chỉ nói "Còn hàng". */
+const LOW_STOCK_THRESHOLD = 5;
 
 interface ImageOption {
   url: string;
@@ -99,6 +108,15 @@ export default function ProductGalleryAndBuy({
   const selectedVariantId = selectedVariant?.id ?? null;
   const price = selectedVariant?.price ?? basePrice;
   const compareAtPrice = selectedVariant?.compareAtPrice ?? null;
+
+  // stock === undefined (chưa chọn được biến thể nào) và stock === null (không
+  // quản lý tồn kho) đều coi như "không có gì để nói" — chỉ chặn mua khi biết
+  // CHẮC CHẮN là hết hàng.
+  const stock = selectedVariant?.stock ?? null;
+  const outOfStock = stock !== null && stock.total === 0;
+  // Còn hàng ở cửa hàng khác nhưng hết ở kho giao hàng: đơn giao tận nơi sẽ bị
+  // chặn lúc đặt, nên phải nói trước thay vì để khách đặt rồi mới báo lỗi.
+  const pickupOnly = stock !== null && stock.total > 0 && stock.deliverable === 0;
 
   // Ảnh gắn riêng cho variant của MÀU đang chọn (bất kể dung lượng nào của
   // màu đó) — nếu màu này chưa có ảnh riêng (variantId null hết), rơi về bộ
@@ -282,19 +300,57 @@ export default function ProductGalleryAndBuy({
           </div>
         )}
 
+        {stock !== null && (
+          <div className="mb-4 text-sm">
+            {outOfStock ? (
+              <p className="font-medium text-red-500">● Hết hàng</p>
+            ) : (
+              <>
+                <p className="font-medium text-green-600">
+                  ●{" "}
+                  {stock.total <= LOW_STOCK_THRESHOLD
+                    ? `Chỉ còn ${stock.total} sản phẩm`
+                    : "Còn hàng"}
+                </p>
+                {pickupOnly ? (
+                  <p className="mt-1 text-zinc-500">
+                    Hiện chỉ còn hàng tại cửa hàng — chọn &quot;Nhận tại cửa hàng&quot; khi đặt:{" "}
+                    {stock.stores.map((s) => s.name).join(", ")}
+                  </p>
+                ) : (
+                  stock.stores.length > 0 && (
+                    <p className="mt-1 text-zinc-500">
+                      Có hàng tại {stock.stores.length} cửa hàng:{" "}
+                      {stock.stores.map((s) => s.name).join(", ")}
+                    </p>
+                  )
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-3">
           <button
             type="button"
             onClick={handleAddToCart}
-            disabled={!selectedVariantId || adding}
-            title={selectedVariantId ? undefined : "Sản phẩm này chưa có phiên bản để mua"}
+            disabled={!selectedVariantId || adding || outOfStock}
+            title={
+              selectedVariantId
+                ? outOfStock
+                  ? "Phiên bản này đang hết hàng"
+                  : undefined
+                : "Sản phẩm này chưa có phiên bản để mua"
+            }
             className="btn-primary flex-1 !rounded-xl py-3.5 disabled:!bg-zinc-300 disabled:!text-zinc-500 disabled:!shadow-none"
           >
             {adding
               ? "Đang thêm..."
-              : selectedVariantId
-                ? "Thêm vào giỏ hàng"
-                : "Chưa có phiên bản để mua"}
+              : !selectedVariantId
+                ? "Chưa có phiên bản để mua"
+                : outOfStock
+                  ? "Hết hàng"
+                  : "Thêm vào giỏ hàng"}
           </button>
           {wishlistButton && <div className="w-40">{wishlistButton}</div>}
         </div>

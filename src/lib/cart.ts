@@ -56,6 +56,23 @@ export async function addToCart(userId: string, variantId: string, quantity: num
     throw new Error("Sản phẩm không khả dụng.");
   }
 
+  // Chặn bỏ vào giỏ thứ đã hết hàng. Trang chi tiết đã disable nút, nhưng đây
+  // là API công khai nên phải tự kiểm tra lại ở server (không tin client).
+  // CHỈ chặn khi hết sạch ở MỌI cửa hàng: biến thể còn hàng ở cửa hàng khác
+  // vẫn mua được qua hình thức "Nhận tại cửa hàng", chặn ở đây là chặn oan.
+  // Không còn cửa hàng nào đang hoạt động -> bỏ qua, khớp nhánh fail-open của
+  // reserveStockOrThrow() ở lib/inventory.ts.
+  const activeStoreCount = await prisma.store.count({ where: { isActive: true } });
+  if (activeStoreCount > 0) {
+    const stock = await prisma.inventory.aggregate({
+      _sum: { quantity: true },
+      where: { variantId, store: { isActive: true } },
+    });
+    if ((stock._sum.quantity ?? 0) <= 0) {
+      throw new Error("Phiên bản này đang hết hàng.");
+    }
+  }
+
   const cart = await prisma.cart.upsert({
     where: { userId },
     update: {},

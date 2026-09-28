@@ -4166,6 +4166,69 @@
       cần), và không có bộ chọn khoảng thời gian tùy ý (3 mốc cố định hôm nay/
       7 ngày/30 ngày là đủ cho quy mô này).
 
+- [x] Hiện tình trạng còn hàng cho KHÁCH ở trang chi tiết sản phẩm + chặn bỏ
+      vào giỏ khi hết hàng (mục trong bản rà soát so với fptshop.com.vn:
+      `Inventory` trước đó CHỈ dùng để chặn lúc tạo đơn, khách không thấy gì —
+      bỏ vào giỏ, qua tới bước đặt hàng mới bị báo "chỉ còn 0 trong kho").
+
+      src/lib/inventory.ts: thêm `getProductStockInfo(productId)` trả về
+      `{ untracked, byVariant }`. Mỗi biến thể có 3 con số TÁCH RIÊNG:
+      + `total` — tổng tồn ở mọi cửa hàng đang hoạt động.
+      + `deliverable` — tồn tại KHO GIAO HÀNG (cửa hàng đầu tiên theo id, đúng
+        quy ước của resolveInventoryStoreId đã có sẵn).
+      + `stores` — danh sách cửa hàng còn hàng, cho hình thức nhận tại cửa hàng.
+      Tách `deliverable` khỏi `total` là điểm quan trọng nhất: một biến thể có
+      thể hết ở kho giao hàng nhưng còn ở cửa hàng khác — lúc đó đơn GIAO TẬN
+      NƠI bị chặn còn đơn NHẬN TẠI CỬA HÀNG thì không. Gộp chung 1 con số sẽ
+      nói dối khách đúng ở trường hợp này, nên UI có riêng dòng "Hiện chỉ còn
+      hàng tại cửa hàng — chọn Nhận tại cửa hàng khi đặt". Bỏ qua tồn kho ở
+      cửa hàng đã ngừng hoạt động (đơn hàng cũng không lấy từ đó). KHÔNG cache:
+      tồn kho đổi theo từng đơn, hiện số cũ còn tệ hơn không hiện gì.
+
+      SỬA 1 LỖI TỰ GÂY RA Ở ĐỢT SEO (phát hiện trong lúc viết hàm này, không
+      phải user báo): JSON-LD `availability` lúc đó tính bằng
+      `inventory.aggregate({_sum})` rồi coi `null` (không có dòng Inventory
+      nào) là CÒN HÀNG — sai, vì `reserveStockOrThrow()` đọc
+      `inventory?.quantity ?? 0` nên biến thể chưa có dòng Inventory sẽ BỊ CHẶN
+      lúc đặt. Tức là trang khai "InStock" với Google trong khi hệ thống không
+      cho mua. Giờ cả trang lẫn JSON-LD dùng CHUNG `getProductStockInfo()` nên
+      không thể nói 2 điều khác nhau, và chỉ fail-open đúng 1 trường hợp mà
+      đặt hàng cũng bỏ qua kiểm tra: không còn cửa hàng nào hoạt động
+      (`untracked`). Nhân tiện bỏ luôn 1 query (aggregate cũ) vì dùng chung.
+
+      ProductGalleryAndBuy.tsx: `VariantOption` thêm `stock` (nullable —
+      `null` = untracked, không hiện gì và không chặn mua). Hiện "Còn hàng" /
+      "Chỉ còn N sản phẩm" khi total <= 5 / "Hết hàng", kèm danh sách cửa hàng
+      còn hàng. Nút "Thêm vào giỏ hàng" tự disable + đổi chữ thành "Hết hàng"
+      khi biến thể đang chọn hết sạch. Trạng thái tính theo ĐÚNG biến thể đang
+      chọn (không phải cả sản phẩm) nên đổi màu/dung lượng là trạng thái đổi
+      theo.
+
+      lib/cart.ts `addToCart()`: chặn lại Ở SERVER (không tin client, `/api/
+      cart/items` là API công khai). CHỈ chặn khi hết sạch ở MỌI cửa hàng —
+      biến thể còn hàng ở cửa hàng khác vẫn mua được qua "Nhận tại cửa hàng",
+      chặn ở đây là chặn oan. Không còn cửa hàng nào hoạt động thì bỏ qua,
+      khớp nhánh fail-open của reserveStockOrThrow().
+
+      Đã test qua dev server bằng DB thật (tạm đổi tồn kho của Dell XPS 13 rồi
+      HOÀN NGUYÊN, script bọc try/finally nên hoàn nguyên chạy cả khi lỗi giữa
+      chừng): 4 trạng thái đều đúng — (1) 20+20 -> "Còn hàng" + "Có hàng tại 2
+      cửa hàng: FPT Shop Cầu Giấy, FPT Shop Quận 1"; (2) chỉ còn 3 ở kho giao
+      -> "Chỉ còn 3 sản phẩm"; (3) kho giao 0 / cửa hàng 2 còn 4 -> hiện đúng
+      dòng "chỉ còn hàng tại cửa hàng", nút VẪN mua được (đúng chủ ý); (4) hết
+      sạch -> "Hết hàng" + nút bị khóa, và JSON-LD khai đúng
+      `https://schema.org/OutOfStock` (xác nhận luôn bản sửa ở trên). Test API
+      giỏ hàng bằng session customer test thật: hết hàng -> 400 "Phiên bản này
+      đang hết hàng.", còn hàng -> 200 và giỏ có đúng 1 item. Tồn kho đã về
+      đúng 20/20, đã xóa user/session/cart test. `tsc --noEmit` sạch,
+      `npm run build` exit 0.
+
+      CỐ Ý KHÔNG LÀM: badge "Hết hàng" trên ProductCard ở trang danh mục/trang
+      chủ. `getProducts()` được cache `revalidate: 60` nên tồn kho hiện ở đó
+      có thể trễ tới 1 phút — hiện "Còn hàng" cho máy vừa hết là đúng thứ
+      tính năng này sinh ra để tránh. Muốn làm thì phải tách tồn kho ra khỏi
+      phần cache (thêm 1 query không cache cho riêng danh sách id đang hiện).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4228,9 +4291,11 @@
       dòng code nào dùng. FPT Shop in "Trả góp từ x đ/tháng" ngay trên card.
       Làm cho đúng thì cần cả luồng chọn kỳ hạn/nhà cấp vốn ở /checkout, không
       phải chỉ thêm nhãn (xem lý do cố ý chưa làm ở mục giá gạch ngang).
-- [ ] **Không hiện tình trạng còn hàng cho khách.** `Inventory` hiện CHỈ dùng
-      để chặn lúc đặt (reserveStockOrThrow), trang sản phẩm không hiện gì. FPT
-      Shop hiện "Còn hàng tại N cửa hàng" + tra tồn kho theo từng cửa hàng.
+- [x] **Tình trạng còn hàng cho khách** — ĐÃ LÀM: trang chi tiết hiện "Còn
+      hàng / Chỉ còn N / Hết hàng" theo đúng biến thể đang chọn, kèm danh sách
+      cửa hàng còn hàng, khóa nút mua khi hết, và chặn lại ở API giỏ hàng. Còn
+      thiếu badge "Hết hàng" trên ProductCard (danh sách đang cache 60s nên số
+      tồn kho hiện ở đó có thể trễ — xem lý do trong mục Tiến độ).
 - [x] **Trang tổng quan `/admin`** — ĐÃ LÀM (trước đó `/admin` bị 404 vì thiếu
       `page.tsx`): doanh thu 3 mốc, đơn theo trạng thái, đơn mới nhất, chuyển
       khoản chờ xác nhận, hàng sắp hết. Còn thiếu biểu đồ theo ngày và bộ chọn

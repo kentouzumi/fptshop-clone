@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SITE_NAME, absoluteUrl } from "@/lib/siteUrl";
+import { getProductStockInfo, EMPTY_VARIANT_STOCK } from "@/lib/inventory";
 import JsonLd from "@/components/JsonLd";
 import { getProducts } from "@/lib/products";
 import { getProductReviews, getUserReviewForProduct } from "@/lib/reviews";
@@ -128,7 +129,7 @@ export default async function ProductDetailPage({
     userReview,
     inWishlist,
     relatedWishlistedIds,
-    stockSum,
+    stockByVariant,
   ] = await Promise.all([
     getProductReviews(product.id, currentUser?.id),
     currentUser ? getUserReviewForProduct(currentUser.id, product.id) : Promise.resolve(null),
@@ -136,24 +137,25 @@ export default async function ProductDetailPage({
     currentUser
       ? getWishlistedProductIds(currentUser.id, related.map((p) => p.id))
       : Promise.resolve(new Set<string>()),
-    // Chỉ dùng cho `availability` của JSON-LD. Khai "còn hàng" cho máy đã hết
-    // kho là khai sai với Google (và đúng ra là với khách), mà tồn kho thì đã
-    // có sẵn trong DB nên không có lý do gì đoán.
-    prisma.inventory.aggregate({
-      _sum: { quantity: true },
-      where: { variant: { productId: product.id } },
-    }),
+    // Dùng cho CẢ hiển thị "còn hàng/hết hàng" cho khách LẪN `availability`
+    // của JSON-LD — cùng 1 nguồn để trang và dữ liệu khai cho Google không
+    // bao giờ nói 2 điều khác nhau.
+    getProductStockInfo(product.id),
   ]);
 
   const prices = product.variants.map((v) => Number(v.price));
   const minPrice = prices.length ? Math.min(...prices) : Number(product.basePrice);
   const maxPrice = prices.length ? Math.max(...prices) : Number(product.basePrice);
-  // `_sum` trả null khi KHÔNG có dòng Inventory nào cho sản phẩm (vd biến thể
-  // vừa tạo, chưa seed kho) — coi là còn hàng, khớp với cách
-  // reserveStockOrThrow() ở lib/inventory.ts cố ý fail-open trong trường hợp
-  // này thay vì chặn bán.
-  const totalStock = stockSum._sum.quantity;
-  const inStock = totalStock === null || totalStock > 0;
+  // SỬA LẠI so với bản đầu (đợt SEO): lúc đó dùng `_sum` của Inventory rồi
+  // coi null (không có dòng nào) là CÒN HÀNG — sai, vì reserveStockOrThrow()
+  // đọc `inventory?.quantity ?? 0` nên biến thể chưa có dòng Inventory sẽ bị
+  // CHẶN lúc đặt. Tức trang khai "còn hàng" với Google trong khi hệ thống
+  // không cho mua. Giờ chỉ fail-open đúng 1 trường hợp mà đặt hàng cũng bỏ
+  // qua kiểm tra: không còn cửa hàng nào đang hoạt động (untracked).
+  const inStock =
+    stockByVariant.untracked ||
+    product.variants.length === 0 ||
+    product.variants.some((v) => (stockByVariant.byVariant[v.id]?.total ?? 0) > 0);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -240,6 +242,9 @@ export default async function ProductDetailPage({
           storage: v.storage,
           price: Number(v.price),
           compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
+          stock: stockByVariant.untracked
+            ? null // null = không quản lý tồn kho, không hiện gì cả
+            : (stockByVariant.byVariant[v.id] ?? EMPTY_VARIANT_STOCK),
         }))}
         basePrice={Number(product.basePrice)}
         wishlistButton={
