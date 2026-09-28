@@ -165,9 +165,13 @@ export default async function Header() {
           <Link href="/faq" className="hover:text-zinc-900">
             FAQ
           </Link>
-          {user && (
+          {user ? (
             <Link href="/orders" className="hover:text-zinc-900">
               Đơn hàng của tôi
+            </Link>
+          ) : (
+            <Link href="/tra-cuu-don-hang" className="hover:text-zinc-900">
+              Tra cứu đơn hàng
             </Link>
           )}
         </nav>

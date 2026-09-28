@@ -4327,6 +4327,79 @@
       tác vận chuyển thật) và Header vẫn chưa cho chọn tỉnh/thành để lọc tồn kho
       theo khu vực như FPT Shop thật.
 
+- [x] Tra cứu đơn hàng cho khách CHƯA ĐĂNG NHẬP bằng mã đơn + số điện thoại
+      (mục "Không tra cứu đơn cho khách chưa đăng nhập" trong bản rà soát so với
+      fptshop.com.vn — trước đó mọi đường xem đơn đều qua `getOrderDetail()` vốn
+      bắt buộc `order.userId` khớp user đang đăng nhập).
+
+      lib/orders.ts: `lookupOrderByCodeAndPhone(code, phone)` — tra theo
+      `Order.code` (đã `@unique` sẵn trong schema) rồi đối chiếu số điện thoại
+      với `order.address.phone`. `normalizePhoneForLookup()` chỉ giữ chữ số và
+      quy dạng +84 về 0 nên "0912345678" / "+84912345678" / "0912 345 678" đều
+      khớp nhau; mã đơn tự uppercase. `maskPhone()` che giữa số khi hiện lại
+      (0912***678) — người tra cứu vốn đã phải biết số đó nên hiện đủ không thêm
+      thông tin gì mà lại lộ nếu xem chung màn hình.
+
+      CHỐNG DÒ MÃ ĐƠN (quan trọng nhất về bảo mật — đây là endpoint DUY NHẤT trả
+      dữ liệu đơn hàng mà không cần session): (1) trả CÙNG 1 thông báo 404 cho cả
+      "mã không tồn tại" lẫn "sai số điện thoại", không bao giờ tiết lộ một mã
+      đơn có tồn tại hay không; (2) rate limit 10 lần / 5 phút / IP qua
+      `isRateLimited()` (lib/rateLimit.ts, đã viết lúc vá lỗ hổng MoMo) — chặt
+      hơn mức 30/5 phút của webhook MoMo; (3) chặn sớm khi số điện thoại dưới 9
+      chữ số để không query DB vô ích.
+
+      GIỚI HẠN CÓ CHỦ Ý: đơn NHẬN TẠI CỬA HÀNG không tra được theo cách này vì
+      luồng STORE_PICKUP không thu thập địa chỉ/số điện thoại nào cả
+      (`Order.addressId` là null) — không có gì để đối chiếu, và `User.phone`
+      luôn null từ khi chuyển sang đăng nhập Google. Hàm trả null như mọi trường
+      hợp không khớp khác (không trả thông báo riêng, tránh lộ loại đơn), nhưng
+      TRANG tra cứu có ghi rõ điều này kèm link đăng nhập để khách không tưởng
+      là mất đơn.
+
+      API `POST /api/orders/lookup` (mới): chỉ trả đúng các field cần hiển thị
+      (mã, ngày, trạng thái, sản phẩm, tổng tiền, địa chỉ, lịch sử trạng thái,
+      phương thức + trạng thái thanh toán) — KHÔNG trả `userId`, `id` đơn,
+      `transactionRef` hay email khách.
+
+      src/lib/orderLabels.ts (mới): tách 3 map nhãn tiếng Việt
+      (PAYMENT_METHOD_LABELS / DELIVERY_METHOD_LABELS / ORDER_STATUS_LABELS) ra
+      khỏi lib/orders.ts. LÝ DO: OrderLookupForm là CLIENT COMPONENT, import
+      thẳng từ "@/lib/orders" sẽ kéo cả Prisma vào bundle trình duyệt.
+      lib/orders.ts import lại rồi re-export 3 tên này nên ~10 file đang import
+      từ "@/lib/orders" không phải sửa gì.
+
+      UI: `/tra-cuu-don-hang` (trang công khai) + OrderLookupForm.tsx (client) —
+      form 2 ô, kết quả hiện ngay dưới form dạng chỉ-đọc (badge trạng thái dùng
+      lại đúng bộ STATUS_STYLES của /orders/[id] để cùng trạng thái không mang 2
+      màu ở 2 trang). Không có nút thanh toán lại/hủy đơn như trang của chủ đơn —
+      chỉ xem. Link vào: thanh nav phụ ở Header hiện "Tra cứu đơn hàng" cho khách
+      CHƯA đăng nhập (đúng chỗ đang hiện "Đơn hàng của tôi" cho khách đã đăng
+      nhập, không làm nav dài thêm), và Footer nhóm "Hỗ trợ" hiện cho mọi người.
+      Đã thêm URL này vào sitemap.ts (trang công khai, nên để Google index).
+
+      Đã test qua dev server bằng DB THẬT (tạo user/session/cart test, đặt 2 đơn
+      thật rồi gọi API tra cứu KHÔNG kèm cookie session nào, dọn sạch sau khi
+      xong): đúng mã + đúng SĐT -> 200 kèm đủ sản phẩm và SĐT hiện đúng dạng che
+      "0912***678"; SĐT dạng "+84912345678" và "0912 345 678" cùng mã viết thường
+      đều vẫn khớp -> 200; sai SĐT -> 404; mã không tồn tại -> 404 (cùng y hệt
+      thông báo); đơn nhận tại cửa hàng -> 404 đúng chủ ý; rate limit chặn 429
+      đúng từ lần thứ 11; `/tra-cuu-don-hang` trả 200 kèm form và ghi chú về đơn
+      nhận tại cửa hàng. `tsc --noEmit`/`eslint`/`npm run build` sạch.
+
+      LƯU Ý phát hiện lúc test (không phải bug, nhưng dễ kết luận nhầm): chạy
+      `npm run build` ở local có thể in hàng loạt lỗi
+      "(EMAXCONNSESSION) max clients reached ... pool_size: 15" kèm dòng
+      "revalidating cache with key: ..." — số lỗi DAO ĐỘNG NGẪU NHIÊN giữa các
+      lần build trên CÙNG một mã nguồn (đã đo: 0 rồi 20 ở 2 lần liên tiếp). Đây
+      là Next.js tự làm mới các entry `unstable_cache` đã hết TTL trong lúc
+      build, đụng trần 15 kết nối của Supabase Session Pooler — KHÔNG làm build
+      thất bại (vẫn exit 0, đủ route) và KHÔNG liên quan tới thay đổi đang làm.
+      Đừng vội kết luận "trang mới bị prerender lúc build" như lỗi sitemap.xml
+      trước đây: mọi route trong dự án đều là Dynamic (ƒ) vì layout.tsx dùng
+      `cookies()` qua Header, nên KHÔNG cần thêm `export const dynamic =
+      "force-dynamic"` cho trang tĩnh mới — muốn kiểm chứng thì xem cột ○/ƒ
+      trong danh sách route ở cuối build, đừng dựa vào số lỗi pool.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4406,8 +4479,10 @@
       01/07/2025), và phí ship chia 3 vùng theo tỉnh thay cho hằng số 30.000đ.
       Còn thiếu: "giao nhanh 1h/giao trong ngày" (cần đối tác vận chuyển thật)
       và Header chưa cho chọn tỉnh/thành để lọc tồn kho theo khu vực.
-- [ ] **Không tra cứu đơn cho khách chưa đăng nhập** (FPT Shop cho tra bằng
-      mã đơn + SĐT).
+- [x] **Không tra cứu đơn cho khách chưa đăng nhập** — ĐÃ LÀM: `/tra-cuu-don-hang`
+      tra bằng mã đơn + SĐT người nhận, có rate limit và không lộ mã đơn có tồn
+      tại hay không. Đơn nhận tại cửa hàng vẫn phải đăng nhập (luồng đó không
+      thu thập SĐT nào).
 - [ ] **`Shipment` không dùng** → không có mã vận đơn/theo dõi giao hàng.
       **`AuditLog` không dùng** → không có nhật ký thao tác admin (ai sửa giá,
       ai đổi trạng thái đơn).

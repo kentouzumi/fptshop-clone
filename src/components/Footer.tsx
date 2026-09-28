@@ -14,6 +14,7 @@ const FOOTER_LINKS: { title: string; links: { label: string; href: string }[] }[
   {
     title: "Hỗ trợ",
     links: [
+      { label: "Tra cứu đơn hàng", href: "/tra-cuu-don-hang" },
       { label: "Trung tâm hỗ trợ", href: "/support" },
       { label: "Câu hỏi thường gặp", href: "/faq" },
       { label: "Tra cứu bảo hành", href: "/warranty" },

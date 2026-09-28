@@ -89,6 +89,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.5,
     },
+    {
+      // Trang công khai, không cần đăng nhập -> nên để Google index.
+      url: absoluteUrl("/tra-cuu-don-hang"),
+      lastModified: catalogUpdatedAt,
+      changeFrequency: "monthly",
+      priority: 0.5,
+    },
     ...staticPages.map((p) => ({
       url: absoluteUrl(`/pages/${p.slug}`),
       lastModified: p.updatedAt,

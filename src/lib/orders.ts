@@ -14,29 +14,14 @@ import { createMomoPaymentUrl, verifyMomoCallback } from "@/lib/momo";
 import { reserveStockOrThrow, releaseStock } from "@/lib/inventory";
 import { getShippingFee } from "@/lib/vnAddress";
 
-export const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  COD: "Thanh toán khi nhận hàng (COD)",
-  VNPAY: "VNPay",
-  MOMO: "Ví MoMo",
-  BANK_TRANSFER: "Chuyển khoản ngân hàng (VietQR)",
-};
+import {
+  PAYMENT_METHOD_LABELS,
+  DELIVERY_METHOD_LABELS,
+  ORDER_STATUS_LABELS,
+} from "@/lib/orderLabels";
 
-export const DELIVERY_METHOD_LABELS: Record<string, string> = {
-  HOME_DELIVERY: "Giao hàng tận nơi",
-  STORE_PICKUP: "Nhận tại cửa hàng",
-};
-
-export const ORDER_STATUS_LABELS: Record<string, string> = {
-  PENDING: "Chờ xác nhận",
-  CONFIRMED: "Đã xác nhận",
-  PROCESSING: "Đang xử lý",
-  SHIPPING: "Đang giao",
-  DELIVERED: "Đã giao",
-  COMPLETED: "Hoàn thành",
-  CANCELLED: "Đã hủy",
-  RETURN_REQUESTED: "Yêu cầu trả hàng",
-  RETURNED: "Đã trả hàng",
-};
+// Re-export để mọi nơi đang import 3 nhãn này từ "@/lib/orders" không phải sửa.
+export { PAYMENT_METHOD_LABELS, DELIVERY_METHOD_LABELS, ORDER_STATUS_LABELS };
 
 function generateOrderCode() {
   const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -243,6 +228,56 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
 
     return created;
   });
+
+  return order;
+}
+
+/**
+ * Chuẩn hóa số điện thoại để so khớp: chỉ giữ chữ số và quy dạng +84 về 0
+ * (khách gõ "0912 345 678", "+84912345678", "84912345678" đều phải khớp nhau).
+ */
+function normalizePhoneForLookup(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.startsWith("84")) return `0${digits.slice(2)}`;
+  return digits;
+}
+
+/** Ẩn bớt số điện thoại khi hiện cho khách tra cứu: 0912345678 -> 0912***678 */
+export function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 7) return phone;
+  return `${digits.slice(0, 4)}***${digits.slice(-3)}`;
+}
+
+/**
+ * Tra cứu đơn hàng cho khách CHƯA ĐĂNG NHẬP: cần đúng mã đơn VÀ số điện thoại
+ * người nhận. Trả về null cho mọi trường hợp không khớp (không phân biệt "mã
+ * không tồn tại" với "sai số điện thoại") để không thành công cụ dò mã đơn.
+ *
+ * GIỚI HẠN CÓ CHỦ Ý: đơn NHẬN TẠI CỬA HÀNG không tra được bằng cách này vì
+ * luồng đó không thu thập địa chỉ/số điện thoại nào cả (Order.addressId là
+ * null) — không có gì để đối chiếu. Khách phải đăng nhập để xem, trang tra cứu
+ * có ghi rõ điều này.
+ */
+export async function lookupOrderByCodeAndPhone(code: string, phone: string) {
+  const normalizedCode = code.trim().toUpperCase();
+  const normalizedPhone = normalizePhoneForLookup(phone);
+  // Số điện thoại VN ngắn nhất 10 chữ số; chặn sớm để không query DB vô ích.
+  if (!normalizedCode || normalizedPhone.length < 9) return null;
+
+  const order = await prisma.order.findUnique({
+    where: { code: normalizedCode },
+    include: {
+      items: true,
+      address: true,
+      payments: true,
+      pickupStore: true,
+      statusHistory: { orderBy: { createdAt: "asc" } },
+    },
+  });
+
+  if (!order || !order.address) return null;
+  if (normalizePhoneForLookup(order.address.phone) !== normalizedPhone) return null;
 
   return order;
 }
