@@ -4646,6 +4646,97 @@
       tức là phải bỏ cache hoặc tách thành 2 bước lọc). Trang /compare cũng chưa
       hiện tình trạng hàng (dùng type riêng, không qua ProductCard).
 
+- [x] Vận đơn / theo dõi giao hàng (dùng model `Shipment` đã có sẵn trong schema
+      từ đầu dự án nhưng CHƯA MỘT DÒNG CODE NÀO dùng tới — mục "`Shipment` không
+      dùng → không có mã vận đơn/theo dõi giao hàng" trong bản rà soát so với
+      fptshop.com.vn). KHÔNG cần đổi schema.
+
+      QUYẾT ĐỊNH KIẾN TRÚC quan trọng nhất — 2 state machine không được mâu
+      thuẫn: `Order.status` vẫn là NGUỒN CHÂN LÝ DUY NHẤT về việc đơn đã giao hay
+      chưa, `Shipment.status` chỉ mô tả chi tiết hơn chặng vận chuyển ở giữa. Vì
+      vậy admin KHÔNG tự đặt được vận đơn sang `DELIVERED`
+      (`ADMIN_SETTABLE_SHIPMENT_STATUSES` chỉ có PREPARING/IN_TRANSIT/
+      OUT_FOR_DELIVERY/FAILED, API trả 400 nếu cố gửi DELIVERED) — giá trị đó do
+      `updateOrderStatus()` tự ghi kèm `deliveredAt` khi đơn chuyển sang
+      DELIVERED. Nếu cho đặt tay ở cả 2 nơi thì sẽ có lúc vận đơn nói "đã giao"
+      còn đơn hàng nói "đang giao", không biết tin cái nào. Chiều ngược lại cũng
+      bị chặn: đơn đã giao xong rồi thì `upsertShipmentForOrder()` trả 409, không
+      cho kéo vận đơn ngược về IN_TRANSIT.
+
+      src/lib/shipments.ts (mới): `CARRIER_SUGGESTIONS` (7 đơn vị vận chuyển phổ
+      biến VN — chỉ là GỢI Ý qua `<datalist>`, admin gõ tên khác vẫn lưu được),
+      `parseShipmentInput()`, `upsertShipmentForOrder()` (admin),
+      `ensureShipmentOnShipping()` + `markShipmentDelivered()` (2 hàm nhận `tx`
+      để gọi trong transaction của updateOrderStatus).
+
+      TỰ TẠO VẬN ĐƠN khi đơn chuyển sang SHIPPING (chỉ đơn giao tận nơi) để admin
+      luôn có sẵn 1 dòng để điền mã thay vì phải nhớ tự tạo. Tạo với status
+      `IN_TRANSIT` chứ KHÔNG phải `PREPARING` mặc định của schema — đơn đã sang
+      "Đang giao" nghĩa là hàng đã rời kho, để PREPARING sẽ mâu thuẫn ngay từ
+      đầu. Nếu admin đã tự nhập vận đơn TRƯỚC đó thì giữ nguyên, không ghi đè.
+
+      ĐƠN NHẬN TẠI CỬA HÀNG không có vận đơn: `ensureShipmentOnShipping()` bỏ qua
+      và `upsertShipmentForOrder()` trả 409. Lý do: khách tự tới lấy, không có
+      chặng vận chuyển nào để theo dõi. LƯU Ý đây là chỗ mà quyết định phạm vi cũ
+      (đơn STORE_PICKUP vẫn phải đi qua trạng thái SHIPPING vì dùng chung
+      ORDER_STATUS_TRANSITIONS — xem mục "Giao hàng tận cửa hàng") lộ ra: không
+      thể chỉ dựa vào `status === SHIPPING` để quyết định có tạo vận đơn hay
+      không, phải kiểm tra thêm `deliveryMethod`.
+
+      KHÔNG HARDCODE LINK TRA CỨU của từng đơn vị vận chuyển. Đã thử xác minh
+      mẫu URL của GHN (`donhang.ghn.vn/?order_code=`) và GHTK (`i.ghtk.vn/<mã>`)
+      bằng WebFetch: cả 2 trang CÓ tồn tại nhưng là SPA nên nội dung trả về
+      không xác nhận được tham số có đúng tên/đúng vị trí hay không, và không có
+      mã vận đơn thật để thử. Ship link đoán mò thì khách bấm vào rơi vào trang
+      tra cứu trống — nên chỉ hiện TÊN ĐƠN VỊ + MÃ VẬN ĐƠN (font mono, dễ copy)
+      để khách tự dán sang website hãng. Đây là việc có thể làm tiếp khi user
+      chọn được 1 đơn vị vận chuyển thật và có mã thật để kiểm chứng URL.
+
+      API `PATCH /api/admin/orders/[id]/shipment` (mới, requireAdmin).
+      UI admin: `ShipmentForm.tsx` nhúng vào /admin/orders/[id] — 4 ô (đơn vị vận
+      chuyển có datalist gợi ý, mã vận đơn, trạng thái vận chuyển, ngày giao dự
+      kiến) + dòng giải thích vì sao không có lựa chọn "Đã giao". Khối này TỰ ẨN
+      với đơn nhận tại cửa hàng, và chuyển sang chế độ chỉ-đọc khi đơn đã giao
+      xong. UI khách: khối "Vận chuyển" ở /orders/[id] VÀ ở trang tra cứu cho
+      khách chưa đăng nhập (/tra-cuu-don-hang) — chỉ hiện khi đã có vận đơn,
+      không dựng khối rỗng gây hiểu nhầm là đang thiếu thông tin.
+
+      `SHIPMENT_STATUS_LABELS` đặt trong lib/orderLabels.ts (không phải
+      lib/shipments.ts) vì cả OrderLookupForm lẫn ShipmentForm đều là CLIENT
+      COMPONENT — import từ lib/shipments.ts sẽ kéo Prisma vào bundle trình
+      duyệt, đúng lý do đã tách orderLabels.ts ở đợt làm trang tra cứu đơn.
+
+      Đã test qua dev server bằng DB THẬT (18/18 assertion đúng): chưa đăng nhập
+      và khách thường gọi API đều 403; admin nhập vận đơn TRƯỚC khi đơn sang
+      "Đang giao" vẫn được và ngày dự kiến lưu đúng; cố đặt DELIVERED bị chặn
+      400; khách thấy đúng mã vận đơn + tên đơn vị + nhãn trạng thái tiếng Việt;
+      đi hết luồng PENDING->...->SHIPPING thì vận đơn đã nhập tay KHÔNG bị ghi
+      đè; đơn khác không nhập tay thì TỰ có vận đơn IN_TRANSIT khi sang SHIPPING;
+      chuyển đơn sang DELIVERED thì vận đơn tự thành DELIVERED kèm deliveredAt,
+      và sau đó sửa ngược bị chặn 409; đơn NHẬN TẠI CỬA HÀNG không tự tạo vận đơn
+      và bị chặn 409 khi cố tạo, trang admin của nó cũng không hiện khối vận đơn
+      (đơn giao tận nơi thì có); tra cứu cho khách vãng lai trả kèm đúng vận đơn.
+      `tsc --noEmit`/`eslint`/`npm run build` sạch.
+
+      LỖI TRONG SCRIPT TEST (không phải lỗi app, nhưng suýt để lại rác): khối
+      `finally` dọn dữ liệu crash giữa chừng vì đoán sai tên trường —
+      `LoyaltyTransaction` khóa theo `accountId` chứ không phải `userId`, và
+      `Warranty` KHÔNG có `userId` nào cả (chỉ liên kết qua `OrderItem.warrantyId`).
+      Hậu quả: 2 user test + 1 phiếu bảo hành mồ côi + 3 đơn vị tồn kho bị giữ
+      lại. Đã tự phát hiện, kiểm kê lại DB rồi dọn đúng (warranty mồ côi nhận
+      diện bằng "không còn OrderItem nào trỏ tới VÀ không có claim"; LoyaltyAccount/
+      Transaction tự cascade theo user nên chỉ cần xóa user) — xác nhận lại DB về
+      đúng 8 user thật / 3 đơn thật / 0 vận đơn / 0 bảo hành / kho 20-20.
+      BÀI HỌC: đọc schema trước khi viết đoạn dọn dữ liệu, đừng suy ra tên khóa
+      ngoại theo trực giác — và kiểm kê lại DB sau mỗi lần test có hook tự động
+      (tích điểm, phát hành bảo hành) vì chúng tạo bản ghi ở model mà script
+      không nghĩ tới.
+
+      CHƯA LÀM: không tự đẩy trạng thái vận đơn từ API của đơn vị vận chuyển
+      (cần tài khoản merchant của GHN/GHTK...), không có lịch sử chặng đường của
+      vận đơn (model Shipment chỉ có 1 status hiện tại, muốn có timeline phải
+      thêm bảng mới), và chưa có link tra cứu như nói ở trên.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4730,8 +4821,12 @@
       tra bằng mã đơn + SĐT người nhận, có rate limit và không lộ mã đơn có tồn
       tại hay không. Đơn nhận tại cửa hàng vẫn phải đăng nhập (luồng đó không
       thu thập SĐT nào).
-- [ ] **`Shipment` không dùng** → không có mã vận đơn/theo dõi giao hàng.
-      **`AuditLog` không dùng** → không có nhật ký thao tác admin (ai sửa giá,
+- [x] **`Shipment`** — ĐÃ LÀM: admin nhập đơn vị vận chuyển + mã vận đơn + ngày
+      dự kiến, vận đơn tự sinh khi đơn sang "Đang giao" và tự chốt "Đã giao" theo
+      trạng thái đơn; khách xem được ở /orders/[id] và ở trang tra cứu. Còn
+      thiếu: link tra cứu sang website hãng (chưa xác minh được mẫu URL) và
+      timeline từng chặng.
+- [ ] **`AuditLog` không dùng** → không có nhật ký thao tác admin (ai sửa giá,
       ai đổi trạng thái đơn).
 - [ ] **Không có mục tin tức/blog** (fptshop.com.vn/tin-tuc là nguồn truy cập
       rất lớn của họ), **không có Hỏi–đáp (Q&A) dưới sản phẩm** (mới có đánh

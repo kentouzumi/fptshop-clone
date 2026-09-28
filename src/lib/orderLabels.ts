@@ -27,3 +27,11 @@ export const ORDER_STATUS_LABELS: Record<string, string> = {
   RETURN_REQUESTED: "Yêu cầu trả hàng",
   RETURNED: "Đã trả hàng",
 };
+
+export const SHIPMENT_STATUS_LABELS: Record<string, string> = {
+  PREPARING: "Đang chuẩn bị hàng",
+  IN_TRANSIT: "Đang vận chuyển",
+  OUT_FOR_DELIVERY: "Đang giao tới bạn",
+  DELIVERED: "Đã giao",
+  FAILED: "Giao không thành công",
+};

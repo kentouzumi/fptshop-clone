@@ -57,6 +57,15 @@ export async function POST(request: Request) {
         order.address!.district,
         order.address!.province,
       ]),
+      shipment: order.shipment
+        ? {
+            status: order.shipment.status,
+            carrier: order.shipment.carrier,
+            trackingCode: order.shipment.trackingCode,
+            estimatedDate: order.shipment.estimatedDate,
+            deliveredAt: order.shipment.deliveredAt,
+          }
+        : null,
       items: order.items.map((item) => ({
         id: item.id,
         productName: item.productName,

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrderDetail, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@/lib/orders";
+import { SHIPMENT_STATUS_LABELS } from "@/lib/orderLabels";
 import { buildVietQrUrl, getBankAccountInfo } from "@/lib/bankTransfer";
 import RetryPaymentButton from "./RetryPaymentButton";
 import { formatAddressLine } from "@/lib/vnAddress";
@@ -110,6 +111,36 @@ export default async function OrderDetailPage({
             </p>
           </div>
         )
+      )}
+
+      {/* Vận đơn: chỉ hiện khi admin đã tạo (tự tạo lúc đơn sang "Đang giao").
+          Trước khi có thì không hiện khối rỗng gây hiểu nhầm là đang thiếu gì. */}
+      {order.shipment && (
+        <div className="card mb-4 p-4">
+          <p className="mb-1 text-sm font-medium text-zinc-900">Vận chuyển</p>
+          <p className="text-sm text-zinc-700">
+            {SHIPMENT_STATUS_LABELS[order.shipment.status] ?? order.shipment.status}
+          </p>
+          {order.shipment.carrier && (
+            <p className="text-sm text-zinc-500">Đơn vị vận chuyển: {order.shipment.carrier}</p>
+          )}
+          {order.shipment.trackingCode && (
+            <p className="text-sm text-zinc-500">
+              Mã vận đơn: <span className="font-mono text-zinc-700">{order.shipment.trackingCode}</span>
+            </p>
+          )}
+          {order.shipment.deliveredAt ? (
+            <p className="text-sm text-zinc-500">
+              Đã giao lúc {order.shipment.deliveredAt.toLocaleString("vi-VN")}
+            </p>
+          ) : (
+            order.shipment.estimatedDate && (
+              <p className="text-sm text-zinc-500">
+                Dự kiến giao: {order.shipment.estimatedDate.toLocaleDateString("vi-VN")}
+              </p>
+            )
+          )}
+        </div>
       )}
 
       <div className="card divide-y divide-zinc-100">

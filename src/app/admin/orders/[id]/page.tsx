@@ -7,6 +7,9 @@ import {
 } from "@/lib/orders";
 import { isUsingPublicMomoTestCredentials } from "@/lib/momo";
 import OrderStatusUpdateForm from "../OrderStatusUpdateForm";
+import ShipmentForm from "./ShipmentForm";
+import { CARRIER_SUGGESTIONS, ADMIN_SETTABLE_SHIPMENT_STATUSES } from "@/lib/shipments";
+import { ShipmentStatus } from "@prisma/client";
 import ConfirmBankTransferButton from "../ConfirmBankTransferButton";
 import { formatAddressLine } from "@/lib/vnAddress";
 
@@ -118,6 +121,31 @@ export default async function AdminOrderDetailPage({
           )
         )}
       </div>
+
+      {/* Vận đơn chỉ có nghĩa với đơn giao tận nơi — đơn nhận tại cửa hàng thì
+          khách tự tới lấy, không có gì để theo dõi. */}
+      {order.deliveryMethod !== "STORE_PICKUP" && (
+        <div className="mb-6 card p-4">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-700">Vận đơn</h2>
+          <ShipmentForm
+            orderId={order.id}
+            carrierSuggestions={CARRIER_SUGGESTIONS}
+            settableStatuses={ADMIN_SETTABLE_SHIPMENT_STATUSES}
+            initial={{
+              carrier: order.shipment?.carrier ?? "",
+              trackingCode: order.shipment?.trackingCode ?? "",
+              status: order.shipment?.status ?? ShipmentStatus.PREPARING,
+              // input type="date" cần đúng dạng yyyy-MM-dd
+              estimatedDate: order.shipment?.estimatedDate
+                ? order.shipment.estimatedDate.toISOString().slice(0, 10)
+                : "",
+              deliveredAt: order.shipment?.deliveredAt
+                ? order.shipment.deliveredAt.toISOString()
+                : null,
+            }}
+          />
+        </div>
+      )}
 
       <div className="mb-6 card p-4">
         <h2 className="mb-2 text-sm font-semibold text-zinc-700">Thanh toán</h2>

@@ -13,6 +13,7 @@ import { createWarrantiesForOrder } from "@/lib/warranty";
 import { createMomoPaymentUrl, verifyMomoCallback } from "@/lib/momo";
 import { reserveStockOrThrow, releaseStock } from "@/lib/inventory";
 import { getShippingFee } from "@/lib/vnAddress";
+import { ensureShipmentOnShipping, markShipmentDelivered } from "@/lib/shipments";
 
 import {
   PAYMENT_METHOD_LABELS,
@@ -272,6 +273,7 @@ export async function lookupOrderByCodeAndPhone(code: string, phone: string) {
       address: true,
       payments: true,
       pickupStore: true,
+      shipment: true,
       statusHistory: { orderBy: { createdAt: "asc" } },
     },
   });
@@ -285,7 +287,7 @@ export async function lookupOrderByCodeAndPhone(code: string, phone: string) {
 export async function getOrderDetail(orderId: string, userId: string) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { items: true, address: true, payments: true, pickupStore: true },
+    include: { items: true, address: true, payments: true, pickupStore: true, shipment: true },
   });
 
   if (!order || order.userId !== userId) return null;
@@ -359,6 +361,7 @@ export async function getOrderDetailForAdmin(orderId: string) {
       pickupStore: true,
       payments: true,
       user: true,
+      shipment: true,
       statusHistory: { orderBy: { createdAt: "asc" } },
     },
   });
@@ -386,6 +389,12 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderStatus,
       data: { orderId, status: newStatus, note: note || null },
     });
 
+    // Đơn chuyển sang "Đang giao": tự tạo sẵn vận đơn cho đơn giao tận nơi để
+    // admin có chỗ điền mã vận đơn ngay (xem lib/shipments.ts).
+    if (newStatus === OrderStatus.SHIPPING) {
+      await ensureShipmentOnShipping(tx, order.id, order.deliveryMethod);
+    }
+
     // COD được thu tiền lúc giao hàng nên tự đánh dấu đã thanh toán khi chuyển sang DELIVERED
     if (newStatus === OrderStatus.DELIVERED) {
       const codPayment = order.payments.find(
@@ -401,6 +410,8 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderStatus,
       // Giao thành công: tích điểm thành viên + phát hành phiếu bảo hành cho từng sản phẩm
       await awardPointsForOrder(tx, order.userId, order.id, Number(order.grandTotal));
       await createWarrantiesForOrder(tx, order.id);
+      // Order.status là nguồn chân lý về "đã giao hay chưa" — vận đơn bám theo.
+      await markShipmentDelivered(tx, order.id);
     }
 
     // Đơn bị hủy: hoàn lại đúng số lượng đã trừ kho lúc tạo đơn (xem
@@ -435,6 +446,7 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderStatus,
         pickupStore: true,
         payments: true,
         user: true,
+        shipment: true,
         statusHistory: { orderBy: { createdAt: "asc" } },
       },
     });

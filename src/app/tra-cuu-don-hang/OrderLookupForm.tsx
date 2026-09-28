@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS, DELIVERY_METHOD_LABELS } from "@/lib/orderLabels";
+import {
+  ORDER_STATUS_LABELS,
+  PAYMENT_METHOD_LABELS,
+  DELIVERY_METHOD_LABELS,
+  SHIPMENT_STATUS_LABELS,
+} from "@/lib/orderLabels";
 
 const STATUS_STYLES: Record<string, string> = {
   PENDING: "bg-amber-50 text-amber-700",
@@ -34,6 +39,13 @@ interface LookupOrder {
   recipientName: string;
   phone: string;
   addressLine: string;
+  shipment: {
+    status: string;
+    carrier: string | null;
+    trackingCode: string | null;
+    estimatedDate: string | null;
+    deliveredAt: string | null;
+  } | null;
   items: { id: string; productName: string; variantLabel: string | null; quantity: number; lineTotal: number }[];
   payments: { id: string; method: string; status: string }[];
   statusHistory: { id: string; status: string; note: string | null; createdAt: string }[];
@@ -136,6 +148,38 @@ export default function OrderLookupForm() {
             </p>
             <p className="text-sm text-zinc-500">{order.addressLine}</p>
           </div>
+
+          {order.shipment && (
+            <div className="card p-5">
+              <h2 className="mb-2 text-sm font-semibold text-zinc-900">Vận chuyển</h2>
+              <p className="text-sm text-zinc-700">
+                {SHIPMENT_STATUS_LABELS[order.shipment.status] ?? order.shipment.status}
+              </p>
+              {order.shipment.carrier && (
+                <p className="text-sm text-zinc-500">
+                  Đơn vị vận chuyển: {order.shipment.carrier}
+                </p>
+              )}
+              {order.shipment.trackingCode && (
+                <p className="text-sm text-zinc-500">
+                  Mã vận đơn:{" "}
+                  <span className="font-mono text-zinc-700">{order.shipment.trackingCode}</span>
+                </p>
+              )}
+              {order.shipment.deliveredAt ? (
+                <p className="text-sm text-zinc-500">
+                  Đã giao lúc {formatDate(order.shipment.deliveredAt)}
+                </p>
+              ) : (
+                order.shipment.estimatedDate && (
+                  <p className="text-sm text-zinc-500">
+                    Dự kiến giao:{" "}
+                    {new Date(order.shipment.estimatedDate).toLocaleDateString("vi-VN")}
+                  </p>
+                )
+              )}
+            </div>
+          )}
 
           <div className="card divide-y divide-zinc-100">
             {order.items.map((item) => (
