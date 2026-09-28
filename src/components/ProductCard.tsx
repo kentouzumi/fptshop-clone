@@ -30,9 +30,12 @@ function formatPrice(value: number) {
 export default function ProductCard({
   product,
   initialInWishlist = false,
+  outOfStock = false,
 }: {
   product: ProductCardData;
   initialInWishlist?: boolean;
+  /** Tồn kho tra riêng, không đi qua cache 60s của getProducts (xem lib/inventory.ts). */
+  outOfStock?: boolean;
 }) {
   const router = useRouter();
   const [inWishlist, setInWishlist] = useState(initialInWishlist);
@@ -90,8 +93,18 @@ export default function ProductCard({
             alt={product.name}
             fill
             sizes="(max-width: 640px) 50vw, 25vw"
-            className="object-cover transition duration-300 group-hover:scale-105"
+            className={`object-cover transition duration-300 group-hover:scale-105 ${
+              outOfStock ? "opacity-40" : ""
+            }`}
           />
+        )}
+        {/* Card vẫn bấm vào được: hết hàng không có nghĩa là không được xem
+            thông số/đánh giá, và trang chi tiết mới là nơi nói rõ còn hàng ở
+            cửa hàng nào. */}
+        {outOfStock && (
+          <span className="absolute inset-x-0 bottom-0 bg-zinc-900/80 py-1 text-center text-xs font-medium text-white">
+            Hết hàng
+          </span>
         )}
       </div>
       <p className="text-xs text-zinc-500">{product.brand ?? product.category}</p>

@@ -4587,6 +4587,65 @@
       (`.next/**/chunks/**/CouponsManager*.js`), hoặc dựng test có thao tác mở
       form thật.
 
+- [x] Badge "Hết hàng" trên ProductCard ở trang danh mục/trang chủ/yêu thích/sản
+      phẩm liên quan — mục CỐ Ý BỎ LẠI ở đợt "Hiện tình trạng còn hàng cho
+      khách" (lúc đó ghi rõ lý do: `getProducts()` cache `revalidate: 60` nên
+      tồn kho hiện ở danh sách có thể trễ tới 1 phút, mà hiện "còn hàng" cho máy
+      vừa hết đúng là thứ tính năng này sinh ra để tránh).
+
+      CÁCH GIẢI QUYẾT đúng như đã ghi sẵn: TÁCH tồn kho ra khỏi phần cache thay
+      vì bỏ cache của `getProducts()`. `getOutOfStockProductIds(productIds[])`
+      (lib/inventory.ts, KHÔNG cache) nhận đúng danh sách id đang hiển thị trên
+      trang rồi trả về Set các sản phẩm đã hết. Danh sách sản phẩm (tên, giá,
+      ảnh, rating — thứ gần như không đổi) vẫn hưởng cache 60s như cũ, chỉ riêng
+      tồn kho là luôn tươi. Chi phí: mỗi trang có lưới sản phẩm tốn thêm 2 query,
+      cả 2 đều gọn theo `in` trên cột đã đánh index.
+
+      QUY ƯỚC "HẾT HÀNG" khớp CHÍNH XÁC điều kiện chặn của
+      `reserveStockOrThrow()` để card không bao giờ nói khác trang chi tiết:
+      + Không còn cửa hàng nào hoạt động -> KHÔNG đánh dấu gì (fail-open, vì lúc
+        đặt hàng cũng bỏ qua kiểm tra tồn kho).
+      + Sản phẩm không có biến thể đang bán -> không đánh dấu (không mua được vì
+        lý do khác, nút mua ở trang chi tiết đã tự disable).
+      + Ngược lại: hết hàng khi MỌI biến thể đang bán đều bằng 0 ở MỌI cửa hàng
+        đang hoạt động. Còn hàng ở 1 cửa hàng lẻ VẪN mua được qua "Nhận tại cửa
+        hàng" nên KHÔNG tính là hết — giống hệt nguyên tắc đã áp dụng cho
+        `addToCart()`.
+      + Biến thể chưa có dòng Inventory nào -> tính là 0, khớp với việc
+        reserveStockOrThrow() đọc `inventory?.quantity ?? 0` rồi chặn.
+
+      ProductCard.tsx: thêm prop `outOfStock` (mặc định false) — ảnh mờ đi
+      (`opacity-40`) + dải chữ "Hết hàng" nền tối chạy ngang đáy ảnh. Card VẪN
+      bấm vào được: hết hàng không có nghĩa là không được xem thông số/đánh giá,
+      và trang chi tiết mới là nơi nói rõ còn hàng ở cửa hàng nào.
+
+      Đã nối đủ CẢ 5 chỗ dùng ProductCard (bài học từ đợt thêm nút yêu thích lên
+      card — sửa thiếu 1 chỗ là chỗ đó im lặng sai): trang chủ (nổi bật + mới,
+      gộp id 2 khối thành 1 lần gọi), /products, /wishlist, và sản phẩm liên quan
+      ở /products/[slug]. Ở trang chủ và /products, lệnh gọi mới chạy SONG SONG
+      với `getWishlistedProductIds()` trong cùng `Promise.all` (không thêm
+      round-trip nối tiếp); ở trang chi tiết thì nhét thẳng vào ĐỢT Promise.all
+      THỨ HAI đã có sẵn.
+
+      Đã test qua dev server bằng DB THẬT (đổi tạm tồn kho rồi KHÔI PHỤC, script
+      bọc try/finally nên khôi phục chạy cả khi lỗi giữa chừng — kho về đúng
+      20/20 sau cả 3 lượt test): còn hàng thì không trang nào có badge; hết sạch
+      thì /products và /wishlist mỗi trang đúng 1 badge và card vẫn giữ link tới
+      trang sản phẩm; đưa riêng 1 cửa hàng lẻ về 3 thì KHÔNG bị đánh dấu hết
+      hàng; đổi tồn kho rồi tải lại là thấy NGAY (1 -> 0 badge, chứng minh không
+      dính cache 60s); trang chi tiết và JSON-LD vẫn nhất quán (OutOfStock).
+      Test riêng trang chủ bằng đúng 1 sản phẩm `isFeatured` (Samsung Galaxy S24
+      Ultra) vì Dell XPS 13 dùng ở các test trên không nằm trong danh sách trang
+      chủ — assertion đầu tiên viết là `>= 0` nên luôn đúng, vô nghĩa, đã làm
+      lại cho đúng: 0 -> 1 badge. Test riêng ca NHIỀU BIẾN THỂ trên cùng sản phẩm
+      đó: mọi biến thể = 0 thì có badge, để 1 biến thể còn 5 cái thì hết badge.
+      `tsc --noEmit`/`eslint`/`npm run build` sạch.
+
+      CHƯA LÀM: không lọc/sắp xếp được theo "chỉ hiện hàng còn" ở /products
+      (muốn làm thì phải đưa tồn kho vào chính where-clause của getProducts(),
+      tức là phải bỏ cache hoặc tách thành 2 bước lọc). Trang /compare cũng chưa
+      hiện tình trạng hàng (dùng type riêng, không qua ProductCard).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4651,9 +4710,10 @@
       phải chỉ thêm nhãn (xem lý do cố ý chưa làm ở mục giá gạch ngang).
 - [x] **Tình trạng còn hàng cho khách** — ĐÃ LÀM: trang chi tiết hiện "Còn
       hàng / Chỉ còn N / Hết hàng" theo đúng biến thể đang chọn, kèm danh sách
-      cửa hàng còn hàng, khóa nút mua khi hết, và chặn lại ở API giỏ hàng. Còn
-      thiếu badge "Hết hàng" trên ProductCard (danh sách đang cache 60s nên số
-      tồn kho hiện ở đó có thể trễ — xem lý do trong mục Tiến độ).
+      cửa hàng còn hàng, khóa nút mua khi hết, và chặn lại ở API giỏ hàng. Badge
+      "Hết hàng" trên ProductCard cũng đã làm (tách tồn kho ra khỏi cache 60s của
+      getProducts bằng 1 query riêng không cache). Còn thiếu: lọc "chỉ hiện hàng
+      còn" ở /products và tình trạng hàng ở trang /compare.
 - [x] **Trang tổng quan `/admin`** — ĐÃ LÀM (trước đó `/admin` bị 404 vì thiếu
       `page.tsx`): doanh thu 3 mốc, đơn theo trạng thái, đơn mới nhất, chuyển
       khoản chờ xác nhận, hàng sắp hết. Còn thiếu biểu đồ theo ngày và bộ chọn

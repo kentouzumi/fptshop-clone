@@ -17,6 +17,7 @@ import ReviewVoteButtons from "./ReviewVoteButtons";
 import ProductCard from "@/components/ProductCard";
 import StarRating from "@/components/StarRating";
 import CompareToggle from "@/components/CompareToggle";
+import { getOutOfStockProductIds } from "@/lib/inventory";
 
 // Bọc `cache()` của React: generateMetadata và chính component cùng cần đủ dữ
 // liệu sản phẩm, gọi riêng lẻ sẽ thành 2 lượt query y hệt nhau cho MỖI lần
@@ -130,6 +131,7 @@ export default async function ProductDetailPage({
     inWishlist,
     relatedWishlistedIds,
     stockByVariant,
+    relatedOutOfStockIds,
   ] = await Promise.all([
     getProductReviews(product.id, currentUser?.id),
     currentUser ? getUserReviewForProduct(currentUser.id, product.id) : Promise.resolve(null),
@@ -141,6 +143,7 @@ export default async function ProductDetailPage({
     // của JSON-LD — cùng 1 nguồn để trang và dữ liệu khai cho Google không
     // bao giờ nói 2 điều khác nhau.
     getProductStockInfo(product.id),
+    getOutOfStockProductIds(related.map((p) => p.id)),
   ]);
 
   const prices = product.variants.map((v) => Number(v.price));
@@ -372,7 +375,12 @@ export default async function ProductDetailPage({
           <h2 className="mb-4 text-lg font-semibold tracking-tight">Sản phẩm cùng danh mục</h2>
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
             {related.map((p) => (
-              <ProductCard key={p.id} product={p} initialInWishlist={relatedWishlistedIds.has(p.id)} />
+              <ProductCard
+                key={p.id}
+                product={p}
+                initialInWishlist={relatedWishlistedIds.has(p.id)}
+                outOfStock={relatedOutOfStockIds.has(p.id)}
+              />
             ))}
           </div>
         </section>

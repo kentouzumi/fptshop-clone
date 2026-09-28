@@ -10,6 +10,7 @@ import ProductCard from "@/components/ProductCard";
 import HeroBanner from "@/components/HeroBanner";
 import JsonLd from "@/components/JsonLd";
 import { SITE_NAME, absoluteUrl } from "@/lib/siteUrl";
+import { getOutOfStockProductIds } from "@/lib/inventory";
 
 export const metadata = {
   alternates: { canonical: "/" },
@@ -38,12 +39,14 @@ export default async function Home() {
     getActivePromotions(),
   ]);
 
-  const wishlistedIds = currentUser
-    ? await getWishlistedProductIds(currentUser.id, [
-        ...featured.products.map((p) => p.id),
-        ...newest.products.map((p) => p.id),
-      ])
-    : new Set<string>();
+  const shownIds = [
+    ...featured.products.map((p) => p.id),
+    ...newest.products.map((p) => p.id),
+  ];
+  const [wishlistedIds, outOfStockIds] = await Promise.all([
+    currentUser ? getWishlistedProductIds(currentUser.id, shownIds) : new Set<string>(),
+    getOutOfStockProductIds(shownIds),
+  ]);
 
   return (
     <div className="flex flex-col gap-14 pb-16">
@@ -123,7 +126,12 @@ export default async function Home() {
           </div>
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
             {featured.products.map((p) => (
-              <ProductCard key={p.id} product={p} initialInWishlist={wishlistedIds.has(p.id)} />
+              <ProductCard
+                key={p.id}
+                product={p}
+                initialInWishlist={wishlistedIds.has(p.id)}
+                outOfStock={outOfStockIds.has(p.id)}
+              />
             ))}
           </div>
         </section>
@@ -135,7 +143,12 @@ export default async function Home() {
         </div>
         <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
           {newest.products.map((p) => (
-            <ProductCard key={p.id} product={p} initialInWishlist={wishlistedIds.has(p.id)} />
+            <ProductCard
+              key={p.id}
+              product={p}
+              initialInWishlist={wishlistedIds.has(p.id)}
+              outOfStock={outOfStockIds.has(p.id)}
+            />
           ))}
         </div>
       </section>

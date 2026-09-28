@@ -258,3 +258,59 @@ export async function getProductStockInfo(productId: string): Promise<ProductSto
 }
 
 export const EMPTY_VARIANT_STOCK: VariantStockInfo = { total: 0, deliverable: 0, stores: [] };
+
+/**
+ * Trả về tập id của các sản phẩm ĐÃ HẾT HÀNG trong danh sách truyền vào.
+ *
+ * TÁCH RIÊNG khỏi `getProducts()` (vốn `unstable_cache` với `revalidate: 60`)
+ * và CỐ Ý KHÔNG CACHE: tồn kho đổi theo từng đơn, hiện "còn hàng" cho máy vừa
+ * hết đúng là thứ tính năng này sinh ra để tránh. Đổi lại mỗi trang có danh
+ * sách sản phẩm tốn thêm 2 query, nhưng cả 2 đều là query gọn theo `in` trên
+ * cột đã đánh index.
+ *
+ * Quy ước "hết hàng" khớp CHÍNH XÁC với điều kiện chặn của
+ * `reserveStockOrThrow()`, để card không bao giờ nói khác trang chi tiết:
+ * - Không còn cửa hàng nào hoạt động -> KHÔNG đánh dấu gì (fail-open, vì lúc
+ *   đặt hàng cũng bỏ qua kiểm tra tồn kho).
+ * - Sản phẩm không có biến thể đang bán -> không đánh dấu (không mua được vì
+ *   lý do khác, nút mua đã tự disable ở trang chi tiết).
+ * - Ngược lại: hết hàng khi MỌI biến thể đang bán đều bằng 0 ở MỌI cửa hàng
+ *   đang hoạt động. Còn hàng ở 1 cửa hàng lẻ vẫn mua được qua "Nhận tại cửa
+ *   hàng" nên không tính là hết.
+ */
+export async function getOutOfStockProductIds(productIds: string[]): Promise<Set<string>> {
+  if (productIds.length === 0) return new Set();
+
+  const [activeStoreCount, variants] = await Promise.all([
+    prisma.store.count({ where: { isActive: true } }),
+    prisma.productVariant.findMany({
+      where: { productId: { in: productIds }, isActive: true },
+      select: {
+        productId: true,
+        inventories: {
+          where: { store: { isActive: true } },
+          select: { quantity: true },
+        },
+      },
+    }),
+  ]);
+
+  if (activeStoreCount === 0) return new Set();
+
+  // Biến thể chưa có dòng Inventory nào -> tổng 0, khớp với việc
+  // reserveStockOrThrow() đọc `inventory?.quantity ?? 0` rồi chặn.
+  const hasStockByProduct = new Map<string, boolean>();
+  for (const variant of variants) {
+    const total = variant.inventories.reduce((sum, row) => sum + row.quantity, 0);
+    hasStockByProduct.set(
+      variant.productId,
+      (hasStockByProduct.get(variant.productId) ?? false) || total > 0
+    );
+  }
+
+  const outOfStock = new Set<string>();
+  for (const [productId, hasStock] of hasStockByProduct) {
+    if (!hasStock) outOfStock.add(productId);
+  }
+  return outOfStock;
+}

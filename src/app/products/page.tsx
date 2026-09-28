@@ -7,6 +7,7 @@ import { getActiveCategories } from "@/lib/categories";
 import ProductCard from "@/components/ProductCard";
 import SortSelect from "./SortSelect";
 import FilterSidebar, { PRICE_RANGES } from "./FilterSidebar";
+import { getOutOfStockProductIds } from "@/lib/inventory";
 
 function buildHref(
   current: Record<string, string | undefined>,
@@ -169,9 +170,11 @@ export default async function ProductsPage({
     ? (await getActiveCategories()).find((c) => c.slug === params.category)?.name
     : undefined;
 
-  const wishlistedIds = currentUser
-    ? await getWishlistedProductIds(currentUser.id, products.map((p) => p.id))
-    : new Set<string>();
+  const shownIds = products.map((p) => p.id);
+  const [wishlistedIds, outOfStockIds] = await Promise.all([
+    currentUser ? getWishlistedProductIds(currentUser.id, shownIds) : new Set<string>(),
+    getOutOfStockProductIds(shownIds),
+  ]);
 
   const activePriceKey =
     PRICE_RANGES.find(
@@ -206,7 +209,12 @@ export default async function ProductsPage({
           ) : (
             <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
               {products.map((p) => (
-                <ProductCard key={p.id} product={p} initialInWishlist={wishlistedIds.has(p.id)} />
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  initialInWishlist={wishlistedIds.has(p.id)}
+                  outOfStock={outOfStockIds.has(p.id)}
+                />
               ))}
             </div>
           )}

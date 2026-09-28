@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistProducts } from "@/lib/wishlist";
 import ProductCard from "@/components/ProductCard";
+import { getOutOfStockProductIds } from "@/lib/inventory";
 
 export default async function WishlistPage() {
   const user = await getCurrentUser();
@@ -11,6 +12,7 @@ export default async function WishlistPage() {
   }
 
   const products = await getWishlistProducts(user.id);
+  const outOfStockIds = await getOutOfStockProductIds(products.map((p) => p.id));
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -28,7 +30,12 @@ export default async function WishlistPage() {
       ) : (
         <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
           {products.map((p) => (
-            <ProductCard key={p.id} product={p} initialInWishlist />
+            <ProductCard
+              key={p.id}
+              product={p}
+              initialInWishlist
+              outOfStock={outOfStockIds.has(p.id)}
+            />
           ))}
         </div>
       )}
