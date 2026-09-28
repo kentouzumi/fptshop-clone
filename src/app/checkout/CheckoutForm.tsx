@@ -3,17 +3,32 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ProvinceWardPicker from "@/components/ProvinceWardPicker";
 
 export interface SavedAddress {
   id: string;
   recipientName: string;
   phone: string;
   province: string;
-  district: string;
   ward: string;
   streetDetail: string;
   label: string | null;
   isDefault: boolean;
+  /** Phí ship theo khu vực của địa chỉ này, tính sẵn ở server. */
+  shippingFee: number;
+  zoneLabel: string;
+}
+
+/**
+ * Phí ship tính sẵn cho từng tỉnh/thành ở server — KHÔNG gọi getShippingFee()
+ * trực tiếp trong client component, vì hàm đó kéo theo cả file dữ liệu 3321
+ * phường/xã vào bundle trình duyệt.
+ */
+export interface ProvinceShipping {
+  code: number;
+  name: string;
+  shippingFee: number;
+  zoneLabel: string;
 }
 
 export interface StoreOption {
@@ -47,14 +62,16 @@ function radioCardClass(selected: boolean, disabled = false) {
 export default function CheckoutForm({
   savedAddresses,
   subtotal,
-  shippingFee,
+  provinces,
+  defaultShippingFee,
   momoAvailable,
   bankTransferAvailable,
   stores,
 }: {
   savedAddresses: SavedAddress[];
   subtotal: number;
-  shippingFee: number;
+  provinces: ProvinceShipping[];
+  defaultShippingFee: number;
   momoAvailable: boolean;
   bankTransferAvailable: boolean;
   stores: StoreOption[];
@@ -73,7 +90,6 @@ export default function CheckoutForm({
   const [recipientName, setRecipientName] = useState("");
   const [phone, setPhone] = useState("");
   const [province, setProvince] = useState("");
-  const [district, setDistrict] = useState("");
   const [ward, setWard] = useState("");
   const [streetDetail, setStreetDetail] = useState("");
   const [note, setNote] = useState("");
@@ -88,6 +104,18 @@ export default function CheckoutForm({
 
   const usingNewAddress = selectedAddressId === "__new__";
   const isStorePickup = deliveryMethod === "STORE_PICKUP";
+
+  const selectedSavedAddress = savedAddresses.find((a) => a.id === selectedAddressId) ?? null;
+  const selectedProvince = provinces.find((p) => p.name === province) ?? null;
+
+  // Phí ship phụ thuộc tỉnh/thành đang chọn. Chưa chọn địa chỉ mới nào thì hiện
+  // mức mặc định để khách vẫn thấy tổng tiền tạm tính thay vì ô trống.
+  const shippingFee = usingNewAddress
+    ? (selectedProvince?.shippingFee ?? defaultShippingFee)
+    : (selectedSavedAddress?.shippingFee ?? defaultShippingFee);
+  const shippingZoneLabel = usingNewAddress
+    ? (selectedProvince?.zoneLabel ?? null)
+    : (selectedSavedAddress?.zoneLabel ?? null);
 
   const effectiveShippingFee = isStorePickup || appliedCoupon?.freeShipping ? 0 : shippingFee;
   const discountAmount = appliedCoupon?.discountAmount ?? 0;
@@ -145,7 +173,7 @@ export default function CheckoutForm({
         ...(isStorePickup
           ? { pickupStoreId: selectedStoreId }
           : usingNewAddress
-            ? { newAddress: { recipientName, phone, province, district, ward, streetDetail } }
+            ? { newAddress: { recipientName, phone, province, ward, streetDetail } }
             : { addressId: selectedAddressId }),
         note,
         couponCode: appliedCoupon?.code,
@@ -270,7 +298,11 @@ export default function CheckoutForm({
                   )}
                   <br />
                   <span className="text-zinc-500">
-                    {a.streetDetail}, {a.ward}, {a.district}, {a.province}
+                    {a.streetDetail}, {a.ward}, {a.province}
+                  </span>
+                  <br />
+                  <span className="text-xs text-zinc-500">
+                    Phí giao hàng {formatPrice(a.shippingFee)} · {a.zoneLabel}
                   </span>
                 </span>
               </label>
@@ -314,35 +346,15 @@ export default function CheckoutForm({
               required
             />
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Tỉnh/Thành</label>
-              <input
-                className="input"
-                value={province}
-                onChange={(e) => setProvince(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Quận/Huyện</label>
-              <input
-                className="input"
-                value={district}
-                onChange={(e) => setDistrict(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Phường/Xã</label>
-              <input
-                className="input"
-                value={ward}
-                onChange={(e) => setWard(e.target.value)}
-                required
-              />
-            </div>
-          </div>
+          <ProvinceWardPicker
+            provinces={provinces}
+            province={province}
+            ward={ward}
+            onChange={(next) => {
+              setProvince(next.province);
+              setWard(next.ward);
+            }}
+          />
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">Địa chỉ cụ thể</label>
             <input
@@ -462,7 +474,12 @@ export default function CheckoutForm({
           </div>
         )}
         <div className="flex justify-between">
-          <span className="text-zinc-500">Phí vận chuyển</span>
+          <span className="text-zinc-500">
+            Phí vận chuyển
+            {!isStorePickup && shippingZoneLabel && (
+              <span className="block text-xs text-zinc-400">{shippingZoneLabel}</span>
+            )}
+          </span>
           <span className="text-zinc-900">
             {isStorePickup ? (
               "Miễn phí"

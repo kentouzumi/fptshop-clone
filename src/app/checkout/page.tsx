@@ -2,7 +2,12 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getCartDetail } from "@/lib/cart";
 import { getAddressesForUser } from "@/lib/addresses";
-import { SHIPPING_FEE } from "@/lib/orders";
+import {
+  PROVINCE_SHIPPING_OPTIONS,
+  DEFAULT_SHIPPING_FEE,
+  getShippingFee,
+  getShippingZoneLabel,
+} from "@/lib/vnAddress";
 import { isMomoConfigured } from "@/lib/momo";
 import { isBankTransferConfigured } from "@/lib/bankTransfer";
 import { getActiveStores } from "@/lib/stores";
@@ -36,17 +41,19 @@ export default async function CheckoutPage() {
           <h2 className="mb-3 text-lg font-semibold tracking-tight">Thông tin giao hàng</h2>
           <CheckoutForm
             subtotal={subtotal}
-            shippingFee={SHIPPING_FEE}
+            provinces={PROVINCE_SHIPPING_OPTIONS}
+            defaultShippingFee={DEFAULT_SHIPPING_FEE}
             savedAddresses={addresses.map((a) => ({
               id: a.id,
               recipientName: a.recipientName,
               phone: a.phone,
               province: a.province,
-              district: a.district,
               ward: a.ward,
               streetDetail: a.streetDetail,
               label: a.label,
               isDefault: a.isDefault,
+              shippingFee: getShippingFee(a.province),
+              zoneLabel: getShippingZoneLabel(a.province),
             }))}
             momoAvailable={isMomoConfigured()}
             bankTransferAvailable={isBankTransferConfigured()}

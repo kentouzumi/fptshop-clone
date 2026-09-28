@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/prisma";
+import { findProvinceByName, isValidWard } from "@/lib/vnAddress";
 
+/**
+ * Địa chỉ theo đơn vị hành chính 2 cấp (từ 01/07/2025): chỉ còn Tỉnh/Thành + Phường/Xã.
+ * Cột `district` vẫn còn trong schema nhưng không thu thập nữa - xem lib/vnAddress.ts.
+ */
 export interface AddressInput {
   recipientName: string;
   phone: string;
   province: string;
-  district: string;
   ward: string;
   streetDetail: string;
   label?: string | null;
@@ -15,16 +19,21 @@ export function parseAddressInput(body: unknown): AddressInput | null {
   const recipientName = typeof b?.recipientName === "string" ? b.recipientName.trim() : "";
   const phone = typeof b?.phone === "string" ? b.phone.trim() : "";
   const province = typeof b?.province === "string" ? b.province.trim() : "";
-  const district = typeof b?.district === "string" ? b.district.trim() : "";
   const ward = typeof b?.ward === "string" ? b.ward.trim() : "";
   const streetDetail = typeof b?.streetDetail === "string" ? b.streetDetail.trim() : "";
   const label = typeof b?.label === "string" && b.label.trim() ? b.label.trim() : null;
 
-  if (!recipientName || !phone || !province || !district || !ward || !streetDetail) {
+  if (!recipientName || !phone || !province || !ward || !streetDetail) {
     return null;
   }
 
-  return { recipientName, phone, province, district, ward, streetDetail, label };
+  // Không tin dropdown ở client: tỉnh/thành và phường/xã phải có thật trong danh
+  // sách hành chính, nếu không thì phí ship tính theo khu vực cũng vô nghĩa.
+  if (!findProvinceByName(province) || !isValidWard(province, ward)) {
+    return null;
+  }
+
+  return { recipientName, phone, province, ward, streetDetail, label };
 }
 
 export async function getAddressesForUser(userId: string) {
@@ -48,7 +57,7 @@ export async function createAddress(userId: string, input: AddressInput, makeDef
     if (shouldBeDefault) {
       await tx.address.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } });
     }
-    return tx.address.create({ data: { userId, ...input, isDefault: shouldBeDefault } });
+    return tx.address.create({ data: { userId, ...input, district: "", isDefault: shouldBeDefault } });
   });
 }
 
@@ -69,7 +78,9 @@ export async function updateAddress(
     }
     return tx.address.update({
       where: { id: addressId },
-      data: { ...input, isDefault: makeDefault || existing.isDefault },
+      // district: "" để địa chỉ cũ (còn giá trị quận/huyện) được chuẩn hóa về
+      // cấu trúc 2 cấp ngay khi người dùng lưu lại.
+      data: { ...input, district: "", isDefault: makeDefault || existing.isDefault },
     });
   });
 }

@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { createOrderFromCart, generatePaymentUrlForOrder, type CheckoutInput } from "@/lib/orders";
 import { isMomoConfigured } from "@/lib/momo";
 import { isBankTransferConfigured } from "@/lib/bankTransfer";
+import { findProvinceByName, isValidWard } from "@/lib/vnAddress";
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -48,18 +49,26 @@ export async function POST(request: Request) {
     const recipientName = typeof raw?.recipientName === "string" ? raw.recipientName.trim() : "";
     const phone = typeof raw?.phone === "string" ? raw.phone.trim() : "";
     const province = typeof raw?.province === "string" ? raw.province.trim() : "";
-    const district = typeof raw?.district === "string" ? raw.district.trim() : "";
     const ward = typeof raw?.ward === "string" ? raw.ward.trim() : "";
     const streetDetail = typeof raw?.streetDetail === "string" ? raw.streetDetail.trim() : "";
 
-    if (!recipientName || !phone || !province || !district || !ward || !streetDetail) {
+    if (!recipientName || !phone || !province || !ward || !streetDetail) {
       return NextResponse.json(
         { error: "Vui lòng chọn hoặc nhập đầy đủ thông tin giao hàng." },
         { status: 400 }
       );
     }
 
-    newAddress = { recipientName, phone, province, district, ward, streetDetail };
+    // Không tin dropdown ở client - phải là tỉnh/phường có thật, nếu không thì
+    // phí ship tính theo khu vực cũng sai theo.
+    if (!findProvinceByName(province) || !isValidWard(province, ward)) {
+      return NextResponse.json(
+        { error: "Tỉnh/thành hoặc phường/xã không hợp lệ." },
+        { status: 400 }
+      );
+    }
+
+    newAddress = { recipientName, phone, province, ward, streetDetail };
   }
 
   let order;

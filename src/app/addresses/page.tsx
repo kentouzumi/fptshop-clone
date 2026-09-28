@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getAddressesForUser } from "@/lib/addresses";
 import DeleteAddressButton from "./DeleteAddressButton";
 import SetDefaultButton from "./SetDefaultButton";
+import { formatAddressLine } from "@/lib/vnAddress";
 
 export default async function AddressesPage() {
   const user = await getCurrentUser();
@@ -44,7 +45,7 @@ export default async function AddressesPage() {
                 )}
               </div>
               <p className="text-sm text-zinc-700">
-                {a.streetDetail}, {a.ward}, {a.district}, {a.province}
+                {formatAddressLine([a.streetDetail, a.ward, a.district, a.province])}
               </p>
               <div className="mt-3 flex gap-4">
                 <Link href={`/addresses/${a.id}/edit`} className="text-sm text-blue-600 underline">

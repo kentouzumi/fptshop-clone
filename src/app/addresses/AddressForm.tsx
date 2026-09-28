@@ -2,27 +2,32 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import ProvinceWardPicker, { type ProvinceOption } from "@/components/ProvinceWardPicker";
 
 export interface AddressFormValues {
   id?: string;
   recipientName: string;
   phone: string;
   province: string;
-  district: string;
   ward: string;
   streetDetail: string;
   label: string;
   isDefault: boolean;
 }
 
-export default function AddressForm({ initial }: { initial?: AddressFormValues }) {
+export default function AddressForm({
+  initial,
+  provinces,
+}: {
+  initial?: AddressFormValues;
+  provinces: ProvinceOption[];
+}) {
   const router = useRouter();
   const isEdit = Boolean(initial?.id);
 
   const [recipientName, setRecipientName] = useState(initial?.recipientName ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
   const [province, setProvince] = useState(initial?.province ?? "");
-  const [district, setDistrict] = useState(initial?.district ?? "");
   const [ward, setWard] = useState(initial?.ward ?? "");
   const [streetDetail, setStreetDetail] = useState(initial?.streetDetail ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
@@ -36,7 +41,7 @@ export default function AddressForm({ initial }: { initial?: AddressFormValues }
     setSaving(true);
 
     try {
-      const payload = { recipientName, phone, province, district, ward, streetDetail, label, isDefault };
+      const payload = { recipientName, phone, province, ward, streetDetail, label, isDefault };
       const res = await fetch(isEdit ? `/api/addresses/${initial!.id}` : "/api/addresses", {
         method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,35 +81,17 @@ export default function AddressForm({ initial }: { initial?: AddressFormValues }
           required
         />
       </div>
-      <div className="grid grid-cols-3 gap-3">
-        <div>
-          <label className="mb-1 block text-sm font-medium">Tỉnh/Thành</label>
-          <input
-            className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2"
-            value={province}
-            onChange={(e) => setProvince(e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium">Quận/Huyện</label>
-          <input
-            className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2"
-            value={district}
-            onChange={(e) => setDistrict(e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium">Phường/Xã</label>
-          <input
-            className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2"
-            value={ward}
-            onChange={(e) => setWard(e.target.value)}
-            required
-          />
-        </div>
-      </div>
+
+      <ProvinceWardPicker
+        provinces={provinces}
+        province={province}
+        ward={ward}
+        onChange={(next) => {
+          setProvince(next.province);
+          setWard(next.ward);
+        }}
+      />
+
       <div>
         <label className="mb-1 block text-sm font-medium">Địa chỉ cụ thể</label>
         <input

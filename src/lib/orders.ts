@@ -12,8 +12,7 @@ import { awardPointsForOrder } from "@/lib/loyalty";
 import { createWarrantiesForOrder } from "@/lib/warranty";
 import { createMomoPaymentUrl, verifyMomoCallback } from "@/lib/momo";
 import { reserveStockOrThrow, releaseStock } from "@/lib/inventory";
-
-export const SHIPPING_FEE = 30000;
+import { getShippingFee } from "@/lib/vnAddress";
 
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   COD: "Thanh toán khi nhận hàng (COD)",
@@ -48,7 +47,6 @@ export interface NewAddressInput {
   recipientName: string;
   phone: string;
   province: string;
-  district: string;
   ward: string;
   streetDetail: string;
 }
@@ -113,37 +111,12 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
       }
     }
 
-    let couponId: string | null = null;
-    let discountTotal = 0;
-    let shippingFee = SHIPPING_FEE;
-
-    if (input.couponCode) {
-      // Validate lại trong transaction (không tin kết quả preview ở client) để tránh
-      // race condition (vd 2 đơn cùng dùng nốt lượt cuối của coupon có usageLimit)
-      const result = await validateCoupon(tx, input.couponCode, subtotal);
-      couponId = result.couponId;
-      discountTotal = result.discountAmount;
-      if (result.freeShipping) {
-        shippingFee = 0;
-      }
-      await tx.coupon.update({ where: { id: couponId }, data: { usedCount: { increment: 1 } } });
-    }
-
-    // Nhận tại cửa hàng thì không phát sinh phí ship (ghi đè sau bước coupon vì FREE_SHIPPING
-    // coupon cũng chỉ đưa về 0, không xung đột)
-    if (isStorePickup) {
-      shippingFee = 0;
-    }
-
-    const grandTotal = subtotal + shippingFee - discountTotal;
-
-    const isMomo = input.paymentMethod === "MOMO";
-    const isBankTransfer = input.paymentMethod === "BANK_TRANSFER";
-    const orderCode = generateOrderCode();
-    const momoTxnRef = isMomo ? generateTxnRef(orderCode) : null;
-
     let addressId: string | null = null;
     let pickupStoreId: string | null = null;
+    // Tỉnh/thành giao hàng — cần để tính phí ship theo khu vực bên dưới, nên khối
+    // xác định địa chỉ phải chạy TRƯỚC khối tính phí (trước đây ngược lại vì phí
+    // ship là hằng số 30.000đ, không phụ thuộc địa chỉ).
+    let deliveryProvince: string | null = null;
 
     if (isStorePickup) {
       if (!input.pickupStoreId) {
@@ -160,6 +133,7 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
         throw new Error("Địa chỉ giao hàng không hợp lệ.");
       }
       addressId = existing.id;
+      deliveryProvince = existing.province;
     } else if (input.newAddress) {
       const addressCount = await tx.address.count({ where: { userId } });
       const address = await tx.address.create({
@@ -168,16 +142,41 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
           recipientName: input.newAddress.recipientName,
           phone: input.newAddress.phone,
           province: input.newAddress.province,
-          district: input.newAddress.district,
+          district: "",
           ward: input.newAddress.ward,
           streetDetail: input.newAddress.streetDetail,
           isDefault: addressCount === 0,
         },
       });
       addressId = address.id;
+      deliveryProvince = address.province;
     } else {
       throw new Error("Vui lòng chọn hoặc nhập địa chỉ giao hàng.");
     }
+
+    let couponId: string | null = null;
+    let discountTotal = 0;
+    // Phí ship theo khu vực của tỉnh/thành nhận hàng (xem lib/vnAddress.ts).
+    let shippingFee = isStorePickup ? 0 : getShippingFee(deliveryProvince);
+
+    if (input.couponCode) {
+      // Validate lại trong transaction (không tin kết quả preview ở client) để tránh
+      // race condition (vd 2 đơn cùng dùng nốt lượt cuối của coupon có usageLimit)
+      const result = await validateCoupon(tx, input.couponCode, subtotal);
+      couponId = result.couponId;
+      discountTotal = result.discountAmount;
+      if (result.freeShipping) {
+        shippingFee = 0;
+      }
+      await tx.coupon.update({ where: { id: couponId }, data: { usedCount: { increment: 1 } } });
+    }
+
+    const grandTotal = subtotal + shippingFee - discountTotal;
+
+    const isMomo = input.paymentMethod === "MOMO";
+    const isBankTransfer = input.paymentMethod === "BANK_TRANSFER";
+    const orderCode = generateOrderCode();
+    const momoTxnRef = isMomo ? generateTxnRef(orderCode) : null;
 
     // Kiểm tra VÀ trừ tồn kho — phải làm SAU khi đã biết chắc pickupStoreId
     // (STORE_PICKUP cần trừ đúng kho của cửa hàng khách chọn) và TRƯỚC khi

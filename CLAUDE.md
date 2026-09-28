@@ -4229,6 +4229,104 @@
       tính năng này sinh ra để tránh. Muốn làm thì phải tách tồn kho ra khỏi
       phần cache (thêm 1 query không cache cho riêng danh sách id đang hiện).
 
+- [x] Danh sách tỉnh/thành + phường/xã thật cho địa chỉ, và phí vận chuyển TÍNH
+      THEO KHU VỰC (trước đó `province`/`district`/`ward` là 3 ô text tự do gõ gì
+      cũng được, phí ship là hằng số `SHIPPING_FEE = 30000` không phụ thuộc nơi
+      giao — mục "Địa chỉ nhập tay hoàn toàn" trong bản rà soát so với fptshop).
+
+      QUYẾT ĐỊNH QUAN TRỌNG — dùng cấu trúc 2 CẤP, KHÔNG phải 3 cấp: từ
+      01/07/2025 Việt Nam đã bỏ hẳn cấp quận/huyện, cả nước còn 34 tỉnh/thành và
+      3.321 phường/xã trực thuộc tỉnh. Nên form địa chỉ giờ chỉ còn Tỉnh/Thành ->
+      Phường/Xã, bỏ hẳn ô Quận/Huyện (dù yêu cầu ban đầu nói "tỉnh/huyện/xã" —
+      làm 3 cấp sẽ phải bịa lại dữ liệu hành chính đã không còn hiệu lực).
+
+      Cột `district` trên model Address VẪN GIỮ trong schema, KHÔNG drop (cùng
+      quyết định như `passwordHash`/`phone`/`OtpCode` các lần đổi kiến trúc
+      trước): địa chỉ và đơn hàng CŨ đang có giá trị quận/huyện thật, xóa cột là
+      mất dữ liệu lịch sử, mà đổi schema thì tốn thêm 1 lần `prisma db push` +
+      restart dev server. Địa chỉ mới ghi `district: ""`, và mọi nơi hiển thị
+      dùng `formatAddressLine()` (lib/vnAddress.ts) tự bỏ qua phần rỗng nên
+      không bao giờ lòi ra chuỗi ", ," — đã sửa 3 chỗ: /addresses,
+      /orders/[id], /admin/orders/[id]. `updateAddress()` cũng ghi `district: ""`
+      để địa chỉ cũ tự được chuẩn hóa về cấu trúc mới ngay khi user lưu lại.
+      Store.province/district KHÔNG đụng (cửa hàng do admin tự nhập, ngoài phạm vi).
+
+      DỮ LIỆU: tải từ `provinces.open-api.vn` API v2 (đã trả đúng cấu trúc 2 cấp
+      mới), rút gọn còn `{code, name, wards: string[]}` rồi lưu thành
+      `src/data/vnAdmin.json` (65KB, từ 613KB bản gốc) — ĐỂ TRONG REPO chứ không
+      gọi API ngoài lúc chạy, tránh phụ thuộc dịch vụ bên thứ ba cho 1 bộ dữ liệu
+      gần như không bao giờ đổi.
+
+      src/lib/vnAddress.ts (mới): `PROVINCES`/`PROVINCE_OPTIONS`,
+      `findProvinceByName()`, `getWards()`, `isValidWard()`, `formatAddressLine()`,
+      và nhóm hàm phí ship. `normalize()` bỏ dấu + bỏ tiền tố "Thành phố"/"Tỉnh"/
+      "TP." trước khi so khớp — nhờ vậy địa chỉ CŨ lưu tự do ("Hà Nội", "TP.HCM")
+      vẫn tra ra đúng tỉnh để tính phí, không bị rơi về mức mặc định.
+
+      PHÍ SHIP THEO KHU VỰC — chia 3 vùng theo MÃ tỉnh (mã ổn định, tên thì viết
+      được nhiều kiểu): vùng 1 = Hà Nội + TP.HCM (nơi có cửa hàng) 20.000đ;
+      vùng 3 = 10 tỉnh miền núi/vùng xa (Cao Bằng, Tuyên Quang, Điện Biên, Lai
+      Châu, Sơn La, Lào Cai, Lạng Sơn, Gia Lai, Đắk Lắk, Lâm Đồng) 45.000đ; còn
+      lại 22 tỉnh/thành là vùng 2, 30.000đ (= đúng mức cũ, nên đa số đơn không
+      đổi giá). Không nhận ra tỉnh -> `DEFAULT_SHIPPING_FEE` (30.000đ) thay vì
+      chặn đơn.
+
+      lib/orders.ts: XÓA hằng số `SHIPPING_FEE`. Phải ĐẢO THỨ TỰ 2 khối trong
+      transaction tạo đơn — trước đây tính phí ship TRƯỚC rồi mới xác định địa
+      chỉ (được, vì phí là hằng số); giờ phí phụ thuộc tỉnh nên khối xác định
+      địa chỉ/cửa hàng phải chạy trước, lưu lại `deliveryProvince`, rồi
+      `shippingFee = isStorePickup ? 0 : getShippingFee(deliveryProvince)`.
+      Nhánh coupon FREE_SHIPPING (đưa về 0) và nhánh STORE_PICKUP giữ nguyên ý
+      nghĩa cũ — gộp STORE_PICKUP vào ngay dòng khởi tạo nên bỏ được đoạn ghi đè
+      `shippingFee = 0` riêng phía sau.
+
+      src/components/ProvinceWardPicker.tsx (mới, client, dùng CHUNG cho cả
+      AddressForm lẫn CheckoutForm): 2 select liên tầng. Danh sách phường/xã tải
+      theo yêu cầu qua `GET /api/address/wards?province=<code>` (route mới, cache
+      1 ngày) thay vì nhúng cả 3.321 phường/xã vào client bundle. Có
+      `requestIdRef` chống race condition khi đổi tỉnh nhanh (cùng cách đã làm ở
+      SearchAutocomplete). Đổi tỉnh thì xóa luôn phường/xã cũ vì chắc chắn không
+      còn hợp lệ. Phường/xã CŨ không còn trong danh sách mới (do sáp nhập) vẫn
+      được render thành 1 `<option>` riêng để mở form sửa không làm mất dữ liệu.
+      setState lúc mount bọc trong `queueMicrotask()` theo đúng rule
+      `react-hooks/set-state-in-effect` của eslint-config-next 16 (xem ghi chú ở
+      CompareProvider).
+
+      CHECKOUT hiện phí ship ĐỘNG: CheckoutForm không còn nhận `shippingFee` cố
+      định mà nhận `provinces: ProvinceShipping[]` (34 phần tử, đã kèm sẵn
+      `shippingFee` + `zoneLabel` tính ở SERVER) và mỗi địa chỉ đã lưu cũng kèm
+      sẵn 2 field đó — CỐ Ý không import `getShippingFee()` vào client component
+      vì hàm đó kéo theo cả file dữ liệu 3.321 phường/xã vào bundle trình duyệt.
+      Chọn tỉnh khác là tổng tiền tự cập nhật ngay, không gọi lại server. Mỗi
+      địa chỉ trong sổ hiện thêm dòng "Phí giao hàng 45.000₫ · Miền núi, vùng xa"
+      để khách so sánh được trước khi chọn.
+
+      KHÔNG TIN CLIENT (dropdown vẫn có thể bị bỏ qua bằng cách gọi thẳng API):
+      cả `parseAddressInput()` (lib/addresses.ts) LẪN `POST /api/orders` đều
+      validate lại tỉnh/thành và phường/xã phải có thật trong danh sách, trả 400
+      nếu không — nếu không thì phí ship tính theo khu vực cũng sai theo.
+
+      Đã test qua dev server bằng DB THẬT (tạo user/session/cart test riêng, dọn
+      sạch sau khi xong): `/api/address/wards?province=1` trả đúng 126 phường của
+      Hà Nội, mã tỉnh không tồn tại -> 400. Đặt đơn THẬT qua `POST /api/orders`
+      rồi đọc lại `Order.shippingFee` trong DB cho đủ 3 vùng: Hà Nội 20.000đ,
+      Lai Châu 45.000đ, Cần Thơ 30.000đ, nhận tại cửa hàng 0đ — đúng cả 4. Phường
+      bịa ("Phường Không Có Thật") và tỉnh bịa đều bị chặn đúng 400. `/checkout`
+      và `/addresses/new` đều 200, không còn ô "Quận/Huyện" ở đâu, `/checkout`
+      với địa chỉ mặc định ở Sơn La hiện đúng "45.000₫" + nhãn "Miền núi, vùng
+      xa", dòng địa chỉ không lòi ", ,". `tsc --noEmit`/`eslint`/`npm run build`
+      sạch (route `/api/address/wards` xuất hiện đúng trong danh sách).
+      LƯU Ý lúc dọn dữ liệu test: xóa Order thẳng bằng Prisma KHÔNG hoàn lại tồn
+      kho (chỉ `updateOrderStatus(CANCELLED)` mới gọi `releaseStock()`) — 4 đơn
+      test đã trừ mất 4 đơn vị của XPS13-16-512, đã tự kiểm tra và khôi phục kho
+      Cầu Giấy từ 16 về đúng 20.
+
+      CỐ Ý KHÔNG LÀM: ngưỡng miễn phí ship theo giá trị đơn (vd "đơn từ 5 triệu
+      free ship") — user chỉ yêu cầu phí theo khu vực, và coupon FREE_SHIPPING đã
+      có sẵn làm việc đó. Cũng chưa có "giao nhanh 1h/giao trong ngày" (cần đối
+      tác vận chuyển thật) và Header vẫn chưa cho chọn tỉnh/thành để lọc tồn kho
+      theo khu vực như FPT Shop thật.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4303,11 +4401,11 @@
 - [ ] **Phụ kiện mua kèm / sản phẩm liên quan chọn tay**: model
       `ProductRelation` chưa dùng, "sản phẩm liên quan" hiện chỉ là 4 máy cùng
       danh mục.
-- [ ] **Địa chỉ nhập tay hoàn toàn** — `province`/`district`/`ward` trong
-      lib/addresses.ts là text tự do, không có danh sách hành chính VN. Kéo
-      theo: phí ship cố định 30.000đ (`SHIPPING_FEE`), không tính theo khu
-      vực, không có "giao nhanh 1h/giao trong ngày", và Header không cho chọn
-      tỉnh/thành (FPT Shop hỏi ngay từ đầu để hiện đúng tồn kho + phí ship).
+- [x] **Địa chỉ nhập tay hoàn toàn** — ĐÃ LÀM: chọn Tỉnh/Thành + Phường/Xã từ
+      danh sách hành chính thật (34 tỉnh / 3.321 phường-xã, cấu trúc 2 cấp sau
+      01/07/2025), và phí ship chia 3 vùng theo tỉnh thay cho hằng số 30.000đ.
+      Còn thiếu: "giao nhanh 1h/giao trong ngày" (cần đối tác vận chuyển thật)
+      và Header chưa cho chọn tỉnh/thành để lọc tồn kho theo khu vực.
 - [ ] **Không tra cứu đơn cho khách chưa đăng nhập** (FPT Shop cho tra bằng
       mã đơn + SĐT).
 - [ ] **`Shipment` không dùng** → không có mã vận đơn/theo dõi giao hàng.

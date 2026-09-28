@@ -8,6 +8,7 @@ import {
 import { isUsingPublicMomoTestCredentials } from "@/lib/momo";
 import OrderStatusUpdateForm from "../OrderStatusUpdateForm";
 import ConfirmBankTransferButton from "../ConfirmBankTransferButton";
+import { formatAddressLine } from "@/lib/vnAddress";
 
 function formatPrice(value: number) {
   return value.toLocaleString("vi-VN") + "₫";
@@ -105,8 +106,12 @@ export default async function AdminOrderDetailPage({
                 {order.address.recipientName} - {order.address.phone}
               </p>
               <p className="text-sm text-zinc-500">
-                {order.address.streetDetail}, {order.address.ward}, {order.address.district},{" "}
-                {order.address.province}
+                {formatAddressLine([
+                  order.address.streetDetail,
+                  order.address.ward,
+                  order.address.district,
+                  order.address.province,
+                ])}
               </p>
               {order.note && <p className="mt-1 text-sm text-zinc-500">Ghi chú: {order.note}</p>}
             </div>

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getAddress } from "@/lib/addresses";
+import { PROVINCE_OPTIONS } from "@/lib/vnAddress";
 import AddressForm from "../../AddressForm";
 
 export default async function EditAddressPage({
@@ -21,12 +22,12 @@ export default async function EditAddressPage({
     <div className="mx-auto w-full max-w-2xl px-6 py-10">
       <h1 className="mb-6 text-2xl font-semibold">Sửa địa chỉ</h1>
       <AddressForm
+        provinces={PROVINCE_OPTIONS}
         initial={{
           id: address.id,
           recipientName: address.recipientName,
           phone: address.phone,
           province: address.province,
-          district: address.district,
           ward: address.ward,
           streetDetail: address.streetDetail,
           label: address.label ?? "",

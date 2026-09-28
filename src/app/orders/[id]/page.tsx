@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getOrderDetail, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@/lib/orders";
 import { buildVietQrUrl, getBankAccountInfo } from "@/lib/bankTransfer";
 import RetryPaymentButton from "./RetryPaymentButton";
+import { formatAddressLine } from "@/lib/vnAddress";
 
 function formatPrice(value: number) {
   return value.toLocaleString("vi-VN") + "₫";
@@ -100,8 +101,12 @@ export default async function OrderDetailPage({
               {order.address.recipientName} - {order.address.phone}
             </p>
             <p className="text-sm text-zinc-500">
-              {order.address.streetDetail}, {order.address.ward}, {order.address.district},{" "}
-              {order.address.province}
+              {formatAddressLine([
+                order.address.streetDetail,
+                order.address.ward,
+                order.address.district,
+                order.address.province,
+              ])}
             </p>
           </div>
         )
