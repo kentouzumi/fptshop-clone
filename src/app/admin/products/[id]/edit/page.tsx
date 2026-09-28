@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getVariantsForProduct } from "@/lib/variants";
+import { getRelationsForAdmin, MAX_RELATIONS_PER_PRODUCT } from "@/lib/productRelations";
 import ProductForm from "../../ProductForm";
 import VariantsManager from "./VariantsManager";
+import RelationsManager from "./RelationsManager";
 
 export default async function EditProductPage({
   params,
@@ -11,7 +13,7 @@ export default async function EditProductPage({
 }) {
   const { id } = await params;
 
-  const [product, categories, brands, variants] = await Promise.all([
+  const [product, categories, brands, variants, relations] = await Promise.all([
     prisma.product.findUnique({
       where: { id },
       include: {
@@ -22,6 +24,7 @@ export default async function EditProductPage({
     prisma.category.findMany({ orderBy: { sortOrder: "asc" } }),
     prisma.brand.findMany({ orderBy: { name: "asc" } }),
     getVariantsForProduct(id),
+    getRelationsForAdmin(id),
   ]);
 
   if (!product) notFound();
@@ -68,6 +71,14 @@ export default async function EditProductPage({
             isActive: v.isActive,
             images: v.images.map((img) => img.url),
           }))}
+        />
+      </div>
+
+      <div className="mt-10">
+        <RelationsManager
+          productId={product.id}
+          relations={relations}
+          maxRelations={MAX_RELATIONS_PER_PRODUCT}
         />
       </div>
     </div>

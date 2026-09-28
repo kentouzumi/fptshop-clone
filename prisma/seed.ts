@@ -465,9 +465,48 @@ async function main() {
     }
   }
 
+  // Sản phẩm liên quan/mua kèm do admin chọn tay (model ProductRelation, xem
+  // src/lib/productRelations.ts). Liên kết MỘT CHIỀU nên chỗ nào muốn hiện ở
+  // cả 2 phía thì khai cả 2 dòng.
+  // KHÔNG có loại ACCESSORY nào ở đây: shop hiện chỉ bán điện thoại/laptop/tivi,
+  // không còn sản phẩm phụ kiện nào để mua kèm (danh mục Phụ kiện đã bỏ khi thu
+  // gọn còn 3 danh mục). Loại đó vẫn dùng được ngay khi có hàng phụ kiện.
+  const relations: { base: string; related: string; type: string }[] = [
+    // Cùng hệ sinh thái — đây chính là thứ gợi ý tự động theo danh mục KHÔNG
+    // bao giờ làm được (MacBook và iPhone khác danh mục).
+    { base: "iphone-15-pro-max", related: "macbook-air-m3", type: "RELATED" },
+    { base: "macbook-air-m3", related: "iphone-15-pro-max", type: "RELATED" },
+    { base: "samsung-galaxy-s24-ultra", related: "samsung-qled-4k-q60d-65-inch", type: "RELATED" },
+    { base: "xiaomi-redmi-note-13", related: "xiaomi-google-tivi-a-pro-55-inch", type: "RELATED" },
+    // Cùng dòng, bản màn lớn hơn — đúng nghĩa nâng cấp.
+    {
+      base: "xiaomi-google-tivi-a-pro-43-inch",
+      related: "xiaomi-google-tivi-a-pro-55-inch",
+      type: "UPSELL",
+    },
+    { base: "xiaomi-redmi-note-13", related: "samsung-galaxy-s24-ultra", type: "UPSELL" },
+  ];
+
+  const productIdBySlug = new Map(
+    (await prisma.product.findMany({ select: { id: true, slug: true } })).map((p) => [p.slug, p.id])
+  );
+  for (const rel of relations) {
+    const baseId = productIdBySlug.get(rel.base);
+    const relatedId = productIdBySlug.get(rel.related);
+    if (!baseId || !relatedId) continue;
+    await prisma.productRelation.upsert({
+      where: { baseProductId_relatedProductId: { baseProductId: baseId, relatedProductId: relatedId } },
+      // Đồng bộ lại `type` mỗi lần chạy seed (không dùng `update: {}` no-op) —
+      // đổi loại liên kết trong mảng trên phải có tác dụng với dòng đã tồn tại.
+      update: { type: rel.type },
+      create: { baseProductId: baseId, relatedProductId: relatedId, type: rel.type },
+    });
+  }
+
   console.log(
     `Seed xong: ${products.length} sản phẩm, 3 danh mục (Điện thoại/Laptop/Tivi), ` +
-      `tồn kho cho ${allVariants.length} biến thể x ${activeStores.length} cửa hàng.`
+      `tồn kho cho ${allVariants.length} biến thể x ${activeStores.length} cửa hàng, ` +
+      `${relations.length} liên kết sản phẩm.`
   );
 }
 

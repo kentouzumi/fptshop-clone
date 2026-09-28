@@ -4737,6 +4737,105 @@
       vận đơn (model Shipment chỉ có 1 status hiện tại, muốn có timeline phải
       thêm bảng mới), và chưa có link tra cứu như nói ở trên.
 
+- [x] Sản phẩm liên quan / phụ kiện mua kèm do ADMIN CHỌN TAY (dùng model
+      `ProductRelation` đã có sẵn trong schema từ đầu dự án nhưng CHƯA MỘT DÒNG
+      CODE NÀO dùng tới — mục "Phụ kiện mua kèm / sản phẩm liên quan chọn tay"
+      trong bản rà soát so với fptshop.com.vn). KHÔNG cần đổi schema.
+
+      VẤN ĐỀ CŨ: "sản phẩm liên quan" ở trang chi tiết chỉ là 4 sản phẩm bất kỳ
+      CÙNG DANH MỤC (`getProducts({ categorySlug })`), nên không bao giờ gợi ý
+      được ra ngoài danh mục — xem iPhone thì không thể gợi ý MacBook, và không
+      có khái niệm phụ kiện mua kèm.
+
+      3 LOẠI LIÊN KẾT đúng theo comment sẵn có trong schema (cột `type` là
+      String tự do, KHÔNG phải enum): ACCESSORY "Phụ kiện mua kèm", UPSELL
+      "Phiên bản nâng cấp", RELATED "Sản phẩm liên quan". Nhãn để trong
+      src/lib/relationLabels.ts chứ không phải lib/productRelations.ts vì
+      RelationsManager là CLIENT COMPONENT — import từ file có `prisma` sẽ kéo
+      Prisma vào bundle trình duyệt (đúng lý do đã tách lib/orderLabels.ts).
+      Giá trị lạ trong DB vẫn hiện được (coi như RELATED) thay vì làm vỡ trang.
+
+      QUAN HỆ MỘT CHIỀU: thêm A -> B KHÔNG tự tạo B -> A. Đúng thực tế bán hàng
+      (ốp lưng là phụ kiện của điện thoại, điện thoại không phải phụ kiện của ốp
+      lưng); muốn hiện cả 2 phía thì admin thêm cả 2 chiều. Đã ghi rõ trong ô
+      hướng dẫn ngay trên form admin.
+
+      QUYẾT ĐỊNH về khối "Sản phẩm cùng danh mục" tự động: nó CHỈ còn hiện khi
+      admin chưa chọn tay liên kết loại RELATED — 2 cái đóng đúng 1 vai trò, để
+      cả 2 sẽ thành 2 khối "sản phẩm liên quan" chồng nhau. ACCESSORY/UPSELL là
+      vai trò KHÁC nên không thay thế khối đó (thêm phụ kiện xong vẫn còn gợi ý
+      theo danh mục). Thứ tự section cố định theo RELATION_TYPES (phụ kiện ->
+      nâng cấp -> liên quan), không theo thứ tự admin thêm vào.
+
+      src/lib/productRelations.ts: `getRelationsForAdmin()`,
+      `addProductRelation()`, `deleteProductRelation()`,
+      `getRelatedProductGroups()` (public, gom theo loại, tái dùng
+      `mapProductToListItem()` nên card hiện đủ giá gạch ngang/rating như mọi
+      chỗ khác). Chặn ở tầng service: liên kết tới CHÍNH NÓ, cặp TRÙNG (tự check
+      trước để trả thông báo tiếng Việt thay vì để lỗi P2002 thô lọt ra), sản
+      phẩm ĐÃ NGỪNG BÁN (chặn ngay từ đầu thay vì để admin thêm xong rồi thắc
+      mắc vì sao khách không thấy — `getRelatedProductGroups()` lọc bỏ sản phẩm
+      không ACTIVE), và trần `MAX_RELATIONS_PER_PRODUCT = 12`.
+
+      SẮP XẾP: `ProductRelation` KHÔNG có cột `createdAt`, nên order by `id` —
+      cuid() có tiền tố timestamp base36 nên thứ tự chuỗi = thứ tự thêm vào.
+      Nhờ vậy admin và trang khách luôn cùng 1 thứ tự ổn định.
+
+      CACHE: `getRelatedProductGroups()` dùng `unstable_cache` với CHUNG
+      PRODUCTS_TAG (không tạo tag riêng) — mọi chỗ sửa sản phẩm/biến thể đã tự
+      `revalidateTag(PRODUCTS_TAG)` từ trước, và add/delete relation cũng gọi
+      đúng tag đó, nên không cần thêm code invalidate mới. Có `revalidate: 60`
+      bên cạnh `tags` theo đúng quy tắc bắt buộc ở mục "Lưu ý quan trọng".
+
+      API: `POST /api/admin/products/[id]/relations`, `DELETE
+      /api/admin/relations/[id]` (theo đúng cặp route đã dùng cho variant).
+      UI admin: `RelationsManager.tsx` nhúng vào /admin/products/[id]/edit —
+      chọn loại liên kết + ô tìm sản phẩm (debounce 250ms, có `requestIdRef`
+      chống race khi gõ nhanh, TÁI DÙNG endpoint công khai
+      `/api/products/suggest` sẵn có thay vì thêm route mới; endpoint đó vốn chỉ
+      trả sản phẩm ACTIVE nên khớp đúng thứ được phép liên kết), mỗi kết quả có
+      nút "+ Thêm" (tự disable + đổi nhãn nếu là chính nó hoặc đã thêm rồi),
+      danh sách hiện tại gom theo loại kèm nút Xóa và cảnh báo với sản phẩm đã
+      ngừng bán. setState trong effect bọc `queueMicrotask()` theo rule
+      `react-hooks/set-state-in-effect` của eslint-config-next 16.
+
+      DỮ LIỆU MẪU (prisma/seed.ts, upsert idempotent trên cặp unique): 6 liên
+      kết thật — iPhone 15 Pro Max <-> MacBook Air M3 (2 chiều, đúng thứ gợi ý
+      tự động theo danh mục KHÔNG bao giờ làm được vì khác danh mục), S24 Ultra
+      -> Tivi Samsung Q60D, Redmi Note 13 -> Tivi Xiaomi A Pro 55, Xiaomi Tivi
+      43 -> 55 inch (UPSELL đúng nghĩa: cùng dòng, màn lớn hơn), Redmi Note 13
+      -> S24 Ultra (UPSELL lên flagship). KHÔNG seed liên kết ACCESSORY nào vì
+      shop hiện chỉ bán điện thoại/laptop/tivi, KHÔNG CÒN sản phẩm phụ kiện nào
+      để mua kèm (danh mục Phụ kiện đã bỏ khi thu gọn còn 3 danh mục) — loại
+      này dùng được ngay khi có hàng phụ kiện, không phải thiếu sót code. Khối
+      upsert dùng `update: { type }` chứ KHÔNG phải `update: {}` no-op, để đổi
+      loại liên kết trong code có tác dụng với dòng đã tồn tại (cùng lớp lỗi đã
+      gặp với categoryId/description/compareAtPrice).
+
+      Trang chi tiết sản phẩm: `getRelatedProductGroups()` gọi trong ĐỢT
+      Promise.all THỨ NHẤT đã có sẵn (cùng getProducts + getCurrentUser), rồi
+      gom id của MỌI card sắp render (thủ công + tự động) thành 1 danh sách duy
+      nhất cho `getWishlistedProductIds()`/`getOutOfStockProductIds()` ở đợt thứ
+      hai — không thêm round-trip DB nào so với trước.
+
+      Đã test qua dev server bằng DB THẬT (22/22 assertion đúng, tạo admin +
+      khách test rồi dọn sạch): chưa đăng nhập/khách thường gọi cả POST lẫn
+      DELETE đều 403; chặn đúng liên kết tới chính nó, loại lạ (400), sản phẩm
+      không tồn tại, sản phẩm đã ngừng bán, cặp trùng, và vượt trần 12; thêm
+      thật 201 và DB lưu đúng `type`; trang khách hiện đúng section "Phụ kiện
+      mua kèm"/"Phiên bản nâng cấp"/"Sản phẩm liên quan" với đúng sản phẩm; chỉ
+      có ACCESSORY thì khối "Sản phẩm cùng danh mục" VẪN hiện, còn có RELATED
+      chọn tay thì khối đó bị thay thế; liên kết tới sản phẩm ngừng bán (tạo
+      thẳng DB để lách guard) KHÔNG lọt ra trang khách nhưng admin thấy cảnh
+      báo; xóa qua API xong khối biến mất NGAY ở lần tải trang kế tiếp (chứng
+      minh revalidateTag chạy đúng). `tsc --noEmit`/`eslint`/`npm run build`
+      sạch (2 route mới xuất hiện đúng trong danh sách route).
+
+      CHƯA LÀM: không có gợi ý tự động theo lịch sử mua chung ("khách mua sản
+      phẩm này cũng mua..." — cần thống kê trên OrderItem), không cho kéo-thả
+      sắp xếp lại thứ tự trong 1 loại (thứ tự = thứ tự thêm vào), và không có
+      nút "mua cả combo" thêm nhiều sản phẩm vào giỏ 1 lần.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4809,9 +4908,11 @@
       `page.tsx`): doanh thu 3 mốc, đơn theo trạng thái, đơn mới nhất, chuyển
       khoản chờ xác nhận, hàng sắp hết. Còn thiếu biểu đồ theo ngày và bộ chọn
       khoảng thời gian tùy ý.
-- [ ] **Phụ kiện mua kèm / sản phẩm liên quan chọn tay**: model
-      `ProductRelation` chưa dùng, "sản phẩm liên quan" hiện chỉ là 4 máy cùng
-      danh mục.
+- [x] **Phụ kiện mua kèm / sản phẩm liên quan chọn tay** — ĐÃ LÀM: admin chọn
+      tay sản phẩm liên quan theo 3 loại (phụ kiện mua kèm/phiên bản nâng cấp/
+      sản phẩm liên quan) ngay trong trang sửa sản phẩm; liên kết RELATED chọn
+      tay thay thế khối gợi ý tự động theo danh mục. Còn thiếu: gợi ý tự động
+      theo lịch sử mua chung, sắp xếp lại thứ tự, và nút "mua cả combo".
 - [x] **Địa chỉ nhập tay hoàn toàn** — ĐÃ LÀM: chọn Tỉnh/Thành + Phường/Xã từ
       danh sách hành chính thật (34 tỉnh / 3.321 phường-xã, cấu trúc 2 cấp sau
       01/07/2025), và phí ship chia 3 vùng theo tỉnh thay cho hằng số 30.000đ.

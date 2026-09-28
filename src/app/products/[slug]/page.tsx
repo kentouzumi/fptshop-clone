@@ -7,6 +7,7 @@ import { SITE_NAME, absoluteUrl } from "@/lib/siteUrl";
 import { getProductStockInfo, EMPTY_VARIANT_STOCK } from "@/lib/inventory";
 import JsonLd from "@/components/JsonLd";
 import { getProducts } from "@/lib/products";
+import { getRelatedProductGroups } from "@/lib/productRelations";
 import { getProductReviews, getUserReviewForProduct } from "@/lib/reviews";
 import { isInWishlist, getWishlistedProductIds } from "@/lib/wishlist";
 import { getCurrentUser } from "@/lib/auth";
@@ -119,31 +120,48 @@ export default async function ProductDetailPage({
   // lớn độc lập với nhau — chỉ cần đúng thứ tự phụ thuộc dữ liệu (product ->
   // (related sản phẩm + user hiện tại) -> phần còn lại cần cả 2 cái đó), nên
   // gom thành 2 đợt Promise.all thay vì 7 round-trip DB nối đuôi nhau.
-  const [{ products: relatedProducts }, currentUser] = await Promise.all([
+  const [{ products: relatedProducts }, currentUser, relationGroups] = await Promise.all([
     getProducts({ categorySlug: product.category.slug, limit: 4 }),
     getCurrentUser(),
+    getRelatedProductGroups(product.id),
   ]);
   const related = relatedProducts.filter((p) => p.id !== product.id).slice(0, 4);
+
+  // Khối "Sản phẩm cùng danh mục" tự động chỉ còn hiện khi admin CHƯA tự chọn
+  // liên kết loại RELATED — 2 cái cùng đóng đúng 1 vai trò, hiện cả 2 sẽ thành
+  // 2 khối "sản phẩm liên quan" chồng nhau. Phụ kiện/nâng cấp là vai trò khác
+  // nên không thay thế khối này.
+  const showAutoRelated = !relationGroups.some((g) => g.type === "RELATED");
+
+  // Mọi sản phẩm sắp render bằng ProductCard (cả thủ công lẫn tự động) đều cần
+  // trạng thái yêu thích + tồn kho, tra 1 lần cho cả danh sách thay vì mỗi
+  // khối một lượt query.
+  const cardProductIds = [
+    ...new Set([
+      ...relationGroups.flatMap((g) => g.products.map((p) => p.id)),
+      ...(showAutoRelated ? related.map((p) => p.id) : []),
+    ]),
+  ];
 
   const [
     { reviews, count: reviewCount, average: averageRating },
     userReview,
     inWishlist,
-    relatedWishlistedIds,
+    cardWishlistedIds,
     stockByVariant,
-    relatedOutOfStockIds,
+    cardOutOfStockIds,
   ] = await Promise.all([
     getProductReviews(product.id, currentUser?.id),
     currentUser ? getUserReviewForProduct(currentUser.id, product.id) : Promise.resolve(null),
     currentUser ? isInWishlist(currentUser.id, product.id) : Promise.resolve(false),
     currentUser
-      ? getWishlistedProductIds(currentUser.id, related.map((p) => p.id))
+      ? getWishlistedProductIds(currentUser.id, cardProductIds)
       : Promise.resolve(new Set<string>()),
     // Dùng cho CẢ hiển thị "còn hàng/hết hàng" cho khách LẪN `availability`
     // của JSON-LD — cùng 1 nguồn để trang và dữ liệu khai cho Google không
     // bao giờ nói 2 điều khác nhau.
     getProductStockInfo(product.id),
-    getOutOfStockProductIds(related.map((p) => p.id)),
+    getOutOfStockProductIds(cardProductIds),
   ]);
 
   const prices = product.variants.map((v) => Number(v.price));
@@ -370,7 +388,23 @@ export default async function ProductDetailPage({
         )}
       </section>
 
-      {related.length > 0 && (
+      {relationGroups.map((group) => (
+        <section key={group.type} className="mt-12">
+          <h2 className="mb-4 text-lg font-semibold tracking-tight">{group.label}</h2>
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
+            {group.products.map((p) => (
+              <ProductCard
+                key={p.id}
+                product={p}
+                initialInWishlist={cardWishlistedIds.has(p.id)}
+                outOfStock={cardOutOfStockIds.has(p.id)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      {showAutoRelated && related.length > 0 && (
         <section className="mt-12">
           <h2 className="mb-4 text-lg font-semibold tracking-tight">Sản phẩm cùng danh mục</h2>
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
@@ -378,8 +412,8 @@ export default async function ProductDetailPage({
               <ProductCard
                 key={p.id}
                 product={p}
-                initialInWishlist={relatedWishlistedIds.has(p.id)}
-                outOfStock={relatedOutOfStockIds.has(p.id)}
+                initialInWishlist={cardWishlistedIds.has(p.id)}
+                outOfStock={cardOutOfStockIds.has(p.id)}
               />
             ))}
           </div>
