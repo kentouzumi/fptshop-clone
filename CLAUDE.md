@@ -4460,6 +4460,90 @@
       file sinh tự động đó (không phải lỗi ở mã nguồn — `npx tsc --noEmit` chạy
       riêng vẫn sạch). Xóa `.next` rồi build lại là hết.
 
+- [x] Trang admin quản lý mã giảm giá `/admin/coupons` (điểm còn thiếu tự ghi ra
+      ở mục "Gợi ý sẵn mã giảm giá" ngay trên — trước đó Coupon là model DUY NHẤT
+      có UI cho khách dùng nhưng KHÔNG có trang admin nào, muốn thêm mã phải mở
+      Prisma Studio).
+
+      Theo đúng pattern của /admin/promotions (model gần nhất — cũng có khoảng
+      thời gian startsAt/endsAt + cờ isActive): list + form inline ngay trong
+      trang, không tách trang new/edit riêng.
+
+      lib/coupons.ts: `parseCouponInput()`, `getAllCouponsForAdmin()`,
+      `getCouponOrderCounts()`, `createCoupon()`, `updateCoupon()`,
+      `deleteCoupon()`. API `/api/admin/coupons` (POST) và
+      `/api/admin/coupons/[id]` (PATCH/DELETE), đều có `requireAdmin()`.
+
+      2 ĐIỂM PHẢI CẨN THẬN HƠN PROMOTION (Promotion không có cái nào):
+
+      1. `Coupon.code` là `@unique` -> `assertCodeAvailable()` tự check trùng
+         trước khi ghi và trả 409 kèm thông báo tiếng Việt (giống cách
+         category/brand check trùng slug), thay vì để lỗi P2002 thô của Postgres.
+         Khi SỬA thì truyền `excludeId` để mã không bị coi là trùng với CHÍNH NÓ.
+
+      2. `Order.couponId` là quan hệ OPTIONAL -> Prisma mặc định
+         `onDelete: SetNull`, xóa 1 mã đã được dùng sẽ KHÔNG báo lỗi gì nhưng đơn
+         hàng cũ âm thầm mất dấu vết đã dùng mã nào (ĐÚNG lớp lỗi đã gặp với
+         Address <-> Order, xem mục "Sổ địa chỉ"). `deleteCoupon()` tự tìm Order
+         nào đang trỏ tới mã này TRƯỚC, có thì chặn 409 với hướng dẫn "hãy tắt
+         thay vì xóa". UI cũng disable sẵn nút Xóa cho các mã đã có đơn (dùng
+         `getCouponOrderCounts()` — 1 query groupBy cho toàn bộ danh sách, không
+         phải N+1) kèm tooltip giải thích, nhưng server vẫn kiểm tra lại vì nút
+         disable ở client không chặn được ai gọi thẳng API.
+
+      CHUẨN HÓA THEO LOẠI MÃ (quan trọng — 3 CouponType dùng `value`/`maxDiscount`
+      theo nghĩa KHÁC NHAU): PERCENT bắt buộc value 1-100 và cho phép maxDiscount;
+      FIXED_AMOUNT value >= 1 và ÉP maxDiscount về null (giảm số tiền cố định
+      không có khái niệm "tối đa"); FREE_SHIPPING ép CẢ value = 0 LẪN maxDiscount
+      = null. Ép ở tầng `parseCouponInput()` chứ không chỉ ẩn ô ở UI — nếu để dữ
+      liệu vô nghĩa lọt vào DB thì `validateCoupon()` sẽ bỏ qua nó trong khi admin
+      nhìn vào lại tưởng nó có tác dụng. Form cũng chỉ hiện đúng các ô có ý nghĩa
+      cho loại đang chọn. `usedCount` là read-only (chỉ hiện "Đã dùng 3/100
+      lượt"), không cho sửa tay.
+
+      Mã chỉ cho `^[A-Z0-9_-]{3,32}$` và tự uppercase cả ở form lẫn server —
+      `validateCoupon()` vốn đã uppercase mã khách nhập, nên mã chứa dấu cách/chữ
+      thường sẽ không bao giờ khớp được.
+
+      TRẠNG THÁI HIỆU LỰC tính ở SERVER (`resolveStatus()` trong page.tsx) rồi
+      truyền xuống, không tính trong client component: rule `react-hooks/purity`
+      của eslint-config-next 16 cấm gọi `Date.now()` lúc render (đã báo lỗi thật
+      khi viết lần đầu), và quan trọng hơn là mốc thời gian của SERVER mới là mốc
+      `getSuggestedCoupons()` dùng để quyết định mã có hiện cho khách hay không —
+      tính ở client sẽ lệch với thứ khách thực sự thấy. 5 trạng thái: Đang chạy /
+      Đã tắt / Hết hạn / Chưa tới hạn / Hết lượt.
+
+      KHÔNG cần `revalidateTag`: `getSuggestedCoupons()` cố tình không cache
+      (usedCount đổi theo từng đơn) — đã ghi chú ngay trong `createCoupon()` để
+      sau này ai thêm cache thì nhớ thêm invalidate.
+
+      Trang có sẵn 1 banner cảnh báo màu vàng: mọi mã đang hoạt động và còn hạn
+      đều được liệt kê CÔNG KHAI cho khách ở /checkout, đừng tạo mã ở đây nếu chỉ
+      muốn gửi riêng cho 1 người — vì model Coupon vẫn chưa có cờ công khai/riêng
+      tư (vẫn nằm trong mục còn thiếu). Thêm link "Mã giảm giá" vào nhóm
+      Marketing của AdminSidebarNav, ngay sau "Khuyến mãi".
+
+      Đã test qua dev server bằng DB THẬT (tạo SUPER_ADMIN + khách + đơn hàng
+      test, dọn sạch và khôi phục tồn kho sau khi xong — xác nhận lại DB còn đúng
+      1 mã thật / 3 đơn thật / 8 user thật): chưa đăng nhập và khách thường gọi
+      API đều 403, vào trang thì 307; trang admin 200 kèm cảnh báo và mã thật
+      FPT10; tạo mã gõ chữ thường tự lưu thành chữ HOA; trùng mã 409; 8 trường
+      hợp dữ liệu sai đều bị chặn 400 (phần trăm > 100, phần trăm = 0, ngày kết
+      thúc trước ngày bắt đầu, mã có ký tự lạ, mã quá ngắn, giá trị đơn tối thiểu
+      âm, loại mã không hợp lệ, giới hạn lượt = 0); FIXED_AMOUNT bị ép maxDiscount
+      = null và FREE_SHIPPING bị ép value = 0 + maxDiscount = null dù cố tình gửi
+      giá trị; sửa mã đổi đúng value/isActive/usageLimit; mã vừa tắt lập tức
+      BIẾN MẤT khỏi gợi ý ở /checkout còn mã vừa tạo thì XUẤT HIỆN (kiểm tra bằng
+      HTML thật của /checkout với session khách); xóa mã chưa ai dùng thành công;
+      và quan trọng nhất — tạo 1 mã qua API rồi đặt 1 đơn THẬT dùng đúng mã đó
+      (giảm đúng 100.000đ, usedCount lên 1), xóa mã đó bị chặn đúng 409 và đơn
+      hàng VẪN giữ nguyên couponId (không bị SetNull). `tsc --noEmit`/`eslint`/
+      `npm run build` sạch (3 route mới xuất hiện đúng trong danh sách).
+
+      CHƯA LÀM: không có ô tìm kiếm/lọc theo trạng thái và không phân trang (hiện
+      chỉ có 1 mã; danh sách mã giảm giá của 1 shop quy mô này khó vượt vài chục
+      dòng). Cũng chưa có thống kê "mã này đã giảm tổng bao nhiêu tiền".
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4551,8 +4635,9 @@
       giá), **không có trang thương hiệu** và không có danh mục con thật (vd
       iPhone 15 Series / iPhone 16 Series).
 - [x] **Mã giảm giá phải tự biết mới nhập được** — ĐÃ LÀM: /checkout liệt kê sẵn
-      mã đang chạy, bấm là áp. Còn thiếu: trang admin quản lý mã (vẫn phải tạo
-      qua Prisma Studio) và cờ mã riêng-tư trong schema Coupon.
+      mã đang chạy, bấm là áp; và /admin/coupons quản lý mã đầy đủ. Còn thiếu:
+      cờ mã riêng-tư trong schema Coupon (hiện mọi mã đang chạy đều bị liệt kê
+      công khai cho khách).
 - [ ] Đăng nhập chỉ có Google; FPT Shop dùng SĐT/OTP là chính — KHÔNG tính là
       thiếu sót kỹ thuật, đã bỏ có lý do (cả 4 nhà cung cấp SMS thử qua đều
       đòi thẻ/brandname, xem chuỗi mục đổi auth ở trên).

@@ -128,3 +128,135 @@ export async function getSuggestedCoupons(): Promise<SuggestedCoupon[]> {
       };
     });
 }
+
+// ---------------------------------------------------------------------------
+// Quản trị mã giảm giá (admin)
+// ---------------------------------------------------------------------------
+
+export interface CouponInput {
+  code: string;
+  type: CouponType;
+  value: number;
+  minOrderValue: number;
+  maxDiscount: number | null;
+  usageLimit: number | null;
+  startsAt: Date;
+  endsAt: Date;
+  isActive: boolean;
+}
+
+/** Mã chỉ cho chữ HOA/số/gạch để khách gõ lại được — validateCoupon() vốn tự uppercase. */
+const COUPON_CODE_PATTERN = /^[A-Z0-9_-]{3,32}$/;
+
+export function parseCouponInput(body: unknown): CouponInput | null {
+  const b = body as Record<string, unknown>;
+
+  const code = typeof b?.code === "string" ? b.code.trim().toUpperCase() : "";
+  if (!COUPON_CODE_PATTERN.test(code)) return null;
+
+  const type = b?.type;
+  if (
+    type !== CouponType.PERCENT &&
+    type !== CouponType.FIXED_AMOUNT &&
+    type !== CouponType.FREE_SHIPPING
+  ) {
+    return null;
+  }
+
+  const startsAt = new Date(String(b?.startsAt));
+  const endsAt = new Date(String(b?.endsAt));
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt <= startsAt) {
+    return null;
+  }
+
+  const minOrderValue = Number(b?.minOrderValue ?? 0);
+  if (!Number.isInteger(minOrderValue) || minOrderValue < 0) return null;
+
+  const rawLimit = b?.usageLimit;
+  const usageLimit =
+    rawLimit === null || rawLimit === undefined || rawLimit === "" ? null : Number(rawLimit);
+  if (usageLimit !== null && (!Number.isInteger(usageLimit) || usageLimit < 1)) return null;
+
+  // Mỗi loại mã dùng `value`/`maxDiscount` theo nghĩa khác nhau, nên chuẩn hóa
+  // ngay ở đây thay vì để dữ liệu vô nghĩa lọt vào DB (vd FREE_SHIPPING mà có
+  // maxDiscount thì validateCoupon() sẽ bỏ qua, nhưng admin nhìn vào lại tưởng
+  // nó có tác dụng).
+  let value = Number(b?.value ?? 0);
+  let maxDiscount =
+    b?.maxDiscount === null || b?.maxDiscount === undefined || b?.maxDiscount === ""
+      ? null
+      : Number(b.maxDiscount);
+
+  if (type === CouponType.PERCENT) {
+    if (!Number.isInteger(value) || value < 1 || value > 100) return null;
+    if (maxDiscount !== null && (!Number.isInteger(maxDiscount) || maxDiscount < 1)) return null;
+  } else if (type === CouponType.FIXED_AMOUNT) {
+    if (!Number.isInteger(value) || value < 1) return null;
+    maxDiscount = null; // giảm số tiền cố định thì không có khái niệm "tối đa"
+  } else {
+    value = 0; // miễn phí ship không dùng tới value
+    maxDiscount = null;
+  }
+
+  return {
+    code,
+    type,
+    value,
+    minOrderValue,
+    maxDiscount,
+    usageLimit,
+    startsAt,
+    endsAt,
+    isActive: b?.isActive !== false,
+  };
+}
+
+export async function getAllCouponsForAdmin() {
+  return prisma.coupon.findMany({ orderBy: [{ isActive: "desc" }, { endsAt: "desc" }] });
+}
+
+/** Số đơn đã dùng từng mã — để cảnh báo trước khi xóa (xem deleteCoupon). */
+export async function getCouponOrderCounts(): Promise<Record<string, number>> {
+  const rows = await prisma.order.groupBy({
+    by: ["couponId"],
+    where: { couponId: { not: null } },
+    _count: { _all: true },
+  });
+  const result: Record<string, number> = {};
+  for (const row of rows) {
+    if (row.couponId) result[row.couponId] = row._count._all;
+  }
+  return result;
+}
+
+async function assertCodeAvailable(code: string, excludeId?: string) {
+  const existing = await prisma.coupon.findUnique({ where: { code } });
+  if (existing && existing.id !== excludeId) {
+    throw new Error("Mã giảm giá này đã tồn tại.");
+  }
+}
+
+export async function createCoupon(input: CouponInput) {
+  await assertCodeAvailable(input.code);
+  // KHÔNG cần revalidateTag: getSuggestedCoupons() cố tình không cache (usedCount
+  // đổi theo từng đơn) — nếu sau này thêm cache cho nó thì phải thêm invalidate ở đây.
+  return prisma.coupon.create({ data: input });
+}
+
+export async function updateCoupon(id: string, input: CouponInput) {
+  await assertCodeAvailable(input.code, id);
+  return prisma.coupon.update({ where: { id }, data: input });
+}
+
+export async function deleteCoupon(id: string) {
+  // Order.couponId là quan hệ OPTIONAL nên Prisma mặc định onDelete: SetNull —
+  // xóa thẳng sẽ không báo lỗi gì nhưng đơn hàng cũ mất luôn dấu vết đã dùng mã
+  // nào (đúng lớp lỗi đã gặp với Address <-> Order). Phải tự chặn ở đây.
+  const usedByOrder = await prisma.order.findFirst({ where: { couponId: id } });
+  if (usedByOrder) {
+    throw new Error(
+      "Không thể xóa vì mã này đã được dùng cho đơn hàng. Hãy tắt (bỏ chọn 'Đang hoạt động') thay vì xóa."
+    );
+  }
+  await prisma.coupon.delete({ where: { id } });
+}

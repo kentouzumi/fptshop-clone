@@ -30,6 +30,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string }[] }[] 
     title: "Marketing",
     items: [
       { href: "/admin/promotions", label: "Khuyến mãi" },
+      { href: "/admin/coupons", label: "Mã giảm giá" },
       { href: "/admin/static-pages", label: "Trang tĩnh" },
       { href: "/admin/faq", label: "FAQ" },
     ],
