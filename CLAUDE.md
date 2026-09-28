@@ -4400,6 +4400,66 @@
       "force-dynamic"` cho trang tĩnh mới — muốn kiểm chứng thì xem cột ○/ƒ
       trong danh sách route ở cuối build, đừng dựa vào số lỗi pool.
 
+- [x] Gợi ý sẵn mã giảm giá đang chạy ở /checkout (mục "Mã giảm giá phải tự biết
+      mới nhập được" trong bản rà soát so với fptshop.com.vn — trước đó ô nhập mã
+      chỉ dùng được nếu khách đã biết mã từ nguồn khác, không có chỗ nào trong
+      site liệt kê mã đang có).
+
+      lib/coupons.ts: `getSuggestedCoupons()` — lấy mã `isActive` và đang trong
+      khoảng `startsAt`-`endsAt`, lọc bỏ mã đã hết lượt. Việc lọc hết lượt làm ở
+      JS chứ không trong `where` vì Prisma không so sánh được 2 CỘT với nhau
+      (`usedCount < usageLimit`) trong điều kiện truy vấn. `describeCoupon()`
+      sinh mô tả người đọc được cho cả 3 CouponType: "Miễn phí vận chuyển" /
+      "Giảm 500.000₫" / "Giảm 10% (tối đa 300.000₫)". KHÔNG cache (khác các hàm
+      public khác trong dự án) vì `usedCount` đổi theo từng đơn — mã có thể hết
+      lượt bất cứ lúc nào, gợi ý 1 mã đã hết lượt là hứa hão với khách.
+
+      CỐ Ý TRẢ VỀ CẢ mã khách CHƯA đủ điều kiện (đơn chưa đạt `minOrderValue`):
+      UI hiện mờ + nút "Áp dụng" bị khóa + dòng "Mua thêm 967.010.000₫ để dùng mã
+      này" — cho khách biết mua thêm bao nhiêu thì dùng được, giống cách các
+      trang thương mại điện tử thật làm, thay vì giấu mã đi. Không có rủi ro gì
+      vì `validateCoupon()` vẫn kiểm tra lại đầy đủ ở server cả lúc preview lẫn
+      lúc tạo đơn (trong transaction).
+
+      CheckoutForm.tsx: `handleApplyCoupon()` giờ nhận tham số `rawCode` tùy chọn
+      để dùng chung cho cả nút "Áp dụng" của ô nhập tay lẫn nút của từng mã gợi ý
+      (không viết 2 hàm). Áp mã xong tự điền mã đó vào ô nhập để nếu khách bấm
+      "Xóa" thì vẫn thấy lại mã cũ thay vì ô trống. Danh sách gợi ý tự ẩn khi đã
+      áp 1 mã (không còn chỗ nào để bấm áp mã thứ 2 — hệ thống chỉ hỗ trợ 1 mã/đơn).
+
+      KHÔNG TỰ THÊM MÃ GIẢM GIÁ NÀO VÀO DB THẬT: user chỉ yêu cầu gợi ý mã, không
+      yêu cầu tạo mã mới — tạo mã là tạo ra khuyến mãi thật có thể bị dùng để mua
+      hàng. DB hiện có đúng 1 mã thật do user tự tạo (FPT10, giảm 10% tối đa
+      300.000₫, đơn từ 500.000₫) và nó hiển thị đúng trong danh sách gợi ý. Test
+      các loại mã khác bằng mã tạm tạo rồi xóa ngay.
+
+      LƯU Ý — 2 điểm cần biết trước khi dùng thật:
+      + Model `Coupon` KHÔNG có cờ công khai/riêng tư hay đối tượng áp dụng, nên
+        MỌI mã đang active đều bị liệt kê công khai ở /checkout. Nếu sau này cần
+        mã riêng cho từng khách (vd mã bù đơn giao lỗi) thì PHẢI thêm cờ vào
+        schema rồi lọc trong `getSuggestedCoupons()`, không thì mã đó lộ cho tất
+        cả mọi người — đã ghi rõ cảnh báo này ngay trong comment của hàm.
+      + CHƯA có trang admin quản lý mã giảm giá (danh sách admin có 13 mục:
+        sản phẩm/đơn hàng/tồn kho/danh mục/thương hiệu/người dùng/cửa hàng/khuyến
+        mãi/bảo hành/thu cũ/hỗ trợ/trang tĩnh/FAQ — không có Coupon). Muốn thêm
+        mã mới vẫn phải qua Prisma Studio. Đây là điểm có thể làm tiếp.
+
+      Đã test qua dev server bằng DB THẬT (tạo 6 mã tạm đủ các trường hợp + user/
+      giỏ hàng test, xóa sạch sau khi xong — xác nhận lại DB còn đúng 1 mã thật):
+      /checkout hiện đúng tiêu đề "Mã đang có"; mã FREE_SHIPPING hiện đúng "Miễn
+      phí vận chuyển", FIXED_AMOUNT hiện đúng "Giảm 500.000₫", FPT10 hiện đúng
+      "Giảm 10% (tối đa 300.000₫)"; mã yêu cầu đơn 99 triệu vẫn hiện kèm dòng
+      "Mua thêm ..."; mã đã tắt / đã hết hạn / đã hết lượt đều KHÔNG bị liệt kê
+      (3 trường hợp riêng); áp thật 1 mã gợi ý qua `/api/coupons/validate` trả
+      đúng 200 kèm `freeShipping: true`, còn mã chưa đủ điều kiện bị server chặn
+      400 dù có cố gọi thẳng API. `tsc --noEmit`/`eslint`/`npm run build` sạch.
+
+      LƯU Ý MÔI TRƯỜNG gặp lúc build: kill `next dev` giữa chừng bằng `taskkill`
+      có thể để lại `.next/dev/types/routes.d.ts` và `validator.ts` ghi dở, khiến
+      `npm run build` báo một loạt lỗi cú pháp TS1434/TS1109/TS1160 TRONG CHÍNH 2
+      file sinh tự động đó (không phải lỗi ở mã nguồn — `npx tsc --noEmit` chạy
+      riêng vẫn sạch). Xóa `.next` rồi build lại là hết.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4490,8 +4550,9 @@
       rất lớn của họ), **không có Hỏi–đáp (Q&A) dưới sản phẩm** (mới có đánh
       giá), **không có trang thương hiệu** và không có danh mục con thật (vd
       iPhone 15 Series / iPhone 16 Series).
-- [ ] **Mã giảm giá phải tự biết mới nhập được** ở /checkout — FPT Shop liệt
-      kê sẵn các mã đang chạy cho khách bấm áp.
+- [x] **Mã giảm giá phải tự biết mới nhập được** — ĐÃ LÀM: /checkout liệt kê sẵn
+      mã đang chạy, bấm là áp. Còn thiếu: trang admin quản lý mã (vẫn phải tạo
+      qua Prisma Studio) và cờ mã riêng-tư trong schema Coupon.
 - [ ] Đăng nhập chỉ có Google; FPT Shop dùng SĐT/OTP là chính — KHÔNG tính là
       thiếu sót kỹ thuật, đã bỏ có lý do (cả 4 nhà cung cấp SMS thử qua đều
       đòi thẻ/brandname, xem chuỗi mục đổi auth ở trên).

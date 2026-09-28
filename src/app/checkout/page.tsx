@@ -11,6 +11,7 @@ import {
 import { isMomoConfigured } from "@/lib/momo";
 import { isBankTransferConfigured } from "@/lib/bankTransfer";
 import { getActiveStores } from "@/lib/stores";
+import { getSuggestedCoupons } from "@/lib/coupons";
 import CheckoutForm from "./CheckoutForm";
 
 function formatPrice(value: number) {
@@ -23,10 +24,11 @@ export default async function CheckoutPage() {
     redirect("/login");
   }
 
-  const [{ items, subtotal }, addresses, stores] = await Promise.all([
+  const [{ items, subtotal }, addresses, stores, suggestedCoupons] = await Promise.all([
     getCartDetail(user.id),
     getAddressesForUser(user.id),
     getActiveStores(),
+    getSuggestedCoupons(),
   ]);
   if (items.length === 0) {
     redirect("/cart");
@@ -43,6 +45,12 @@ export default async function CheckoutPage() {
             subtotal={subtotal}
             provinces={PROVINCE_SHIPPING_OPTIONS}
             defaultShippingFee={DEFAULT_SHIPPING_FEE}
+            suggestedCoupons={suggestedCoupons.map((c) => ({
+              code: c.code,
+              benefit: c.benefit,
+              condition: c.condition,
+              minOrderValue: c.minOrderValue,
+            }))}
             savedAddresses={addresses.map((a) => ({
               id: a.id,
               recipientName: a.recipientName,

@@ -39,6 +39,13 @@ export interface StoreOption {
   address: string;
 }
 
+export interface SuggestedCouponView {
+  code: string;
+  benefit: string;
+  condition: string | null;
+  minOrderValue: number;
+}
+
 interface AppliedCoupon {
   code: string;
   discountAmount: number;
@@ -64,6 +71,7 @@ export default function CheckoutForm({
   subtotal,
   provinces,
   defaultShippingFee,
+  suggestedCoupons,
   momoAvailable,
   bankTransferAvailable,
   stores,
@@ -72,6 +80,7 @@ export default function CheckoutForm({
   subtotal: number;
   provinces: ProvinceShipping[];
   defaultShippingFee: number;
+  suggestedCoupons: SuggestedCouponView[];
   momoAvailable: boolean;
   bankTransferAvailable: boolean;
   stores: StoreOption[];
@@ -121,8 +130,8 @@ export default function CheckoutForm({
   const discountAmount = appliedCoupon?.discountAmount ?? 0;
   const grandTotal = subtotal + effectiveShippingFee - discountAmount;
 
-  async function handleApplyCoupon() {
-    const code = couponInput.trim();
+  async function handleApplyCoupon(rawCode?: string) {
+    const code = (rawCode ?? couponInput).trim();
     if (!code) return;
 
     setApplyingCoupon(true);
@@ -146,6 +155,9 @@ export default function CheckoutForm({
         discountAmount: data.discountAmount,
         freeShipping: data.freeShipping,
       });
+      // Đồng bộ ô nhập với mã vừa bấm từ danh sách gợi ý, để nếu khách bấm "Xóa"
+      // thì vẫn thấy lại mã cũ trong ô thay vì ô trống.
+      setCouponInput(data.code);
     } finally {
       setApplyingCoupon(false);
     }
@@ -405,7 +417,7 @@ export default function CheckoutForm({
             />
             <button
               type="button"
-              onClick={handleApplyCoupon}
+              onClick={() => handleApplyCoupon()}
               disabled={applyingCoupon || !couponInput.trim()}
               className="btn-secondary !px-4 !py-2 text-sm"
             >
@@ -414,6 +426,44 @@ export default function CheckoutForm({
           </div>
         )}
         {couponError && <p className="mt-2 text-sm text-red-600">{couponError}</p>}
+
+        {!appliedCoupon && suggestedCoupons.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="text-xs font-medium text-zinc-500">Mã đang có</p>
+            {suggestedCoupons.map((c) => {
+              const missing = c.minOrderValue - subtotal;
+              const eligible = missing <= 0;
+              return (
+                <div
+                  key={c.code}
+                  className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-sm ${
+                    eligible ? "border-zinc-200" : "border-zinc-200 opacity-60"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono font-semibold text-zinc-900">{c.code}</p>
+                    <p className="text-zinc-600">{c.benefit}</p>
+                    {!eligible ? (
+                      <p className="text-xs text-zinc-500">
+                        Mua thêm {formatPrice(missing)} để dùng mã này
+                      </p>
+                    ) : (
+                      c.condition && <p className="text-xs text-zinc-500">{c.condition}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyCoupon(c.code)}
+                    disabled={!eligible || applyingCoupon}
+                    className="btn-secondary shrink-0 !px-3 !py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Áp dụng
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="card p-4">
