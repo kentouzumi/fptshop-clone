@@ -7,7 +7,8 @@ import { SITE_NAME, absoluteUrl } from "@/lib/siteUrl";
 import { getProductStockInfo, EMPTY_VARIANT_STOCK } from "@/lib/inventory";
 import JsonLd from "@/components/JsonLd";
 import { getProducts } from "@/lib/products";
-import { getRelatedProductGroups } from "@/lib/productRelations";
+import { getRelatedProductGroups, getFrequentlyBoughtTogether } from "@/lib/productRelations";
+import ComboBuyBox from "./ComboBuyBox";
 import { getProductReviews, getUserReviewForProduct } from "@/lib/reviews";
 import { isInWishlist, getWishlistedProductIds } from "@/lib/wishlist";
 import { getCurrentUser } from "@/lib/auth";
@@ -120,11 +121,13 @@ export default async function ProductDetailPage({
   // lớn độc lập với nhau — chỉ cần đúng thứ tự phụ thuộc dữ liệu (product ->
   // (related sản phẩm + user hiện tại) -> phần còn lại cần cả 2 cái đó), nên
   // gom thành 2 đợt Promise.all thay vì 7 round-trip DB nối đuôi nhau.
-  const [{ products: relatedProducts }, currentUser, relationGroups] = await Promise.all([
-    getProducts({ categorySlug: product.category.slug, limit: 4 }),
-    getCurrentUser(),
-    getRelatedProductGroups(product.id),
-  ]);
+  const [{ products: relatedProducts }, currentUser, relationGroups, boughtTogetherRaw] =
+    await Promise.all([
+      getProducts({ categorySlug: product.category.slug, limit: 4 }),
+      getCurrentUser(),
+      getRelatedProductGroups(product.id),
+      getFrequentlyBoughtTogether(product.id),
+    ]);
   const related = relatedProducts.filter((p) => p.id !== product.id).slice(0, 4);
 
   // Khối "Sản phẩm cùng danh mục" tự động chỉ còn hiện khi admin CHƯA tự chọn
@@ -133,12 +136,18 @@ export default async function ProductDetailPage({
   // nên không thay thế khối này.
   const showAutoRelated = !relationGroups.some((g) => g.type === "RELATED");
 
+  // Bỏ khỏi khối "khách cũng mua" những sản phẩm ĐÃ hiện ở khối liên kết thủ
+  // công — cùng 1 card xuất hiện 2 lần trên 1 trang trông như lỗi.
+  const manualIds = new Set(relationGroups.flatMap((g) => g.products.map((p) => p.id)));
+  const boughtTogether = boughtTogetherRaw.filter((p) => !manualIds.has(p.id));
+
   // Mọi sản phẩm sắp render bằng ProductCard (cả thủ công lẫn tự động) đều cần
   // trạng thái yêu thích + tồn kho, tra 1 lần cho cả danh sách thay vì mỗi
   // khối một lượt query.
   const cardProductIds = [
     ...new Set([
-      ...relationGroups.flatMap((g) => g.products.map((p) => p.id)),
+      ...manualIds,
+      ...boughtTogether.map((p) => p.id),
       ...(showAutoRelated ? related.map((p) => p.id) : []),
     ]),
   ];
@@ -401,8 +410,42 @@ export default async function ProductDetailPage({
               />
             ))}
           </div>
+
+          {/* Chỉ nhóm PHỤ KIỆN MUA KÈM mới có khối mua cả combo — "phiên bản
+              nâng cấp" là thứ mua THAY THẾ sản phẩm này, gộp chung vào giỏ là
+              sai ý; "sản phẩm liên quan" cũng chỉ để tham khảo. */}
+          {group.type === "ACCESSORY" && (
+            <ComboBuyBox
+              items={group.products.map((p) => ({
+                id: p.id,
+                name: p.name,
+                price: p.minPrice,
+                variantId: p.defaultVariantId,
+                outOfStock: cardOutOfStockIds.has(p.id),
+              }))}
+            />
+          )}
         </section>
       ))}
+
+      {boughtTogether.length > 0 && (
+        <section className="mt-12">
+          <h2 className="mb-1 text-lg font-semibold tracking-tight">
+            Khách mua sản phẩm này cũng mua
+          </h2>
+          <p className="mb-4 text-sm text-zinc-500">Thống kê từ đơn hàng thật của cửa hàng.</p>
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
+            {boughtTogether.map((p) => (
+              <ProductCard
+                key={p.id}
+                product={p}
+                initialInWishlist={cardWishlistedIds.has(p.id)}
+                outOfStock={cardOutOfStockIds.has(p.id)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {showAutoRelated && related.length > 0 && (
         <section className="mt-12">

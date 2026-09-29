@@ -490,16 +490,23 @@ async function main() {
   const productIdBySlug = new Map(
     (await prisma.product.findMany({ select: { id: true, slug: true } })).map((p) => [p.slug, p.id])
   );
+  // sortOrder đánh số theo thứ tự xuất hiện TRONG TỪNG NHÓM (base + type) — đúng
+  // đơn vị mà nút ↑/↓ ở admin thao tác. Để cả nhóm cùng 0 thì thứ tự chỉ còn dựa
+  // vào id, admin đổi 1 lần là lệch hẳn khỏi thứ tự khai trong file này.
+  const sortCounter = new Map<string, number>();
   for (const rel of relations) {
     const baseId = productIdBySlug.get(rel.base);
     const relatedId = productIdBySlug.get(rel.related);
     if (!baseId || !relatedId) continue;
+    const key = `${baseId}|${rel.type}`;
+    const sortOrder = (sortCounter.get(key) ?? 0) + 1;
+    sortCounter.set(key, sortOrder);
     await prisma.productRelation.upsert({
       where: { baseProductId_relatedProductId: { baseProductId: baseId, relatedProductId: relatedId } },
-      // Đồng bộ lại `type` mỗi lần chạy seed (không dùng `update: {}` no-op) —
-      // đổi loại liên kết trong mảng trên phải có tác dụng với dòng đã tồn tại.
-      update: { type: rel.type },
-      create: { baseProductId: baseId, relatedProductId: relatedId, type: rel.type },
+      // Đồng bộ lại `type`/`sortOrder` mỗi lần chạy seed (không dùng `update: {}`
+      // no-op) — đổi loại/thứ tự trong mảng trên phải có tác dụng với dòng đã tồn tại.
+      update: { type: rel.type, sortOrder },
+      create: { baseProductId: baseId, relatedProductId: relatedId, type: rel.type, sortOrder },
     });
   }
 

@@ -264,6 +264,7 @@ model ProductRelation {
   baseProductId    String
   relatedProductId String
   type             String @default("RELATED") // RELATED, UPSELL, ACCESSORY
+  sortOrder        Int    @default(0) // thứ tự admin tự sắp trong cùng 1 loại
 
   baseProduct    Product @relation("BaseProduct", fields: [baseProductId], references: [id], onDelete: Cascade)
   relatedProduct Product @relation("RelatedProduct", fields: [relatedProductId], references: [id], onDelete: Cascade)

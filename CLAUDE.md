@@ -4836,6 +4836,111 @@
       sắp xếp lại thứ tự trong 1 loại (thứ tự = thứ tự thêm vào), và không có
       nút "mua cả combo" thêm nhiều sản phẩm vào giỏ 1 lần.
 
+- [x] 3 phần còn thiếu của ProductRelation (mục "CHƯA LÀM" ngay trên): gợi ý tự
+      động theo lịch sử mua chung, sắp xếp lại thứ tự, và nút mua cả combo.
+
+      **(1) Sắp xếp thứ tự** — ĐỔI SCHEMA: thêm `sortOrder Int @default(0)` vào
+      ProductRelation rồi `prisma db push` + `generate` + restart hẳn dev server.
+      Cột mới có giá trị mặc định nên không mất dữ liệu, không cần
+      `--accept-data-loss`. Sắp xếp giờ là `[{ sortOrder }, { id }]`
+      (RELATION_ORDER_BY, dùng CHUNG cho admin và trang khách nên 2 nơi không bao
+      giờ lệch thứ tự).
+
+      `moveProductRelation(id, "up"|"down")` HOÁN ĐỔI sortOrder với hàng xóm liền
+      kề TRONG CÙNG LOẠI (mỗi loại là 1 section riêng nên thứ tự chỉ có nghĩa
+      trong nội bộ loại). Nút ↑/↓ thay cho kéo-thả: danh sách tối đa 12 dòng,
+      không đáng thêm thư viện drag-drop. 2 chi tiết bắt buộc phải xử lý:
+      + Tìm hàng xóm so sánh theo CẶP `(sortOrder, id)` chứ không chỉ sortOrder —
+        mọi dòng tạo TRƯỚC khi có cột này đều mang sortOrder = 0, chỉ so sortOrder
+        thì không tìm ra hàng xóm nào và nút bấm im lặng không có tác dụng.
+      + Sau khi hoán đổi, nếu 2 dòng vốn CÙNG sortOrder (cùng 0) thì hoán đổi
+        không đổi được gì — ép lại ±1 để thao tác luôn nhìn thấy được.
+      Hoán đổi 2 dòng nằm trong `$transaction` để không có trạng thái giữa chừng.
+      `addProductRelation()` gán sortOrder = max trong nhóm + 1 (xếp cuối nhóm).
+      API: `PATCH /api/admin/relations/[id]` với `{ direction }` — trả
+      `{ moved: false }` (200, KHÔNG phải lỗi) khi đã ở đầu/cuối nhóm.
+      prisma/seed.ts đánh số sortOrder theo thứ tự khai trong mảng, đếm riêng
+      từng nhóm (base + type), `update` đồng bộ cả `type` LẪN `sortOrder`.
+
+      **(2) Khách mua sản phẩm này cũng mua** — `getFrequentlyBoughtTogether()`
+      suy TỪ ĐƠN HÀNG THẬT (OrderItem), bổ sung cho liên kết thủ công chứ không
+      thay thế (admin không phải đoán trước mọi cặp hay bán chung). Lấy các đơn
+      có chứa sản phẩm này (trần 300 đơn gần nhất), rồi đếm sản phẩm khác trong
+      cùng đơn — đếm theo SỐ ĐƠN (Set orderId) chứ không phải số dòng OrderItem:
+      1 đơn mua 3 cái cùng lúc vẫn chỉ là 1 lần mua chung. LOẠI đơn CANCELLED và
+      RETURNED (hàng trả lại không phải bằng chứng mua chung — cùng cách
+      lib/dashboard.ts loại 2 trạng thái này khỏi doanh thu). Giữ đúng thứ hạng
+      đã tính khi fetch lại sản phẩm (findMany trả theo thứ tự DB, không theo
+      `in`). Trang sản phẩm LỌC BỎ những sản phẩm đã hiện ở khối liên kết thủ
+      công — cùng 1 card xuất hiện 2 lần trên 1 trang trông như lỗi.
+
+      CACHE: tag PRODUCTS_TAG nhưng KHÔNG có chỗ nào revalidate khi có đơn mới
+      (đặt hàng không đụng tới sản phẩm) nên `revalidate: 600` mới là giới hạn độ
+      tươi thật sự — chấp nhận được vì thống kê mua chung chỉ đổi đáng kể sau
+      hàng chục đơn.
+
+      **(3) Mua cả combo** — `ComboBuyBox.tsx` (client) dưới section "Phụ kiện
+      mua kèm": checkbox từng món (bỏ sẵn món hết hàng/chưa có biến thể), tổng
+      tiền tự cộng, 1 nút thêm hết vào giỏ. CHỈ gắn vào nhóm ACCESSORY —
+      "Phiên bản nâng cấp" là thứ mua THAY THẾ sản phẩm này, gộp vào giỏ là sai ý;
+      "Sản phẩm liên quan" chỉ để tham khảo.
+
+      CỐ Ý KHÔNG gồm chính sản phẩm đang xem trong combo: biến thể (màu/dung
+      lượng) khách đang chọn nằm trong state của ProductGalleryAndBuy ở phía trên
+      trang, khối này không thấy được — thêm đại biến thể rẻ nhất sẽ bỏ vào giỏ
+      đúng thứ khách KHÔNG chọn. Nút "Thêm vào giỏ hàng" ở trên vẫn là nơi mua
+      sản phẩm chính. `RelatedProductItem` (mở rộng ProductListItem) thêm
+      `defaultVariantId` = biến thể RẺ NHẤT đang bán, tức đúng biến thể ứng với
+      `minPrice` mà card đang hiển thị.
+
+      API `POST /api/cart/items/bulk` (route mới, 1 lần bấm = 1 request thay vì
+      để client gọi POST /api/cart/items nhiều lần): DEDUPE variantId trước (chọn
+      trùng 1 món thì addToCart sẽ cộng dồn thành số lượng 2 dù khách không yêu
+      cầu), trần 10 món SAU khi dedupe, và CỐ Ý KHÔNG dùng transaction — mỗi món
+      độc lập, 1 món hết hàng không phải lý do bỏ luôn các món còn lại; trả về
+      `{ added, errors }` để UI nói rõ món nào không thêm được.
+
+      LƯU Ý TypeScript gặp lúc làm: hàm dựng `RelatedProductItem` nhận `variants`
+      qua THAM SỐ RIÊNG thay vì giao (`&`) vào kiểu của sản phẩm — giao 2 kiểu
+      mảng khác nhau làm TS suy phần tử thành giao của cả 2, khiến chính mảng
+      truyền vào không còn hợp lệ.
+
+      Đã test qua dev server bằng DB THẬT (24/24 assertion đúng, tạo admin/khách/
+      đơn test rồi dọn sạch): thống kê mua chung hiện đúng sản phẩm bán kèm nhiều
+      nhất và ĐÚNG thứ hạng, đơn ĐÃ HỦY không được tính, sản phẩm chưa bán chung
+      với ai thì không dựng khối rỗng; thêm liên kết mới tự nhận sortOrder 1/2/3,
+      chưa đăng nhập + khách thường đổi thứ tự đều 403, hướng lạ 400, dòng đầu
+      bấm ↑ trả moved=false không lỗi, đổi thứ tự xong DB đúng thứ tự mới VÀ
+      trang khách hiện đúng ngay lần tải kế tiếp (revalidateTag chạy); khối mua
+      kèm chỉ có ở nhóm phụ kiện (nhóm "Phiên bản nâng cấp" không có), bulk API
+      chặn đúng khi chưa đăng nhập/danh sách rỗng/quá 10 món khác nhau, 11 id
+      TRÙNG nhau thì dedupe còn 1 món và vẫn cho qua, thêm 2 món vào giỏ đúng 2
+      dòng mỗi dòng số lượng 1, và 1 món hết hàng thì món còn lại VẪN vào giỏ kèm
+      lỗi riêng cho món kia. `tsc --noEmit`/`eslint`/`npm run build` sạch (route
+      `/api/cart/items/bulk` xuất hiện đúng trong danh sách).
+
+      LỖI TRONG TEST (không phải lỗi app): 2 assertion đầu tiên sai do chính test
+      giả định "11 id trùng nhau phải bị chặn" — thực tế dedupe còn 1 món thật
+      nên cho qua là ĐÚNG, và món đó vào giỏ trước làm hỏng luôn assertion đếm
+      giỏ ngay sau. Đã sửa test (gửi 11 biến thể KHÁC NHAU cho ca trần, dọn giỏ
+      giữa 2 ca), không sửa code app.
+
+      PHÁT HIỆN NGOÀI PHẠM VI (chưa đụng vào, cần user quyết): tồn kho 3 biến thể
+      đang lệch khỏi mức seed 20 — MBA-M3-8-256 = 21 (CAO hơn mức gốc, không có
+      nghiệp vụ nào cộng thêm kho ngoài `releaseStock()` khi hủy đơn, nên gần như
+      chắc chắn là dư ra từ 1 đơn test cũ bị hủy mà chưa từng trừ kho),
+      SUNHOUSE-CHAO28 = 19 và IP15PM-256-TN = 18. Đối chiếu 3 đơn hàng THẬT trong
+      DB thì chỉ giải thích được 2 đơn vị (1 MacBook + 1 Sunhouse của 2 đơn
+      CONFIRMED) — iPhone -2 và MacBook +2 là dư âm từ các phiên test trước, KHÔNG
+      phải do 3 tính năng lần này (đã kiểm chứng: test lần này chỉ tạm đưa tồn kho
+      MacBook về 0 rồi khôi phục đúng giá trị đọc được lúc đầu). Muốn về đúng
+      trạng thái sạch thì đặt lại qua /admin/inventory: MacBook 19, Sunhouse 19,
+      iPhone 20.
+
+      CHƯA LÀM: không kéo-thả sắp xếp (dùng nút ↑/↓), combo không cho đổi số
+      lượng từng món (mỗi món 1 cái), và "khách cũng mua" không lọc theo cùng
+      danh mục hay giới hạn theo thời gian.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -4911,8 +5016,9 @@
 - [x] **Phụ kiện mua kèm / sản phẩm liên quan chọn tay** — ĐÃ LÀM: admin chọn
       tay sản phẩm liên quan theo 3 loại (phụ kiện mua kèm/phiên bản nâng cấp/
       sản phẩm liên quan) ngay trong trang sửa sản phẩm; liên kết RELATED chọn
-      tay thay thế khối gợi ý tự động theo danh mục. Còn thiếu: gợi ý tự động
-      theo lịch sử mua chung, sắp xếp lại thứ tự, và nút "mua cả combo".
+      tay thay thế khối gợi ý tự động theo danh mục. ĐÃ LÀM NỐT (xem mục ngay
+      dưới): gợi ý tự động theo lịch sử mua chung, sắp xếp thứ tự bằng nút ↑/↓,
+      và nút mua cả combo. Còn thiếu: kéo-thả sắp xếp và đổi số lượng trong combo.
 - [x] **Địa chỉ nhập tay hoàn toàn** — ĐÃ LÀM: chọn Tỉnh/Thành + Phường/Xã từ
       danh sách hành chính thật (34 tỉnh / 3.321 phường-xã, cấu trúc 2 cấp sau
       01/07/2025), và phí ship chia 3 vùng theo tỉnh thay cho hằng số 30.000đ.

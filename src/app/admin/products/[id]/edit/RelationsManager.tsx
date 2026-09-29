@@ -13,6 +13,7 @@ const INPUT = "bg-white text-zinc-900 w-full rounded border border-zinc-300 px-2
 export interface RelationRow {
   id: string;
   type: RelationType;
+  sortOrder: number;
   relatedProduct: {
     id: string;
     name: string;
@@ -92,6 +93,26 @@ export default function RelationsManager({
     }
   }
 
+  async function handleMove(id: string, direction: "up" | "down") {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/relations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Đổi thứ tự thất bại.");
+        return;
+      }
+      router.refresh();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleDelete(id: string) {
     setBusyId(id);
     setError(null);
@@ -115,7 +136,7 @@ export default function RelationsManager({
         Liên kết một chiều: thêm ở đây thì sản phẩm kia hiện trên trang của sản phẩm NÀY, chứ không
         tự hiện ngược lại. Có liên kết loại &quot;{RELATION_TYPE_LABELS.RELATED}&quot; thì khối
         &quot;Sản phẩm cùng danh mục&quot; tự động gợi ý theo danh mục sẽ được thay bằng danh sách
-        bạn chọn.
+        bạn chọn. Thứ tự trong từng loại đổi được bằng nút ↑/↓ và đúng thứ tự khách nhìn thấy.
       </p>
 
       <div className="card p-4">
@@ -194,7 +215,7 @@ export default function RelationsManager({
                     {RELATION_TYPE_LABELS[t]}
                   </div>
                   <ul className="divide-y divide-zinc-100 rounded border border-zinc-200">
-                    {rows.map((r) => (
+                    {rows.map((r, i) => (
                       <li key={r.id} className="flex items-center gap-3 px-3 py-2">
                         {r.relatedProduct.imageUrl && (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -212,6 +233,26 @@ export default function RelationsManager({
                             </span>
                           )}
                         </span>
+                        {/* Nút lên/xuống thay vì kéo-thả: đủ dùng cho danh sách
+                            tối đa 12 dòng và không cần thêm thư viện nào. */}
+                        <button
+                          type="button"
+                          onClick={() => handleMove(r.id, "up")}
+                          disabled={i === 0 || busyId === r.id}
+                          aria-label="Đưa lên trên"
+                          className="rounded border border-zinc-300 px-1.5 text-xs disabled:opacity-30"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMove(r.id, "down")}
+                          disabled={i === rows.length - 1 || busyId === r.id}
+                          aria-label="Đưa xuống dưới"
+                          className="rounded border border-zinc-300 px-1.5 text-xs disabled:opacity-30"
+                        >
+                          ↓
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(r.id)}
