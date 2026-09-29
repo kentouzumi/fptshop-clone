@@ -74,6 +74,11 @@ export default async function AdminDashboardPage() {
     },
     { count: data.todo.quotedTradeIns, label: "thu cũ chờ khách xác nhận", href: "/admin/trade-in" },
     {
+      count: data.todo.unansweredQuestions,
+      label: "câu hỏi sản phẩm chưa trả lời",
+      href: "/admin/product-qa?unanswered=1",
+    },
+    {
       count: data.lowStock.length,
       label: `biến thể còn ≤ ${LOW_STOCK_THRESHOLD} trong kho`,
       href: "/admin/inventory",

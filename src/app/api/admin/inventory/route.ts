@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { setInventoryQuantity } from "@/lib/inventory";
+import { logAudit } from "@/lib/audit";
 
 // Inventory dùng khóa CHÍNH tổ hợp (storeId, variantId) chứ không có id đơn
 // giản như các resource khác trong /admin — dùng 1 route PATCH duy nhất
@@ -23,6 +24,13 @@ export async function PATCH(request: Request) {
 
   try {
     await setInventoryQuantity(storeId, variantId, quantity);
+    await logAudit({
+      userId: admin.id,
+      action: "SET_INVENTORY",
+      entityType: "Inventory",
+      entityId: `${storeId}:${variantId}`,
+      metadata: { storeId, variantId, quantity },
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });

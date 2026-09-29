@@ -3,7 +3,8 @@ import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { absoluteUrl } from "@/lib/siteUrl";
 import { PRODUCTS_TAG } from "@/lib/products";
-import { ProductStatus } from "@prisma/client";
+import { POSTS_TAG } from "@/lib/posts";
+import { ProductStatus, PostStatus } from "@prisma/client";
 
 /**
  * sitemap.xml sinh động từ DB (Next.js tự phục vụ ở /sitemap.xml).
@@ -46,13 +47,22 @@ const getSitemapData = unstable_cache(
         select: { slug: true, updatedAt: true },
       }),
       prisma.staticPage.findMany({ select: { slug: true, updatedAt: true } }),
+      // Bài viết chỉ tính là đã đăng khi tới giờ đăng — cùng điều kiện
+      // với publishedWhere() ở lib/posts.ts, không chỉ dựa vào status.
+      prisma.post.findMany({
+        where: { status: PostStatus.PUBLISHED, publishedAt: { lte: new Date() } },
+        orderBy: { publishedAt: "desc" },
+        select: { slug: true, updatedAt: true },
+      }),
     ]),
   ["sitemap-entries"],
-  { tags: [PRODUCTS_TAG], revalidate: 3600 }
+  // Thêm POSTS_TAG: đăng/sửa/xóa bài viết cũng phải làm mới sitemap ngay,
+  // các hàm trong lib/posts.ts đã tự revalidateTag(POSTS_TAG).
+  { tags: [PRODUCTS_TAG, POSTS_TAG], revalidate: 3600 }
 );
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [categories, products, staticPages] = await getSitemapData();
+  const [categories, products, staticPages, posts] = await getSitemapData();
 
   // Sản phẩm mới nhất đại diện cho lần thay đổi gần nhất của cả catalog —
   // dùng cho trang chủ và các trang danh mục (Category không có updatedAt).
@@ -96,6 +106,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.5,
     },
+    ...(posts.length > 0
+      ? [
+          {
+            url: absoluteUrl("/tin-tuc"),
+            lastModified: posts[0].updatedAt,
+            changeFrequency: "daily" as const,
+            priority: 0.7,
+          },
+        ]
+      : []),
+    ...posts.map((p) => ({
+      url: absoluteUrl(`/tin-tuc/${p.slug}`),
+      lastModified: p.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    })),
     ...staticPages.map((p) => ({
       url: absoluteUrl(`/pages/${p.slug}`),
       lastModified: p.updatedAt,

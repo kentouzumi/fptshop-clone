@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { OrderStatus } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { updateOrderStatus } from "@/lib/orders";
+import { logAudit } from "@/lib/audit";
 
 export async function PATCH(
   request: Request,
@@ -23,6 +24,13 @@ export async function PATCH(
 
   try {
     const order = await updateOrderStatus(id, status, note);
+    await logAudit({
+      userId: admin.id,
+      action: "UPDATE_ORDER_STATUS",
+      entityType: "Order",
+      entityId: id,
+      metadata: { code: order?.code ?? null, to: status, note: note ?? null },
+    });
     return NextResponse.json(order);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Có lỗi xảy ra.";

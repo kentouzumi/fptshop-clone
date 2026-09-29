@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { UserRole } from "@prisma/client";
 import { requireAdmin, requireSuperAdmin } from "@/lib/auth";
 import { updateUserRole, setUserActive } from "@/lib/users";
+import { logAudit } from "@/lib/audit";
 
 export async function PATCH(
   request: Request,
@@ -23,6 +24,13 @@ export async function PATCH(
     }
     try {
       const user = await updateUserRole(admin.id, id, body.role as UserRole);
+      await logAudit({
+        userId: admin.id,
+        action: "UPDATE_USER_ROLE",
+        entityType: "User",
+        entityId: id,
+        metadata: { email: user.email, to: body.role as UserRole },
+      });
       return NextResponse.json(user);
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 400 });
@@ -36,6 +44,13 @@ export async function PATCH(
     }
     try {
       const user = await setUserActive(admin.id, id, Boolean(body.isActive));
+      await logAudit({
+        userId: admin.id,
+        action: "SET_USER_ACTIVE",
+        entityType: "User",
+        entityId: id,
+        metadata: { email: user.email, isActive: Boolean(body.isActive) },
+      });
       return NextResponse.json(user);
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 400 });

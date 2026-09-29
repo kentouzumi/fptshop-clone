@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { parseProductInput } from "@/lib/productInput";
 import { PRODUCTS_TAG } from "@/lib/products";
+import { logAudit } from "@/lib/audit";
 
 export async function PATCH(
   request: Request,
@@ -27,6 +28,12 @@ export async function PATCH(
 
   const existing = await prisma.product.findFirst({
     where: { slug: values.slug, NOT: { id } },
+  });
+  // Doc gia CU truoc khi ghi de - nhat ky chi co y nghia khi noi duoc
+  // "sua tu bao nhieu sang bao nhieu", khong phai chi "co ai do da sua".
+  const before = await prisma.product.findUnique({
+    where: { id },
+    select: { name: true, basePrice: true, status: true },
   });
   if (existing) {
     return NextResponse.json({ error: "Slug này đã tồn tại." }, { status: 409 });
@@ -69,6 +76,19 @@ export async function PATCH(
   }
 
   revalidateTag(PRODUCTS_TAG, { expire: 0 });
+  await logAudit({
+    userId: admin.id,
+    action: "UPDATE_PRODUCT",
+    entityType: "Product",
+    entityId: product.id,
+    metadata: {
+      name: product.name,
+      basePriceFrom: before ? Number(before.basePrice) : null,
+      basePriceTo: Number(product.basePrice),
+      statusFrom: before?.status ?? null,
+      statusTo: product.status,
+    },
+  });
   return NextResponse.json(product);
 }
 
@@ -82,8 +102,16 @@ export async function DELETE(
   }
 
   const { id } = await params;
+  const before = await prisma.product.findUnique({ where: { id }, select: { name: true } });
   await prisma.product.delete({ where: { id } });
 
   revalidateTag(PRODUCTS_TAG, { expire: 0 });
+  await logAudit({
+    userId: admin.id,
+    action: "DELETE_PRODUCT",
+    entityType: "Product",
+    entityId: id,
+    metadata: { name: before?.name ?? null },
+  });
   return NextResponse.json({ ok: true });
 }

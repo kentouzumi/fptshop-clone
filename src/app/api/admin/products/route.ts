@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { parseProductInput } from "@/lib/productInput";
 import { PRODUCTS_TAG } from "@/lib/products";
+import { logAudit } from "@/lib/audit";
 
 export async function POST(request: Request) {
   const admin = await requireAdmin();
@@ -48,5 +49,12 @@ export async function POST(request: Request) {
   });
 
   revalidateTag(PRODUCTS_TAG, { expire: 0 });
+  await logAudit({
+    userId: admin.id,
+    action: "CREATE_PRODUCT",
+    entityType: "Product",
+    entityId: product.id,
+    metadata: { name: product.name, basePrice: Number(product.basePrice) },
+  });
   return NextResponse.json(product, { status: 201 });
 }

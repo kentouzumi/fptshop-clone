@@ -14,6 +14,8 @@ import { isInWishlist, getWishlistedProductIds } from "@/lib/wishlist";
 import { getCurrentUser } from "@/lib/auth";
 import ProductGalleryAndBuy from "./ProductGalleryAndBuy";
 import ReviewForm from "./ReviewForm";
+import ProductQaSection from "./ProductQaSection";
+import { getProductQa } from "@/lib/productQa";
 import WishlistButton from "./WishlistButton";
 import ReviewVoteButtons from "./ReviewVoteButtons";
 import ProductCard from "@/components/ProductCard";
@@ -159,6 +161,7 @@ export default async function ProductDetailPage({
     cardWishlistedIds,
     stockByVariant,
     cardOutOfStockIds,
+    qaQuestions,
   ] = await Promise.all([
     getProductReviews(product.id, currentUser?.id),
     currentUser ? getUserReviewForProduct(currentUser.id, product.id) : Promise.resolve(null),
@@ -171,6 +174,7 @@ export default async function ProductDetailPage({
     // bao giờ nói 2 điều khác nhau.
     getProductStockInfo(product.id),
     getOutOfStockProductIds(cardProductIds),
+    getProductQa(product.id),
   ]);
 
   const prices = product.variants.map((v) => Number(v.price));
@@ -326,7 +330,26 @@ export default async function ProductDetailPage({
       )}
 
       <section className="mt-10">
-        <h2 className="mb-3 text-lg font-semibold tracking-tight">Đánh giá sản phẩm</h2>
+        <ProductQaSection
+          productId={product.id}
+          isLoggedIn={Boolean(currentUser)}
+          canAnswerAsStaff={currentUser?.role === "ADMIN" || currentUser?.role === "SUPER_ADMIN"}
+          questions={qaQuestions.map((q) => ({
+            id: q.id,
+            content: q.content,
+            authorName: q.authorName,
+            createdAt: q.createdAt.toISOString(),
+            answers: q.answers.map((a) => ({
+              id: a.id,
+              content: a.content,
+              isStaff: a.isStaff,
+              authorName: a.authorName,
+              createdAt: a.createdAt.toISOString(),
+            })),
+          }))}
+        />
+
+        <h2 className="mb-3 mt-10 text-lg font-semibold tracking-tight">Đánh giá sản phẩm</h2>
         <div className="mb-4 flex items-center gap-3">
           <StarRating rating={averageRating} size="text-xl" />
           <span className="text-sm text-zinc-600">

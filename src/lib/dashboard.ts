@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { countUnansweredQuestions } from "@/lib/productQa";
 import {
   ClaimStatus,
   OrderStatus,
@@ -70,6 +71,7 @@ export async function getAdminDashboard() {
     openTickets,
     openClaims,
     quotedTradeIns,
+    unansweredQuestions,
     productCount,
     activeProductCount,
     customerCount,
@@ -130,6 +132,7 @@ export async function getAdminDashboard() {
     prisma.supportTicket.count({ where: { status: TicketStatus.OPEN } }),
     prisma.warrantyClaim.count({ where: { status: ClaimStatus.RECEIVED } }),
     prisma.tradeInRequest.count({ where: { status: TradeInStatus.QUOTED } }),
+    countUnansweredQuestions(),
     prisma.product.count(),
     prisma.product.count({ where: { status: ProductStatus.ACTIVE } }),
     prisma.user.count({ where: { role: "CUSTOMER" } }),
@@ -168,7 +171,7 @@ export async function getAdminDashboard() {
       orderId: p.order.id,
       orderCode: p.order.code,
     })),
-    todo: { openTickets, openClaims, quotedTradeIns },
+    todo: { openTickets, openClaims, quotedTradeIns, unansweredQuestions },
     catalog: { productCount, activeProductCount, customerCount },
   };
 }

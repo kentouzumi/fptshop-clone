@@ -191,6 +191,17 @@ export default function ComparePage() {
                   ) : (
                     <p className="mt-1 text-center text-xs text-zinc-400">Chưa có đánh giá</p>
                   )}
+                  {/* Chỉ hiện khi HẾT hàng: bảng so sánh vốn đã dày đặc chữ,
+                      thêm nhãn "Còn hàng" trên mọi cột chỉ làm nhiễu — thứ
+                      người dùng cần biết trước khi chốt là máy nào KHÔNG mua
+                      được. */}
+                  {p.outOfStock && (
+                    <p className="mt-1.5 text-center">
+                      <span className="rounded-full bg-zinc-900/80 px-2 py-0.5 text-xs font-medium text-white">
+                        Hết hàng
+                      </span>
+                    </p>
+                  )}
                 </th>
               ))}
             </tr>

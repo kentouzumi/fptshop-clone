@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getOutOfStockProductIds } from "@/lib/inventory";
 import { ProductStatus, Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 
@@ -42,6 +43,18 @@ export interface GetProductsParams {
   attributeFilters?: Record<string, string[]>;
   search?: string;
   featuredOnly?: boolean;
+  /**
+   * Id sản phẩm cần LOẠI khỏi kết quả — dùng cho bộ lọc "Chỉ hiện hàng còn"
+   * ở /products. Tồn kho KHÔNG đưa thẳng vào where được vì getProducts()
+   * đang cache 60s, còn tồn kho thì đổi theo từng đơn; nên bên gọi tự tra
+   * danh sách hết hàng (không cache, xem getAllOutOfStockProductIds) rồi
+   * truyền vào đây. Danh sách này nằm trong khóa cache nên kho đổi là sinh
+   * entry mới, không phục vụ dữ liệu cũ.
+   *
+   * Phải loại NGAY TRONG truy vấn chứ không lọc sau khi lấy trang, nếu không
+   * mỗi trang sẽ thiếu sản phẩm và tổng số trang bị sai.
+   */
+  excludeProductIds?: string[];
   minPrice?: number;
   maxPrice?: number;
   sort?: ProductSort;
@@ -202,6 +215,9 @@ async function getProductsUncached(
       ? { name: { contains: params.search, mode: "insensitive" } }
       : {}),
     ...(params.featuredOnly ? { isFeatured: true } : {}),
+    ...(params.excludeProductIds?.length
+      ? { id: { notIn: params.excludeProductIds } }
+      : {}),
     ...(params.minPrice !== undefined || params.maxPrice !== undefined
       ? {
           basePrice: {
@@ -397,6 +413,8 @@ export interface CompareAttributeGroup {
 }
 
 export interface CompareProductDetail {
+  /** Tra rieng, khong di qua cache cua getProducts (xem lib/inventory.ts). */
+  outOfStock: boolean;
   id: string;
   name: string;
   slug: string;
@@ -428,6 +446,10 @@ export async function getProductsForCompare(ids: string[]): Promise<CompareProdu
     },
   });
 
+  // Tinh trang hang tra rieng (khong cache) - bang so sanh la noi nguoi dung
+  // sap chot mua nen hien "con hang" cho may vua het la sai luc quan trong nhat.
+  const outOfStockIds = await getOutOfStockProductIds(rows.map((r) => r.id));
+
   const byId = new Map(rows.map((r) => [r.id, r]));
 
   return ids
@@ -444,6 +466,7 @@ export async function getProductsForCompare(ids: string[]): Promise<CompareProdu
       }
 
       return {
+        outOfStock: outOfStockIds.has(p.id),
         id: p.id,
         name: p.name,
         slug: p.slug,

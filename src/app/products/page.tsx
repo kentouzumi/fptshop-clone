@@ -7,7 +7,7 @@ import { getActiveCategories } from "@/lib/categories";
 import ProductCard from "@/components/ProductCard";
 import SortSelect from "./SortSelect";
 import FilterSidebar, { PRICE_RANGES } from "./FilterSidebar";
-import { getOutOfStockProductIds } from "@/lib/inventory";
+import { getOutOfStockProductIds, getAllOutOfStockProductIds } from "@/lib/inventory";
 
 function buildHref(
   current: Record<string, string | undefined>,
@@ -114,7 +114,9 @@ export default async function ProductsPage({
   // currentFilters = TOÀN BỘ query hiện tại trừ "page" (đổi bất kỳ filter
   // nào cũng quay về trang 1) — giữ nguyên mọi "spec_*" đang chọn khi bấm
   // đổi 1 filter khác (brand/giá/...).
-  const { page: _page, ...currentFilters } = params;
+  // Bỏ "page" khỏi bộ lọc hiện tại (đổi filter nào cũng quay về trang 1).
+  const currentFilters = { ...params };
+  delete currentFilters.page;
 
   // Chỉ chọn được đúng 1 hãng tại 1 thời điểm (xem FilterSidebar.tsx) — vẫn
   // đọc dạng mảng vì lib/products.ts hỗ trợ sẵn nhiều slug (brandSlugs),
@@ -143,6 +145,15 @@ export default async function ProductsPage({
   // vẫn suy từ sản phẩm thật, KHÔNG lấy nguyên bảng Brand, vì bảng Brand còn
   // giữ những hãng không còn sản phẩm nào (hàng gia dụng/phụ kiện đã gỡ bán)
   // và hiện chúng ra thì bấm vào chỉ ra trang rỗng.
+  // Bộ lọc "Chỉ hiện hàng còn": phải biết danh sách sản phẩm hết hàng TRƯỚC
+  // khi truy vấn để loại ngay trong where — lọc sau khi đã lấy trang sẽ làm
+  // mỗi trang thiếu sản phẩm và tổng số trang sai. Sắp xếp id để khóa cache
+  // của getProducts() ổn định (thứ tự Prisma trả về không đảm bảo).
+  const inStockOnly = params.instock === "1";
+  const excludeProductIds = inStockOnly
+    ? [...(await getAllOutOfStockProductIds())].sort()
+    : undefined;
+
   const [brands, { products, totalPages }, currentUser] = await Promise.all([
     getBrandsByCategory().then((map) =>
       params.category
@@ -158,6 +169,7 @@ export default async function ProductsPage({
       minPrice: params.minPrice ? Number(params.minPrice) : undefined,
       maxPrice: params.maxPrice ? Number(params.maxPrice) : undefined,
       attributeFilters: Object.keys(attributeFilters).length ? attributeFilters : undefined,
+      excludeProductIds,
       sort,
       page,
     }),
@@ -201,6 +213,7 @@ export default async function ProductsPage({
           activePriceKey={activePriceKey}
           facets={facets}
           currentFilters={currentFilters}
+          inStockOnly={inStockOnly}
         />
 
         <div className="min-w-0 flex-1">

@@ -280,11 +280,29 @@ export const EMPTY_VARIANT_STOCK: VariantStockInfo = { total: 0, deliverable: 0,
  */
 export async function getOutOfStockProductIds(productIds: string[]): Promise<Set<string>> {
   if (productIds.length === 0) return new Set();
+  return collectOutOfStockProductIds(productIds);
+}
 
+/**
+ * Như trên nhưng quét TOÀN BỘ sản phẩm thay vì một danh sách id cho trước —
+ * dùng cho bộ lọc "Chỉ hiện hàng còn" ở /products, nơi phải loại sản phẩm hết
+ * hàng NGAY TRONG truy vấn thì phân trang mới đúng (lọc sau khi phân trang sẽ
+ * ra trang thiếu sản phẩm và tổng số trang sai).
+ *
+ * KHÔNG cache: tồn kho đổi theo từng đơn hàng.
+ */
+export async function getAllOutOfStockProductIds(): Promise<Set<string>> {
+  return collectOutOfStockProductIds(null);
+}
+
+async function collectOutOfStockProductIds(productIds: string[] | null): Promise<Set<string>> {
   const [activeStoreCount, variants] = await Promise.all([
     prisma.store.count({ where: { isActive: true } }),
     prisma.productVariant.findMany({
-      where: { productId: { in: productIds }, isActive: true },
+      where: {
+        ...(productIds ? { productId: { in: productIds } } : {}),
+        isActive: true,
+      },
       select: {
         productId: true,
         inventories: {

@@ -156,6 +156,9 @@ export default async function Header() {
               {c.name}
             </Link>
           ))}
+          <Link href="/tin-tuc" className="hover:text-zinc-900">
+            Tin tức
+          </Link>
           <Link href="/stores" className="hover:text-zinc-900">
             Cửa hàng
           </Link>

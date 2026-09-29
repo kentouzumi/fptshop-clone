@@ -48,6 +48,9 @@ model User {
   tradeInRequests TradeInRequest[]
   sessions        Session[]
   auditLogs       AuditLog[]
+  posts           Post[]
+  productQuestions ProductQuestion[]
+  productAnswers   ProductAnswer[]
 
   @@index([role])
 }
@@ -200,6 +203,7 @@ model Product {
   wishlist   WishlistItem[]
   relatedTo  ProductRelation[]  @relation("BaseProduct")
   relatedBy  ProductRelation[]  @relation("RelatedProduct")
+  questions  ProductQuestion[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -771,4 +775,66 @@ model AuditLog {
 
   @@index([userId])
   @@index([entityType, entityId])
+}
+
+// ============ Tin tức / blog ============
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Post {
+  id          String     @id @default(cuid())
+  slug        String     @unique
+  title       String
+  excerpt     String?
+  content     String
+  coverUrl    String?
+  status      PostStatus @default(DRAFT)
+  publishedAt DateTime?
+  viewCount   Int        @default(0)
+  metaTitle   String?
+  metaDesc    String?
+  authorId    String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Quan hệ optional + SetNull mặc định: xóa tài khoản tác giả thì bài viết
+  // vẫn còn (chỉ mất tên tác giả), KHÔNG kéo theo bài đã xuất bản.
+  author User? @relation(fields: [authorId], references: [id])
+
+  @@index([status, publishedAt])
+}
+
+// ============ Hỏi đáp dưới sản phẩm ============
+
+model ProductQuestion {
+  id        String   @id @default(cuid())
+  productId String
+  userId    String?
+  content   String
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User?           @relation(fields: [userId], references: [id])
+  answers ProductAnswer[]
+
+  @@index([productId, createdAt])
+}
+
+model ProductAnswer {
+  id         String   @id @default(cuid())
+  questionId String
+  userId     String?
+  content    String
+  // true = câu trả lời của nhân viên shop (hiện nhãn riêng cho khách tin tưởng)
+  isStaff    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  question ProductQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user     User?           @relation(fields: [userId], references: [id])
+
+  @@index([questionId])
 }

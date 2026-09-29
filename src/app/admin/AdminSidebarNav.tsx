@@ -29,6 +29,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string }[] }[] 
   {
     title: "Marketing",
     items: [
+      { href: "/admin/posts", label: "Tin tức" },
       { href: "/admin/promotions", label: "Khuyến mãi" },
       { href: "/admin/coupons", label: "Mã giảm giá" },
       { href: "/admin/static-pages", label: "Trang tĩnh" },
@@ -40,6 +41,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string }[] }[] 
     items: [
       { href: "/admin/warranty-claims", label: "Bảo hành" },
       { href: "/admin/trade-in", label: "Thu cũ đổi mới" },
+      { href: "/admin/product-qa", label: "Hỏi đáp sản phẩm" },
       { href: "/admin/support", label: "Hỗ trợ" },
     ],
   },
@@ -47,6 +49,7 @@ const NAV_GROUPS: { title: string; items: { href: string; label: string }[] }[] 
     title: "Hệ thống",
     items: [
       { href: "/admin/users", label: "Người dùng" },
+      { href: "/admin/audit-logs", label: "Nhật ký" },
       { href: "/admin/stores", label: "Cửa hàng" },
     ],
   },

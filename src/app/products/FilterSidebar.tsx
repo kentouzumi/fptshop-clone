@@ -113,12 +113,14 @@ export default function FilterSidebar({
   activePriceKey,
   facets,
   currentFilters,
+  inStockOnly,
 }: {
   brands: BrandLite[];
   selectedBrands: string[];
   activePriceKey: string;
   facets: AttributeFacet[];
   currentFilters: Record<string, string | undefined>;
+  inStockOnly: boolean;
 }) {
   const visibleBrands = brands.slice(0, 6);
   const extraBrands = brands.slice(6);
@@ -176,6 +178,23 @@ export default function FilterSidebar({
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
           </svg>
           <h2 className="text-sm font-bold text-zinc-900">Bộ lọc tìm kiếm</h2>
+        </div>
+
+        {/* Không bọc trong <Section> thu gọn được như các nhóm khác: đây là
+            1 công tắc duy nhất, thu gọn lại chỉ làm khó bấm hơn. Bấm lại
+            chính nó thì tắt lọc (buildHref nhận undefined là bỏ query). */}
+        <div className="border-b border-zinc-100 px-4 py-3.5">
+          <Link
+            href={buildHref(currentFilters, { instock: inStockOnly ? undefined : "1" })}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition ${
+              inStockOnly
+                ? "border-accent bg-accent/10 font-medium text-zinc-900"
+                : "border-zinc-200 text-zinc-600 hover:border-zinc-300"
+            }`}
+          >
+            <CheckSquare checked={inStockOnly} />
+            <span>Chỉ hiện hàng còn</span>
+          </Link>
         </div>
 
         {brands.length > 0 && (

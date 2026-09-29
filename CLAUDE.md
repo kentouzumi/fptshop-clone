@@ -5126,6 +5126,154 @@
       các hồ sơ đang chờ duyệt (hiện phải vào từng đơn — nhưng /admin đã đếm
       sẵn đơn PENDING nên vẫn thấy được).
 
+- [x] Nhóm 4 việc nhỏ: nhật ký thao tác admin, lọc "chỉ hàng còn", tồn kho ở
+      trang so sánh, và sửa SKU lệch dung lượng.
+
+      **AuditLog** (model có sẵn trong schema từ đầu dự án, chưa một dòng code
+      nào dùng): src/lib/audit.ts với `logAudit()`, `getAuditLogsForAdmin()`,
+      `getAuditFilterOptions()` + trang `/admin/audit-logs` (lọc theo thao tác/
+      đối tượng, tìm theo tên-email người thao tác hoặc id đối tượng, phân
+      trang 30 dòng). Đã hook 12 loại thao tác: tạo/sửa/xóa sản phẩm, đặt tồn
+      kho, đổi trạng thái đơn, xác nhận chuyển khoản, duyệt trả góp, đổi vai
+      trò/khóa tài khoản, tạo/sửa/xóa bài viết.
+
+      2 quyết định quan trọng, ghi rõ trong comment của `logAudit()`:
+      (1) hàm CỐ Ý KHÔNG BAO GIỜ THROW — nhật ký là thông tin phụ trợ, lỗi ghi
+      log không được phép làm hỏng chính thao tác nghiệp vụ (sửa giá xong rồi
+      mà API trả 500 vì ghi log lỗi thì admin sẽ bấm lại và sửa nhầm lần nữa);
+      (2) CỐ Ý không gọi bên trong transaction nghiệp vụ và luôn đặt SAU khi
+      thao tác thành công — transaction rollback thì cũng không nên còn lại
+      dòng log nói rằng thao tác đã xảy ra.
+      Nhật ký ghi GIÁ TRỊ CŨ -> MỚI chứ không chỉ "có ai đó đã sửa": route sửa
+      sản phẩm đọc lại giá/trạng thái cũ TRƯỚC khi ghi đè để còn so sánh.
+      `AuditLog.userId` là quan hệ optional nên xóa tài khoản admin không kéo
+      theo nhật ký — trang hiện "(tài khoản đã xóa)", vì nhật ký mà mất theo
+      người thao tác thì mất hẳn ý nghĩa truy vết.
+
+      **Lọc "Chỉ hiện hàng còn"** ở /products — đúng như đã ghi sẵn ở mục badge
+      "Hết hàng": KHÔNG đưa tồn kho vào where của `getProducts()` (hàm đó cache
+      60s, tồn kho thì đổi theo từng đơn), mà thêm
+      `getAllOutOfStockProductIds()` (không cache) rồi truyền danh sách id vào
+      tham số mới `excludeProductIds`. Phải loại NGAY TRONG truy vấn chứ không
+      lọc sau khi lấy trang — lọc sau sẽ làm mỗi trang thiếu sản phẩm và tổng
+      số trang sai. Danh sách id nằm trong khóa cache (đã `.sort()` cho khóa ổn
+      định vì thứ tự Prisma trả về không đảm bảo) nên kho đổi là sinh entry
+      mới, không bao giờ phục vụ dữ liệu cũ. Chỉ tốn thêm 1 round-trip DB và
+      chỉ khi bật lọc.
+
+      **Tồn kho ở /compare**: `CompareProductDetail` thêm `outOfStock`, tra
+      riêng không qua cache. Chỉ hiện nhãn khi HẾT hàng, không hiện "Còn hàng"
+      trên mọi cột — bảng so sánh vốn đã dày chữ, thứ người dùng cần biết trước
+      khi chốt là máy nào KHÔNG mua được.
+
+      **SKU `S24U-256-BLK`**: SKU nói 256 nhưng `storage` là "512GB", và cả 2
+      biến thể cùng giá dù khác dung lượng — sai cả 2 đằng. Đã kiểm tra trước
+      (0 OrderItem/CartItem tham chiếu) rồi sửa `storage` cho khớp SKU và tách
+      giá theo dung lượng (256GB 26.99tr / 512GB 29.99tr), thêm mức "256GB" vào
+      thông số "Dung lượng ROM". KHÔNG đổi tên SKU vì SKU là khóa unique và
+      đang có ảnh gắn theo biến thể — đổi tên sẽ tạo biến thể mới và bỏ rơi ảnh
+      cũ (đúng lý do đã ghi trong mục này lúc phát hiện). Để lần sau seed không
+      làm lệch lại, khối `update` của biến thể trong seed.ts giờ đồng bộ thêm
+      `storage` và `price` (trước chỉ có `compareAtPrice`) — khối `update` của
+      Product vốn đã đồng bộ `basePrice` rồi, để lệch 2 tầng là mâu thuẫn. VẪN
+      không đụng `color` (màu đã sửa tay cho khớp ảnh thật).
+
+      NHÂN TIỆN sửa 1 cảnh báo eslint: `const { page: _page, ...rest }` bị rule
+      `no-unused-vars` bắt (có sẵn ở products/page.tsx, tôi vừa nhân đôi ở trang
+      nhật ký) — đổi sang `const rest = { ...params }; delete rest.page;`.
+
+      Đã test qua dev server bằng DB THẬT (nằm trong bộ 61/61 assertion cùng
+      mục dưới): lọc ROM 256GB giờ trả về S24 Ultra; đặt tồn kho Dell XPS 13 về
+      0 thì bật `?instock=1` loại ĐÚNG 1 máy (không loại nhầm máy khác) còn
+      không bật lọc thì máy đó vẫn hiện kèm badge "Hết hàng"; API so sánh trả
+      `outOfStock` đúng cả 2 chiều ngay sau khi đổi kho (chứng minh không dính
+      cache); admin đặt tồn kho ghi đúng 1 dòng nhật ký kèm đúng người + chi
+      tiết, trang nhật ký hiện nhãn tiếng Việt, khách thường và người chưa đăng
+      nhập đều bị redirect.
+
+- [x] Tin tức/blog + Hỏi đáp dưới sản phẩm (2 mảng nội dung trống hoàn toàn
+      trong bản rà soát so với fptshop.com.vn). ĐỔI SCHEMA: thêm `Post` +
+      enum `PostStatus`, `ProductQuestion`, `ProductAnswer` — toàn bảng MỚI nên
+      `prisma db push` chạy thẳng, không mất dữ liệu, không cần
+      `--accept-data-loss`.
+
+      **Tin tức** (src/lib/posts.ts): điều kiện "đã đăng" là
+      `status = PUBLISHED` VÀ `publishedAt <= now` chứ không chỉ dựa vào
+      status — cho phép hẹn giờ đăng mà không cần thêm cột nào. Hệ quả BẮT BUỘC
+      phải nhớ: cache của các hàm này phải có `revalidate` vì bài tới giờ đăng
+      KHÔNG có thao tác admin nào để gọi `revalidateTag` (cùng lý do đã áp dụng
+      cho `getActivePromotions()`).
+      `publishedAt` được đặt ngay lúc chuyển sang PUBLISHED — thiếu nó thì bài
+      sẽ không bao giờ hiện dù status đã đúng. Và khi SỬA lại bài đã đăng thì
+      GIỮ NGUYÊN mốc đăng cũ: sửa bài không phải đăng lại, đẩy `publishedAt`
+      lên hiện tại sẽ làm bài cũ nhảy lên đầu danh sách một cách vô lý.
+      `incrementPostView()` tách RIÊNG khỏi hàm đọc bài (đọc bài cache 60s, gộp
+      vào thì lượt xem chỉ tăng mỗi 60s một lần) và cũng tự nuốt lỗi.
+
+      BẢO MẬT nội dung bài: nội dung là VĂN BẢN THUẦN do admin nhập, trang chi
+      tiết tách đoạn theo dòng trống rồi render bằng `<p>` — KHÔNG dùng
+      `dangerouslySetInnerHTML`. Để lọt HTML vào là mở thẳng đường XSS lưu trữ,
+      và chỗ duy nhất trong dự án dùng API đó vẫn là JsonLd.tsx (đã escape "<").
+
+      Trang: `/tin-tuc` (lưới 3 cột + phân trang), `/tin-tuc/[slug]` (có
+      generateMetadata + canonical + OG + JSON-LD `Article`, bài liên quan).
+      Truy vấn bài bọc `cache()` của React và dùng chung giữa generateMetadata
+      và component — không bọc thì mỗi lần render là 2 query y hệt nhau. Admin:
+      `/admin/posts` + `/new` + `/[id]/edit` dùng chung `PostForm` (tự sinh slug
+      từ tiêu đề khi TẠO, giữ nguyên slug khi SỬA để không vỡ link đã chia sẻ —
+      cùng quyết định đã áp dụng cho ProductForm). Sitemap thêm `/tin-tuc` +
+      từng bài, và thêm `POSTS_TAG` vào tags để đăng bài là sitemap mới ngay.
+      Đã seed 3 bài viết thật, nội dung dựa trên ĐÚNG thông số của sản phẩm
+      đang bán (so sánh iPhone 15 vs Pro Max, RTX 4050 vs 4060, Google Tivi vs
+      Smart Tivi) — không bịa số liệu, để bài vẫn đúng khi khách bấm sang trang
+      sản phẩm đối chiếu.
+
+      **Hỏi đáp** (src/lib/productQa.ts): khối "Hỏi và đáp" đặt ngay TRÊN mục
+      Đánh giá ở trang sản phẩm. Khác Đánh giá ở chỗ KHÔNG giới hạn 1 lần/người
+      (một khách hỏi được nhiều câu) và không có chấm sao.
+      2 điểm về bảo mật/riêng tư:
+      (1) `isStaff` KHÔNG nhận từ client mà suy từ vai trò người đang đăng nhập
+      ở tầng service — để client tự khai thì khách nào cũng gắn được nhãn
+      "Nhân viên tư vấn" cho câu trả lời của mình (đã test đúng ca này);
+      (2) tên người hỏi hiện rút gọn ("Nguyen Van Khach" -> "Nguyen Van K.")
+      vì câu hỏi hiện công khai cho mọi khách, không cần lộ tên đầy đủ; câu trả
+      lời của nhân viên hiện "Nhân viên tư vấn" thay vì tên cá nhân.
+      Admin `/admin/product-qa` lọc "Chưa trả lời", trả lời và ẨN câu hỏi (ẩn
+      thay vì xóa: spam vẫn nên giữ để đối chiếu, và xóa không hoàn tác được).
+      `/admin` thêm thẻ "câu hỏi sản phẩm chưa trả lời" vào khối Cần xử lý.
+
+      LƯU Ý cùng lớp lỗi đã gặp nhiều lần: `ProductQaSection` là CLIENT
+      COMPONENT nên không import được từ lib/productQa.ts (có Prisma) — đã tách
+      4 hằng số giới hạn độ dài ra src/lib/qaLimits.ts (file thuần) rồi
+      re-export lại từ productQa.ts để các nơi gọi phía server không phải sửa.
+      Đúng cách đã làm với lib/orderLabels.ts và lib/relationLabels.ts.
+
+      Đã test qua dev server bằng DB THẬT (61/61 assertion, tạo khách + admin
+      test rồi dọn sạch): bài nháp KHÔNG xem được ở trang công khai (404) nhưng
+      xuất bản xong khách thấy NGAY ở lần tải kế tiếp (revalidateTag chạy);
+      trùng slug 409; slug/tiêu đề/nội dung không hợp lệ 400; chưa đăng nhập và
+      khách thường tạo bài đều 403; sửa bài đã đăng KHÔNG đẩy mốc đăng lên hiện
+      tại; lượt xem tăng thật; sitemap có URL bài; JSON-LD Article có mặt.
+      Hỏi đáp: chưa đăng nhập 401, câu quá ngắn 400, câu hỏi hiện ngay sau khi
+      gửi, tên người hỏi bị rút gọn và KHÔNG lộ tên đầy đủ, khách tự khai
+      `isStaff: true` vẫn không được gắn nhãn nhân viên, admin trả lời thì tự
+      gắn nhãn, admin ẩn câu hỏi thì nó biến mất khỏi trang sản phẩm nhưng admin
+      vẫn thấy kèm nhãn "Đang ẩn", khách thường gọi API ẩn bị 403.
+      `tsc --noEmit`/`eslint`/`npm run build` sạch.
+
+      LƯU Ý khi viết test (2 lỗi của chính test, không phải app): (1) `fetch`
+      TỰ ĐI THEO redirect nên kiểm tra guard đăng nhập bằng status sẽ thấy 200
+      — đó là 200 của trang `/login`, phải đặt `redirect: "manual"` mới thấy
+      307; (2) biến dùng trong khối `finally` để khôi phục dữ liệu phải khai
+      NGOÀI `try`, khai `const` bên trong thì `finally` không thấy và khối dọn
+      dẹp crash giữa chừng, để lại rác.
+
+      CHƯA LÀM: bài viết không có danh mục/tag, không có ô tìm kiếm trong
+      /tin-tuc, không có trình soạn thảo định dạng (chỉ văn bản thuần, cố ý —
+      xem phần bảo mật ở trên); Hỏi đáp không có thông báo cho khách khi câu
+      hỏi được trả lời, không vote hữu ích, và không phân trang (một sản phẩm
+      nhiều câu hỏi sẽ hiện hết).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -5223,12 +5371,13 @@
       trạng thái đơn; khách xem được ở /orders/[id] và ở trang tra cứu. Còn
       thiếu: link tra cứu sang website hãng (chưa xác minh được mẫu URL) và
       timeline từng chặng.
-- [ ] **`AuditLog` không dùng** → không có nhật ký thao tác admin (ai sửa giá,
-      ai đổi trạng thái đơn).
-- [ ] **Không có mục tin tức/blog** (fptshop.com.vn/tin-tuc là nguồn truy cập
-      rất lớn của họ), **không có Hỏi–đáp (Q&A) dưới sản phẩm** (mới có đánh
-      giá), **không có trang thương hiệu** và không có danh mục con thật (vd
-      iPhone 15 Series / iPhone 16 Series).
+- [x] **`AuditLog`** — ĐÃ LÀM: ghi nhật ký 12 loại thao tác quản trị + trang
+      `/admin/audit-logs` lọc theo thao tác/đối tượng/người làm. Còn thiếu: chưa
+      hook vào CRUD danh mục/thương hiệu/cửa hàng/khuyến mãi, và chưa tự dọn
+      bản ghi cũ (bảng sẽ phình dần).
+- [x] **Tin tức/blog** và **Hỏi–đáp (Q&A) dưới sản phẩm** — ĐÃ LÀM (xem 2 mục
+      cuối phần Tiến độ). CÒN THIẾU: **trang thương hiệu** riêng và danh mục con
+      thật (vd iPhone 15 Series / iPhone 16 Series).
 - [x] **Mã giảm giá phải tự biết mới nhập được** — ĐÃ LÀM TRỌN: /checkout liệt kê
       sẵn mã đang chạy (bấm là áp), /admin/coupons quản lý mã đầy đủ, và cờ
       `isPublic` cho phép tạo mã riêng không lộ công khai. Chưa làm: tìm kiếm/

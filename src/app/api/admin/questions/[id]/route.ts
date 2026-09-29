@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
-import { approveInstallmentPlan } from "@/lib/orders";
-import { logAudit } from "@/lib/audit";
+import { setQuestionVisible } from "@/lib/productQa";
 
-export async function POST(
+export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -13,16 +12,14 @@ export async function POST(
   }
 
   const { id } = await params;
+  const body = await request.json().catch(() => null);
+  if (typeof body?.isVisible !== "boolean") {
+    return NextResponse.json({ error: "Thiếu trạng thái hiển thị." }, { status: 400 });
+  }
+
   try {
-    const order = await approveInstallmentPlan(id);
-    await logAudit({
-      userId: admin.id,
-      action: "APPROVE_INSTALLMENT",
-      entityType: "Order",
-      entityId: id,
-      metadata: { code: order?.code ?? null },
-    });
-    return NextResponse.json({ ok: true, order });
+    await setQuestionVisible(id, body.isVisible);
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }

@@ -115,13 +115,18 @@ async function main() {
       imageUrl: "https://placehold.co/600x600.png?text=Galaxy+S24+Ultra",
       attributes: [
         { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "5000 mAh" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
         { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "512GB" },
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "12GB" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [
-        { sku: "S24U-256-BLK", color: "Đen", storage: "512GB", price: 26990000, compareAtPrice: 33990000 },
-        { sku: "S24U-512-GRY", color: "Xám", storage: "512GB", price: 26990000, compareAtPrice: 33990000 },
+        // SKU noi 256 nhung storage tung la 512GB, va ca 2 ban cung gia du khac
+        // dung luong - sai ca 2 dang. Da sua storage cho khop SKU va tach gia
+        // theo dung luong (KHONG doi ten SKU: SKU la khoa unique va dang co anh
+        // gan theo bien the, doi ten se tao bien the moi va bo roi anh cu).
+        { sku: "S24U-256-BLK", color: "Đen", storage: "256GB", price: 26990000, compareAtPrice: 33990000 },
+        { sku: "S24U-512-GRY", color: "Xám", storage: "512GB", price: 29990000, compareAtPrice: 36990000 },
       ],
     },
     {
@@ -527,7 +532,16 @@ async function main() {
       // lần với categoryId/description), tức badge giảm giá không hiện ra.
       await prisma.productVariant.upsert({
         where: { sku: v.sku },
-        update: { compareAtPrice: v.compareAtPrice },
+        // Dong bo them `storage` va `price`: dung luong la THONG SO (phai khop
+        // SKU, da tung lech o S24 Ultra) va gia bien the thi seed von da la
+        // nguon chan ly - khoi `update` cua Product ngay tren cung dang dong bo
+        // `basePrice` roi, de lech 2 tang la mau thuan. Van KHONG dung `color`
+        // (mau da sua tay cho khop anh that lay tu trang chinh hang).
+        update: {
+          compareAtPrice: v.compareAtPrice,
+          storage: v.storage,
+          price: v.price,
+        },
         create: {
           productId: product.id,
           sku: v.sku,
@@ -538,6 +552,83 @@ async function main() {
         },
       });
     }
+  }
+
+  // ===================== TIN TỨC =====================
+  // Nội dung viết dựa trên ĐÚNG thông số của các sản phẩm đang bán trong shop
+  // (xem mảng `products` ở trên) — không bịa số liệu, để bài viết vẫn đúng khi
+  // khách bấm từ bài sang trang sản phẩm đối chiếu.
+  const posts = [
+    {
+      slug: "iphone-15-va-iphone-15-pro-max-khac-nhau-o-dau",
+      title: "iPhone 15 và iPhone 15 Pro Max khác nhau ở đâu?",
+      excerpt:
+        "Cùng ra mắt một thế hệ nhưng hai máy khác nhau ở chip, màn hình và dung lượng khởi điểm. Đây là những điểm đáng cân nhắc nhất trước khi chọn.",
+      content: `Cả hai máy đều đã chuyển sang cổng USB-C và dùng chung ngôn ngữ thiết kế, nên khác biệt nằm ở bên trong nhiều hơn là bên ngoài.
+
+Màn hình là điểm dễ nhận ra nhất. iPhone 15 dùng tấm nền 60Hz, còn iPhone 15 Pro Max có ProMotion 120Hz — thao tác vuốt, cuộn trang và chơi game sẽ mượt hơn rõ rệt. Nếu bạn đang dùng một máy Android tầm trung 90Hz hoặc 120Hz, chuyển sang bản 60Hz sẽ thấy hụt.
+
+Về hiệu năng, iPhone 15 chạy chip A16 Bionic với 6GB RAM, trong khi bản Pro Max dùng A17 Pro và 8GB RAM. Với nhu cầu thường ngày thì cả hai đều thừa sức; chênh lệch chỉ lộ ra khi chơi game nặng lâu hoặc dựng video trên máy.
+
+Dung lượng khởi điểm cũng khác: iPhone 15 bắt đầu từ 128GB, còn iPhone 15 Pro Max bắt đầu từ 256GB. Đây là lý do khoảng cách giá giữa hai máy lớn hơn con số bạn thấy khi chỉ so bản thấp nhất.
+
+Pin của iPhone 15 là 3349 mAh và của Pro Max là 4441 mAh. Khung máy bản Pro Max làm bằng titan nên cầm chắc tay hơn nhưng cũng nặng hơn.
+
+Nên chọn thế nào? Nếu ưu tiên màn hình mượt, camera tele và dung lượng lớn thì Pro Max xứng đáng. Nếu chỉ cần một chiếc iPhone đời mới, pin đủ dùng cả ngày và ngân sách gọn hơn, iPhone 15 là lựa chọn hợp lý.`,
+    },
+    {
+      slug: "rtx-4050-va-rtx-4060-chenh-nhau-bao-nhieu",
+      title: "Laptop gaming RTX 4050 và RTX 4060 chênh nhau bao nhiêu?",
+      excerpt:
+        "Hai mức card rời phổ biến nhất ở tầm phổ thông. Khác biệt không chỉ nằm ở tên card mà còn ở màn hình, dung lượng ổ cứng và mức giá.",
+      content: `Ở tầm laptop gaming phổ thông, hai lựa chọn hay bị đặt lên bàn cân nhất là RTX 4050 và RTX 4060.
+
+RTX 4050 đủ cho phần lớn tựa game phổ biến ở độ phân giải Full HD với thiết lập trung bình đến cao. Đây là mức card hợp lý nếu bạn chơi game giải trí và thỉnh thoảng dựng video nhẹ.
+
+RTX 4060 cho khoảng dư hiệu năng lớn hơn, đáng tiền khi bạn muốn giữ máy dùng được lâu hoặc chơi ở thiết lập cao trên màn hình tần số quét cao.
+
+Nhưng đừng chỉ nhìn tên card. Trong shop, máy dùng RTX 4050 đi kèm màn hình 15.6 inch 144Hz và ổ 512GB SSD, còn máy dùng RTX 4060 có màn 16 inch 165Hz và ổ 1TB SSD. Màn lớn hơn, tần số quét cao hơn và ổ cứng gấp đôi cũng là một phần của khoảng chênh giá, không chỉ riêng con chip đồ họa.
+
+Một lưu ý thực tế: game hiện đại chiếm rất nhiều dung lượng, nên ổ 512GB sẽ đầy nhanh hơn bạn nghĩ. Nếu chọn bản 512GB, hãy tính sẵn phương án nâng cấp hoặc dùng thêm ổ ngoài.
+
+Bạn có thể dùng bộ lọc "Card đồ họa" ở trang danh mục Laptop để xem nhanh các máy theo từng mức card.`,
+    },
+    {
+      slug: "google-tivi-va-smart-tivi-khac-gi-nhau",
+      title: "Google Tivi và Smart Tivi khác gì nhau?",
+      excerpt:
+        "Hai cái tên xuất hiện ở hầu hết bảng thông số tivi nhưng ít khi được giải thích rõ. Khác biệt nằm ở hệ điều hành chứ không phải chất lượng hình ảnh.",
+      content: `Khi xem thông số tivi, bạn sẽ thấy máy được ghi là "Google Tivi" hoặc "Smart Tivi". Đây là cách phân loại theo HỆ ĐIỀU HÀNH của tivi, không phải theo chất lượng tấm nền hay độ phân giải.
+
+Google Tivi là tivi chạy nền tảng Google TV. Ưu điểm là kho ứng dụng lớn, tìm kiếm bằng giọng nói tiếng Việt tốt và giao diện gợi ý nội dung theo thói quen xem.
+
+Smart Tivi là cách gọi chung cho tivi chạy hệ điều hành riêng của hãng — ví dụ Tizen của Samsung hay webOS của LG. Các nền tảng này thường mượt và tối ưu tốt cho chính phần cứng của hãng, đổi lại kho ứng dụng hẹp hơn Google TV.
+
+Điều quan trọng cần nhớ: hệ điều hành KHÔNG quyết định chất lượng hình ảnh. Độ phân giải, công nghệ tấm nền và tần số quét mới là thứ ảnh hưởng tới những gì bạn nhìn thấy. Một chiếc Smart Tivi 4K vẫn cho hình đẹp hơn một chiếc Google Tivi Full HD cùng kích thước.
+
+Ở trang danh mục Tivi, bạn có thể lọc riêng theo "Loại tivi", "Kích thước màn hình" và "Độ phân giải" để so sánh đúng thứ mình quan tâm.`,
+    },
+  ];
+
+  for (const p of posts) {
+    // `update` đồng bộ lại nội dung mỗi lần chạy seed (không phải `{}` no-op)
+    // để sửa bài trong code là DB đổi theo — cùng lớp lỗi đã gặp với
+    // categoryId/description/compareAtPrice của sản phẩm.
+    await prisma.post.upsert({
+      where: { slug: p.slug },
+      update: { title: p.title, excerpt: p.excerpt, content: p.content },
+      create: {
+        slug: p.slug,
+        title: p.title,
+        excerpt: p.excerpt,
+        content: p.content,
+        status: "PUBLISHED",
+        // publishedAt BẮT BUỘC phải có giá trị: điều kiện lọc bài đã đăng dựa
+        // vào `publishedAt <= now` chứ không chỉ `status` (để hẹn giờ đăng
+        // được) — để null thì bài sẽ không bao giờ hiện dù đã PUBLISHED.
+        publishedAt: new Date(),
+      },
+    });
   }
 
   const bannerCount = await prisma.banner.count({ where: { position: "home_slider" } });
@@ -635,7 +726,7 @@ async function main() {
   console.log(
     `Seed xong: ${products.length} sản phẩm, 3 danh mục (Điện thoại/Laptop/Tivi), ` +
       `tồn kho cho ${allVariants.length} biến thể x ${activeStores.length} cửa hàng, ` +
-      `${relations.length} liên kết sản phẩm.`
+      `${relations.length} liên kết sản phẩm, ${posts.length} bài viết.`
   );
 }
 
