@@ -165,6 +165,57 @@ async function main() {
       ],
     },
 
+    {
+      name: "iPhone 15",
+      slug: "iphone-15",
+      description:
+        "iPhone 15 chip A16 Bionic, camera chính 48MP, cổng USB-C và màn hình Super Retina XDR 6.1 inch.",
+      categoryId: dienThoai.id,
+      brandId: brands.apple,
+      basePrice: 19990000,
+      isFeatured: false,
+      imageUrl: "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/ip-iphone15-den.jpg",
+      attributes: [
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "3349 mAh" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "128GB" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "6GB" },
+        // iPhone 15 bản thường dùng màn 60Hz, KHÔNG có ProMotion 120Hz như bản
+        // Pro — cũng là máy 60Hz duy nhất trong danh mục, nhờ vậy bộ lọc "Tần
+        // số quét" của Điện thoại mới có hơn 1 giá trị để chọn.
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
+      ],
+      variants: [
+        { sku: "IP15-128-BLK", color: "Đen", storage: "128GB", price: 19990000, compareAtPrice: 22990000 },
+        { sku: "IP15-256-BLU", color: "Xanh", storage: "256GB", price: 22990000, compareAtPrice: 25990000 },
+      ],
+    },
+    {
+      name: "Xiaomi Redmi 13C",
+      slug: "xiaomi-redmi-13c",
+      description:
+        "Redmi 13C màn hình 6.74 inch 90Hz, camera chính 50MP, pin 5000mAh sạc nhanh 18W.",
+      categoryId: dienThoai.id,
+      brandId: brands.xiaomi,
+      basePrice: 2990000,
+      isFeatured: false,
+      imageUrl: "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/ip-redmi13c-den.jpg",
+      attributes: [
+        { groupName: "Cấu hình", attrName: "Hiệu năng và Pin", attrValue: "5000 mAh" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "128GB" },
+        { groupName: "Cấu hình", attrName: "Dung lượng ROM", attrValue: "256GB" },
+        // Máy bán nhiều cấu hình RAM thật (bản 4GB/128GB và bản 8GB/256GB) nên
+        // ghi cả 2 dòng, giống cách "Dung lượng ROM" đã làm với máy nhiều bản.
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "4GB" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "90Hz" },
+      ],
+      variants: [
+        { sku: "RM13C-128-BLK", color: "Đen", storage: "128GB", price: 2990000, compareAtPrice: 3490000 },
+        { sku: "RM13C-256-GRN", color: "Xanh Lá", storage: "256GB", price: 3690000, compareAtPrice: 4190000 },
+      ],
+    },
+
     // ===================== LAPTOP =====================
     // Bộ lọc: CPU / RAM / Card đồ họa / Ổ cứng / Kích thước màn hình / Tần số quét.
     // "Card đồ họa" cố ý dùng giá trị ở mức PHÂN LOẠI ("Card tích hợp" /
@@ -226,6 +277,77 @@ async function main() {
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
       variants: [{ sku: "ASUS-ZB14-16-512", color: "Đen", storage: "16GB/512GB", price: 22990000, compareAtPrice: 26990000 }],
+    },
+
+    {
+      name: "MacBook Pro 14 M3",
+      slug: "macbook-pro-14-m3",
+      description:
+        "MacBook Pro 14 chip M3, màn hình Liquid Retina XDR 120Hz và thời lượng pin tới 22 giờ.",
+      categoryId: laptopCategory.id,
+      brandId: brands.apple,
+      basePrice: 39990000,
+      isFeatured: false,
+      imageUrl: "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/lt-mbp14-m3.jpg",
+      attributes: [
+        { groupName: "Cấu hình", attrName: "CPU", attrValue: "Apple M3" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
+        { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card tích hợp" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "14.2 inch" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
+      ],
+      variants: [
+        { sku: "MBP14-M3-8-512", color: "Bạc", storage: "8GB/512GB", price: 39990000, compareAtPrice: 43990000 },
+      ],
+    },
+    // 2 máy gaming dưới đây là lý do bộ lọc "Card đồ họa" mới có nghĩa: trước
+    // đó cả 3 laptop đều "Card tích hợp" nên lọc theo nó không loại được máy
+    // nào. Giá trị ghi kèm tên card rời (RTX 4050/4060) thay vì chỉ "Card rời"
+    // vì đó đúng là thứ người mua laptop gaming lọc theo.
+    {
+      name: "Asus TUF Gaming A15",
+      slug: "asus-tuf-gaming-a15",
+      description:
+        "Asus TUF Gaming A15 chip AMD Ryzen 7, card rời RTX 4050, màn hình 15.6 inch 144Hz và chuẩn bền bỉ MIL-STD-810H.",
+      categoryId: laptopCategory.id,
+      brandId: brands.asus,
+      basePrice: 26990000,
+      isFeatured: false,
+      imageUrl: "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/lt-tuf-a15.jpg",
+      attributes: [
+        { groupName: "Cấu hình", attrName: "CPU", attrValue: "AMD Ryzen 7" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "16GB" },
+        { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card rời RTX 4050" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "512GB SSD" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "15.6 inch" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "144Hz" },
+      ],
+      variants: [
+        { sku: "TUF-A15-16-512", color: "Xám", storage: "16GB/512GB", price: 26990000, compareAtPrice: 31990000 },
+      ],
+    },
+    {
+      name: "Asus ROG Strix G16",
+      slug: "asus-rog-strix-g16",
+      description:
+        "ROG Strix G16 chip Intel Core i7, card rời RTX 4060 và màn hình 16 inch 165Hz dành cho game thủ.",
+      categoryId: laptopCategory.id,
+      brandId: brands.asus,
+      basePrice: 34990000,
+      isFeatured: false,
+      imageUrl: "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/lt-rog-g16.jpg",
+      attributes: [
+        { groupName: "Cấu hình", attrName: "CPU", attrValue: "Intel Core i7" },
+        { groupName: "Cấu hình", attrName: "RAM", attrValue: "16GB" },
+        { groupName: "Cấu hình", attrName: "Card đồ họa", attrValue: "Card rời RTX 4060" },
+        { groupName: "Cấu hình", attrName: "Ổ cứng", attrValue: "1TB SSD" },
+        { groupName: "Màn hình", attrName: "Kích thước màn hình", attrValue: "16 inch" },
+        { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "165Hz" },
+      ],
+      variants: [
+        { sku: "ROG-G16-16-1TB", color: "Xám", storage: "16GB/1TB", price: 34990000, compareAtPrice: 39990000 },
+      ],
     },
 
     // ===================== TIVI =====================

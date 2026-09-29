@@ -365,6 +365,14 @@ export const getAttributeFacets = unstable_cache(
     // "43 inch" trước "50 inch" — so sánh chuỗi thuần sẽ xếp "12GB" lên trước.
     const collator = new Intl.Collator("vi", { numeric: true });
 
+    // `numeric: true` so sánh CHỮ SỐ trong chuỗi, nên nó không biết "1TB" lớn
+    // hơn "256GB" — nó chỉ thấy 1 < 256 và xếp "1TB SSD" lên đầu danh sách ổ
+    // cứng. Quy TB về GB trước khi so sánh để thang dung lượng xếp đúng tăng
+    // dần (256GB -> 512GB -> 1TB). Chỉ đổi KHÓA SẮP XẾP, giá trị hiển thị và
+    // slug trong URL vẫn giữ nguyên chuỗi gốc.
+    const sortKey = (value: string) =>
+      value.replace(/(\d+(?:[.,]\d+)?)\s*TB\b/gi, (_, n) => `${Number(String(n).replace(",", ".")) * 1024}GB`);
+
     return specNames
       .map((attrName) => ({
         attrName,
@@ -375,7 +383,7 @@ export const getAttributeFacets = unstable_cache(
             slug: slugifyAttr(value),
             count: productIds.size,
           }))
-          .sort((a, b) => collator.compare(a.value, b.value)),
+          .sort((a, b) => collator.compare(sortKey(a.value), sortKey(b.value))),
       }))
       .filter((facet) => facet.values.length > 0);
   },

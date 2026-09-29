@@ -4941,11 +4941,104 @@
       lượng từng món (mỗi món 1 cái), và "khách cũng mua" không lọc theo cùng
       danh mục hay giới hạn theo thời gian.
 
+- [x] Thêm 5 sản phẩm cho Điện thoại/Laptop để các bộ lọc thông số có nghĩa
+      (mục "Danh mục Điện thoại và Laptop hơi mỏng" trong phần Việc còn thiếu).
+      Đây KHÔNG phải việc "thêm hàng cho đẹp": trước đó 3 bộ lọc gần như vô
+      dụng — "Tần số quét" của Điện thoại chỉ có ĐÚNG 1 giá trị (cả 4 máy đều
+      120Hz), "Card đồ họa" của Laptop chỉ có "Card tích hợp" (chưa có máy
+      gaming nào), và "CPU" có 3 giá trị nhưng mỗi giá trị đúng 1 máy. Chọn
+      sản phẩm CÓ CHỦ ĐÍCH theo đúng các lỗ hổng đó chứ không lấy máy bất kỳ.
+
+      2 điện thoại: **iPhone 15** (60Hz — máy 60Hz DUY NHẤT của danh mục, RAM
+      6GB, ROM 128/256GB, pin 3349 mAh) và **Xiaomi Redmi 13C** (90Hz, RAM
+      4GB/8GB, ROM 128/256GB, pin 5000 mAh). 3 laptop: **MacBook Pro 14 M3**
+      (120Hz, 14.2 inch, card tích hợp — ghép với MacBook Air M3 cho "Apple
+      M3" có 2 máy), **Asus TUF Gaming A15** (AMD Ryzen 7, RTX 4050, 15.6
+      inch 144Hz) và **Asus ROG Strix G16** (Intel Core i7, RTX 4060, 16 inch
+      165Hz, 1TB SSD). Không thêm brand mới nào — cả 5 đều thuộc Apple/
+      Xiaomi/Asus đã có sẵn. Database giờ 6 Điện thoại / 6 Laptop / 6 Tivi.
+
+      NGUỒN ẢNH (đều là render CHÍNH HÃNG, không có placehold.co nào): Apple
+      CDN theo mẫu URL đoán được (`store.storeimages.cdn-apple.com/.../
+      iphone-15-finish-select-202309-6-1inch-<màu>?wid=3600`) — vẫn phải dùng
+      PowerShell `Invoke-WebRequest` vì `curl` trên máy này SEGFAULT với mọi
+      domain Apple (xác nhận lại lần nữa); mi.com/vn cho Redmi 13C (grep HTML
+      ra đúng bộ `phone_black.png`/`phone_green.png` — render riêng từng màu);
+      asus.com/vn og:image cho TUF và rog.asus.com og:image cho ROG Strix.
+
+      MẸO HỮU ÍCH (mới, nên dùng lại): trang Xiaomi trả về 53 URL ảnh ứng
+      viên, phần lớn là icon/infographic/ảnh người mẫu chứ không phải render
+      sản phẩm. Thay vì mở từng ảnh, đã viết script `sharp` ghép TẤT CẢ thành
+      1 ảnh contact-sheet 6 cột có đánh số rồi xem 1 lần bằng Read tool —
+      nhận ra ngay 4 ảnh dùng được (#48..#51) trong 1 lượt thay vì 53 lượt.
+
+      2 điểm phải tự xử lý khi làm ảnh: (1) ảnh Xiaomi gốc 1696x814 thực ra
+      là HAI khung ghép cạnh nhau (khung trái là ảnh cạnh máy, khung phải mới
+      là render mặt trước + lưng) nên phải `extract` lấy đúng khung phải;
+      (2) `sharp .trim()` KHÔNG ăn được nền gradient màu của Xiaomi (chỉ ăn
+      nền trắng của Apple/Asus) — không sao, nền màu đó là một phần của render
+      chính hãng. Quy trình còn lại giữ nguyên như các đợt trước: trim viền
+      trắng -> chừa lề 6% -> resize width 1400 -> JPEG q85 -> upload Supabase.
+
+      KHÔNG LẤY ĐƯỢC ảnh cho máy tầm trung 90Hz thứ hai: samsung.com/vn (URL
+      sản phẩm A15 giờ trả 404 và trang là client-render), oppo.com/vn (SPA,
+      HTML chỉ có ảnh nav/footer), acer.com và msi.com (chặn thẳng 403/timeout).
+      Đã dừng ở 2 điện thoại thay vì hạ chuẩn dùng ảnh minh họa — hệ quả duy
+      nhất là mức "90Hz" hiện mới có 1 máy (ghi lại ở phần Việc còn thiếu).
+
+      ẢNH GẮN THEO BIẾN THỂ (đúng quy ước các sản phẩm khác đang dùng — audit
+      trước khi làm cho thấy 9/12 máy điện thoại+laptop là "variant-only"):
+      iPhone 15 và Redmi 13C mỗi máy 2 ảnh đúng 2 màu nên đổi màu ở trang chi
+      tiết là ẢNH ĐỔI THẬT. MacBook Pro 14: 2 URL màu `-spacegray-` và
+      `-silver-` của Apple trả về CÙNG MỘT ảnh (kiểm tra bằng mắt + kích
+      thước file lệch 27 byte) nên chỉ làm 1 biến thể 1 màu, KHÔNG dựng 2 màu
+      dùng chung 1 ảnh như lỗi đã từng mắc với S24 Ultra.
+
+      LỖI THẬT TỰ TẠO RA VÀ TỰ SỬA (phát hiện lúc audit, không đợi user báo):
+      thêm "1TB SSD" làm bộ lọc "Ổ cứng" xếp **1TB SSD lên TRƯỚC 256GB SSD**.
+      Nguyên nhân: `Intl.Collator(numeric: true)` chỉ so CHỮ SỐ trong chuỗi
+      nên thấy 1 < 256. Đã sửa ở TẦNG SẮP XẾP của `getAttributeFacets()`
+      (src/lib/products.ts) — thêm `sortKey()` quy "<n>TB" về "<n*1024>GB"
+      TRƯỚC khi so sánh, chỉ đổi khóa sắp xếp chứ không đụng giá trị hiển thị
+      hay slug trong URL. CHỦ Ý không né bằng cách đổi dữ liệu thành 512GB cho
+      "đỡ phải sửa code" — vì lỗi này sẽ quay lại ngay khi có máy 2TB. Đã test
+      riêng hàm sort với 4 thang giá trị (ổ cứng/inch/GB RAM/Hz) đều đúng.
+
+      Đã test qua dev server bằng DB THẬT (28/28 assertion đúng, xóa `.next`
+      + restart trước khi test vì seed/script bỏ qua `revalidateTag`): sidebar
+      Điện thoại hiện đủ 60Hz/90Hz/120Hz và RAM 4/6/12GB, sidebar Laptop hiện
+      đủ 3 mức Card đồ họa và Ổ cứng xếp đúng 256GB < 512GB < 1TB (so sánh
+      theo VỊ TRÍ trong chuỗi HTML, không chỉ kiểm tra có mặt); lọc thật qua
+      curl trả đúng kết quả cho 7 tổ hợp (60Hz -> đúng iPhone 15; 90Hz -> đúng
+      Redmi 13C; RAM 4GB -> đúng Redmi 13C; RTX 4060 -> đúng ROG; OR 2 loại
+      card rời -> đúng 2 máy gaming; CPU Apple M3 -> đúng 2 MacBook; 1TB SSD
+      -> đúng ROG) — chỉ đếm link trong phần LƯỚI, đã loại `<aside>` vì grep
+      cả trang sẽ dính link trong mega menu của Header; 5 trang chi tiết mới
+      đều 200 và đều dùng ảnh Supabase thật; script audit 2 chiều xác nhận mọi
+      bộ lọc đều có >= 1 giá trị VÀ mọi sản phẩm ACTIVE đều có đủ từng thông
+      số dùng làm bộ lọc (thiếu 1 thông số thì máy sẽ biến mất khó hiểu khi
+      lọc theo nó) — 0 sai lệch; HEAD từng URL xác nhận cả 27 ảnh trả 200; 7
+      biến thể mới đều có đủ 2 dòng Inventory (seed tự tạo, SL 20). `tsc
+      --noEmit`/`eslint`/`npm run build` sạch (chỉ còn warning `_page` có từ
+      trước). Đã dọn sạch script dùng 1 lần + ảnh tạm.
+
+      CHƯA LÀM: bộ lọc "Tần số quét" của Tivi vẫn chỉ có 60Hz (cả 6 máy đều
+      60Hz thật — cần thêm tivi 120Hz), và "Kích thước màn hình" của Laptop có
+      6 giá trị nhưng mỗi giá trị đúng 1 máy (bản chất laptop mỗi dòng một cỡ
+      màn, gom theo khoảng như "13-14 inch"/"15-16 inch" sẽ hợp lý hơn nhưng
+      cần đổi cả dữ liệu lẫn cách khai báo bộ lọc).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
       test ở mục "Chuyển hẳn sang đăng nhập bằng Google" ở trên).
-- [ ] CHƯA làm cho Vercel: thêm Authorized redirect URI production
+- [x] ĐÃ XONG (xác minh lại 2026-09-29 bằng cách gọi thẳng
+      `https://fptshop-clone.vercel.app/api/auth/google/start` trên production:
+      trả 307 redirect sang accounts.google.com kèm đúng `client_id` thật và
+      `redirect_uri=https%3A%2F%2Ffptshop-clone.vercel.app%2F...%2Fcallback`,
+      không còn rơi vào `/login?error=not_configured`). Nội dung cũ của mục
+      này, giữ lại để biết cần làm gì nếu sau này đổi domain: thêm Authorized
+      redirect URI production
       (`https://fptshop-clone.vercel.app/api/auth/google/callback`) vào
       đúng OAuth Client trên Google Cloud Console (Credentials > sửa OAuth
       Client vừa tạo > Authorized redirect URIs > + Add URI), rồi điền 3
@@ -4979,13 +5072,11 @@
       khỏi DB khi thu gọn về 3 danh mục (xem mục "Thu gọn còn 3 danh mục +
       bộ lọc thông số theo từng danh mục" ở trên). Toàn bộ 13 sản phẩm còn
       lại đều đã có ảnh THẬT, site không còn ảnh placehold.co nào.
-- [ ] Danh mục Điện thoại (4 sản phẩm) và Laptop (3 sản phẩm) hơi mỏng nên
-      vài bộ lọc gần như không thu hẹp được gì: "Tần số quét" của điện thoại
-      chỉ có đúng 1 giá trị (120Hz — cả 4 máy đều 120Hz thật), "CPU" của
-      laptop có 3 giá trị nhưng mỗi giá trị đúng 1 máy, "Card đồ họa" chỉ có
-      "Card tích hợp" (chưa có laptop gaming nào). Không phải lỗi — chỉ là
-      dữ liệu còn ít; thêm vài máy tầm trung (90Hz/60Hz) và 1-2 laptop gaming
-      card rời là các bộ lọc này có ý nghĩa ngay, không cần sửa code.
+- [x] Danh mục Điện thoại và Laptop quá mỏng làm nhiều bộ lọc vô dụng — ĐÃ
+      SỬA bằng cách thêm 5 sản phẩm (xem mục "Thêm 5 sản phẩm..." ở cuối phần
+      Tiến độ). Còn thiếu: chưa có máy tầm trung 90Hz thứ hai (Samsung/OPPO/
+      Acer/MSI đều chặn bot nên không lấy được ảnh thật), nên mức "90Hz" của
+      bộ lọc Tần số quét hiện mới có đúng 1 máy.
 - [ ] Polish CẤU TRÚC (không phải màu sắc — màu đã tự động đổi theo theme
       mới) cho phần còn lại của admin (danh mục, thương hiệu, người dùng,
       cửa hàng, khuyến mãi, bảo hành, thu cũ đổi mới, hỗ trợ, trang tĩnh,
