@@ -9,6 +9,7 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   VNPAY: "VNPay",
   MOMO: "Ví MoMo",
   BANK_TRANSFER: "Chuyển khoản ngân hàng (VietQR)",
+  INSTALLMENT: "Trả góp 0%",
 };
 
 export const DELIVERY_METHOD_LABELS: Record<string, string> = {

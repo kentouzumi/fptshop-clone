@@ -14,6 +14,7 @@ import { createMomoPaymentUrl, verifyMomoCallback } from "@/lib/momo";
 import { reserveStockOrThrow, releaseStock } from "@/lib/inventory";
 import { getShippingFee } from "@/lib/vnAddress";
 import { ensureShipmentOnShipping, markShipmentDelivered } from "@/lib/shipments";
+import { quoteInstallment, MIN_INSTALLMENT_TOTAL } from "@/lib/installment";
 
 import {
   PAYMENT_METHOD_LABELS,
@@ -42,7 +43,9 @@ export interface CheckoutInput {
   newAddress?: NewAddressInput; // hoặc nhập địa chỉ mới (sẽ được lưu vào sổ địa chỉ)
   note?: string;
   couponCode?: string;
-  paymentMethod?: "COD" | "MOMO" | "BANK_TRANSFER";
+  paymentMethod?: "COD" | "MOMO" | "BANK_TRANSFER" | "INSTALLMENT";
+  /** Bắt buộc nếu paymentMethod = INSTALLMENT. Gói được tính LẠI ở server, không tin số client gửi lên. */
+  installment?: { providerId: string; months: number };
   deliveryMethod?: "HOME_DELIVERY" | "STORE_PICKUP";
   pickupStoreId?: string; // bắt buộc nếu deliveryMethod = STORE_PICKUP
 }
@@ -159,8 +162,34 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
 
     const grandTotal = subtotal + shippingFee - discountTotal;
 
+    // Trả góp: tính LẠI gói từ grandTotal vừa chốt trong transaction, chỉ tin
+    // providerId + số kỳ hạn client gửi lên. Không nhận số tiền trả trước/góp
+    // hàng tháng từ client — cùng nguyên tắc "giá luôn tính từ DB" đã áp dụng
+    // cho coupon. grandTotal ở đây đã trừ giảm giá và cộng phí ship nên gói
+    // luôn khớp đúng số tiền khách thật sự phải trả.
+    let installmentQuote: ReturnType<typeof quoteInstallment> = null;
+    if (input.paymentMethod === "INSTALLMENT") {
+      if (!input.installment) {
+        throw new Error("Vui lòng chọn nhà cấp vốn và kỳ hạn trả góp.");
+      }
+      if (grandTotal < MIN_INSTALLMENT_TOTAL) {
+        throw new Error(
+          `Đơn hàng phải từ ${MIN_INSTALLMENT_TOTAL.toLocaleString("vi-VN")}₫ mới trả góp được.`
+        );
+      }
+      installmentQuote = quoteInstallment(
+        grandTotal,
+        input.installment.providerId,
+        input.installment.months
+      );
+      if (!installmentQuote) {
+        throw new Error("Gói trả góp không hợp lệ. Vui lòng chọn lại nhà cấp vốn hoặc kỳ hạn.");
+      }
+    }
+
     const isMomo = input.paymentMethod === "MOMO";
     const isBankTransfer = input.paymentMethod === "BANK_TRANSFER";
+    const isInstallment = input.paymentMethod === "INSTALLMENT";
     const orderCode = generateOrderCode();
     const momoTxnRef = isMomo ? generateTxnRef(orderCode) : null;
 
@@ -210,7 +239,9 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
               ? PaymentMethod.MOMO
               : isBankTransfer
                 ? PaymentMethod.BANK_TRANSFER
-                : PaymentMethod.COD,
+                : isInstallment
+                  ? PaymentMethod.INSTALLMENT
+                  : PaymentMethod.COD,
             status: PaymentStatus.PENDING,
             amount: grandTotal,
             // Chuyển khoản dùng thẳng mã đơn hàng làm nội dung CK (addInfo gửi
@@ -222,6 +253,22 @@ export async function createOrderFromCart(userId: string, input: CheckoutInput) 
         statusHistory: {
           create: { status: OrderStatus.PENDING, note: "Đơn hàng được tạo" },
         },
+        // approved: false — hồ sơ chờ công ty tài chính duyệt. Đơn nằm ở
+        // PENDING cho tới khi admin bấm duyệt (xem approveInstallmentPlan).
+        ...(installmentQuote
+          ? {
+              installmentPlan: {
+                create: {
+                  provider: installmentQuote.providerName,
+                  months: installmentQuote.months,
+                  downPayment: installmentQuote.downPayment,
+                  monthlyAmount: installmentQuote.monthlyAmount,
+                  interestRate: installmentQuote.interestRate,
+                  approved: false,
+                },
+              },
+            }
+          : {}),
       },
     });
 
@@ -274,6 +321,7 @@ export async function lookupOrderByCodeAndPhone(code: string, phone: string) {
       payments: true,
       pickupStore: true,
       shipment: true,
+      installmentPlan: true,
       statusHistory: { orderBy: { createdAt: "asc" } },
     },
   });
@@ -287,7 +335,14 @@ export async function lookupOrderByCodeAndPhone(code: string, phone: string) {
 export async function getOrderDetail(orderId: string, userId: string) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { items: true, address: true, payments: true, pickupStore: true, shipment: true },
+    include: {
+      items: true,
+      address: true,
+      payments: true,
+      pickupStore: true,
+      shipment: true,
+      installmentPlan: true,
+    },
   });
 
   if (!order || order.userId !== userId) return null;
@@ -362,6 +417,7 @@ export async function getOrderDetailForAdmin(orderId: string) {
       payments: true,
       user: true,
       shipment: true,
+      installmentPlan: true,
       statusHistory: { orderBy: { createdAt: "asc" } },
     },
   });
@@ -498,6 +554,72 @@ export async function confirmBankTransferPayment(orderId: string) {
     }
 
     return tx.order.findUnique({ where: { id: orderId }, include: { payments: true } });
+  });
+}
+
+/**
+ * Admin duyệt hồ sơ trả góp (đóng vai công ty tài chính đã duyệt khoản vay).
+ *
+ * Khác COD ở chỗ tiền hàng do CÔNG TY TÀI CHÍNH trả cho shop ngay khi hồ sơ
+ * được duyệt, nên Payment chuyển thẳng sang PAID — khách trả dần cho bên cấp
+ * vốn chứ không trả cho shop nữa. Đơn PENDING tự lên CONFIRMED, giống hệt
+ * confirmBankTransferPayment().
+ *
+ * IDEMPOTENT: bấm duyệt lần 2 không tạo thêm lịch sử trạng thái/thông báo
+ * trùng (admin lỡ bấm 2 lần không sao).
+ */
+export async function approveInstallmentPlan(orderId: string) {
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true, installmentPlan: true },
+    });
+    if (!order) {
+      throw new Error("Không tìm thấy đơn hàng.");
+    }
+    if (!order.installmentPlan) {
+      throw new Error("Đơn hàng này không có hồ sơ trả góp.");
+    }
+    if (order.installmentPlan.approved) {
+      return order;
+    }
+
+    await tx.installmentPlan.update({
+      where: { orderId },
+      data: { approved: true },
+    });
+
+    const payment = order.payments.find((p) => p.method === PaymentMethod.INSTALLMENT);
+    if (payment && payment.status !== PaymentStatus.PAID) {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.PAID, paidAt: new Date() },
+      });
+    }
+
+    if (order.status === OrderStatus.PENDING) {
+      await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.CONFIRMED } });
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          status: OrderStatus.CONFIRMED,
+          note: `Duyệt hồ sơ trả góp ${order.installmentPlan.provider} ${order.installmentPlan.months} tháng`,
+        },
+      });
+      await tx.notification.create({
+        data: {
+          userId: order.userId,
+          type: "ORDER_UPDATE",
+          title: `Hồ sơ trả góp đơn ${order.code} đã được duyệt`,
+          content: `Hồ sơ trả góp qua ${order.installmentPlan.provider} đã được duyệt. Đơn hàng của bạn đang được xử lý.`,
+        },
+      });
+    }
+
+    return tx.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true, installmentPlan: true },
+    });
   });
 }
 

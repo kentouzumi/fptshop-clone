@@ -11,6 +11,8 @@ import ShipmentForm from "./ShipmentForm";
 import { CARRIER_SUGGESTIONS, ADMIN_SETTABLE_SHIPMENT_STATUSES } from "@/lib/shipments";
 import { ShipmentStatus } from "@prisma/client";
 import ConfirmBankTransferButton from "../ConfirmBankTransferButton";
+import ApproveInstallmentButton from "../ApproveInstallmentButton";
+import InstallmentPlanCard from "@/components/InstallmentPlanCard";
 import { formatAddressLine } from "@/lib/vnAddress";
 
 function formatPrice(value: number) {
@@ -22,7 +24,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   BANK_CARD: "Thẻ ngân hàng",
   VISA_MASTERCARD: "Visa/Mastercard",
   E_WALLET: "Ví điện tử",
-  INSTALLMENT: "Trả góp",
+  INSTALLMENT: "Trả góp 0%",
   BANK_TRANSFER: "Chuyển khoản",
   VNPAY: "VNPay",
   MOMO: "Ví MoMo",
@@ -144,6 +146,29 @@ export default async function AdminOrderDetailPage({
                 : null,
             }}
           />
+        </div>
+      )}
+
+      {order.installmentPlan && (
+        <div className="mb-6">
+          <InstallmentPlanCard
+            plan={{
+              provider: order.installmentPlan.provider,
+              months: order.installmentPlan.months,
+              downPayment: Number(order.installmentPlan.downPayment),
+              monthlyAmount: Number(order.installmentPlan.monthlyAmount),
+              approved: order.installmentPlan.approved,
+            }}
+          />
+          {/* Duyet ho so = dong vai cong ty tai chinh da duyet khoan vay:
+              Payment chuyen PAID (ben cap von tra tien cho shop) va don
+              PENDING tu len CONFIRMED. Nut an han khi da duyet. */}
+          {!order.installmentPlan.approved && (
+            <ApproveInstallmentButton
+              orderId={order.id}
+              provider={order.installmentPlan.provider}
+            />
+          )}
         </div>
       )}
 

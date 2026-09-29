@@ -3,6 +3,11 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  INSTALLMENT_PROVIDERS,
+  MIN_INSTALLMENT_TOTAL,
+  quoteInstallment,
+} from "@/lib/installment";
 import ProvinceWardPicker from "@/components/ProvinceWardPicker";
 
 export interface SavedAddress {
@@ -102,7 +107,11 @@ export default function CheckoutForm({
   const [ward, setWard] = useState("");
   const [streetDetail, setStreetDetail] = useState("");
   const [note, setNote] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"COD" | "MOMO" | "BANK_TRANSFER">("COD");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "COD" | "MOMO" | "BANK_TRANSFER" | "INSTALLMENT"
+  >("COD");
+  const [installmentProviderId, setInstallmentProviderId] = useState(INSTALLMENT_PROVIDERS[0].id);
+  const [installmentMonths, setInstallmentMonths] = useState(INSTALLMENT_PROVIDERS[0].months[0]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -129,6 +138,27 @@ export default function CheckoutForm({
   const effectiveShippingFee = isStorePickup || appliedCoupon?.freeShipping ? 0 : shippingFee;
   const discountAmount = appliedCoupon?.discountAmount ?? 0;
   const grandTotal = subtotal + effectiveShippingFee - discountAmount;
+
+  // Tra gop tinh tren TONG CUOI CUNG (da tru giam gia, da cong phi ship) nen ap
+  // ma giam gia hay doi tinh giao hang la so tien gop tu cap nhat theo. Server
+  // tinh lai dung cong thuc nay luc tao don, khong tin so o client.
+  const installmentAvailable = grandTotal >= MIN_INSTALLMENT_TOTAL;
+  const installmentProvider =
+    INSTALLMENT_PROVIDERS.find((p) => p.id === installmentProviderId) ?? INSTALLMENT_PROVIDERS[0];
+  const installmentQuote = installmentAvailable
+    ? quoteInstallment(grandTotal, installmentProvider.id, installmentMonths)
+    : null;
+
+  function handleSelectInstallmentProvider(id: string) {
+    setInstallmentProviderId(id);
+    // Moi nha cap von ho tro bo ky han khac nhau - ky han dang chon co the
+    // khong con hop le, tu chuyen ve ky han dau tien cua nha cap von moi
+    // (cung cach handleSelectColor xu ly dung luong o trang chi tiet san pham).
+    const next = INSTALLMENT_PROVIDERS.find((p) => p.id === id);
+    if (next && !next.months.includes(installmentMonths)) {
+      setInstallmentMonths(next.months[0]);
+    }
+  }
 
   async function handleApplyCoupon(rawCode?: string) {
     const code = (rawCode ?? couponInput).trim();
@@ -178,6 +208,11 @@ export default function CheckoutForm({
       return;
     }
 
+    if (paymentMethod === "INSTALLMENT" && !installmentQuote) {
+      setError("Vui lòng chọn lại gói trả góp.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const body = {
@@ -190,6 +225,9 @@ export default function CheckoutForm({
         note,
         couponCode: appliedCoupon?.code,
         paymentMethod,
+        ...(paymentMethod === "INSTALLMENT"
+          ? { installment: { providerId: installmentProvider.id, months: installmentMonths } }
+          : {}),
       };
 
       const res = await fetch("/api/orders", {
@@ -509,7 +547,100 @@ export default function CheckoutForm({
               )}
             </span>
           </label>
+          <label className={radioCardClass(paymentMethod === "INSTALLMENT", !installmentAvailable)}>
+            <input
+              type="radio"
+              name="paymentMethod"
+              className="mt-0.5"
+              checked={paymentMethod === "INSTALLMENT"}
+              disabled={!installmentAvailable}
+              onChange={() => setPaymentMethod("INSTALLMENT")}
+            />
+            <span>
+              Trả góp 0% qua công ty tài chính
+              {!installmentAvailable && (
+                <span className="ml-1 text-xs text-zinc-400">
+                  (đơn từ {formatPrice(MIN_INSTALLMENT_TOTAL)} mới áp dụng)
+                </span>
+              )}
+            </span>
+          </label>
         </div>
+
+        {paymentMethod === "INSTALLMENT" && installmentAvailable && (
+          <div className="mt-4 border-t border-zinc-100 pt-4">
+            <span className="mb-2 block text-sm font-medium text-zinc-900">Nhà cấp vốn</span>
+            <div className="flex flex-col gap-2">
+              {INSTALLMENT_PROVIDERS.map((p) => {
+                // "Từ ... /tháng" của mỗi nhà cấp vốn = kỳ hạn dài nhất họ hỗ trợ,
+                // tính ngay trên tổng đơn hiện tại để khách so sánh được trước khi chọn.
+                const monthlyAmounts = p.months
+                  .map((m) => quoteInstallment(grandTotal, p.id, m)?.monthlyAmount)
+                  .filter((v): v is number => typeof v === "number");
+                const cheapest = monthlyAmounts.length > 0 ? Math.min(...monthlyAmounts) : null;
+                return (
+                  <label key={p.id} className={radioCardClass(installmentProviderId === p.id)}>
+                    <input
+                      type="radio"
+                      name="installmentProvider"
+                      className="mt-0.5"
+                      checked={installmentProviderId === p.id}
+                      onChange={() => handleSelectInstallmentProvider(p.id)}
+                    />
+                    <span className="flex-1">
+                      <span className="font-medium">{p.name}</span>
+                      <span className="block text-xs text-zinc-500">
+                        Trả trước {p.downPaymentPercent}%
+                        {cheapest !== null && <> · từ {formatPrice(cheapest)}/tháng</>}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+
+            <span className="mb-2 mt-4 block text-sm font-medium text-zinc-900">Kỳ hạn</span>
+            <div className="flex flex-wrap gap-2">
+              {installmentProvider.months.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setInstallmentMonths(m)}
+                  className={
+                    m === installmentMonths
+                      ? "rounded-full border border-accent bg-accent/10 px-3.5 py-1.5 text-sm ring-1 ring-accent"
+                      : "rounded-full border border-zinc-200 px-3.5 py-1.5 text-sm hover:border-zinc-400"
+                  }
+                >
+                  {m} tháng
+                </button>
+              ))}
+            </div>
+
+            {installmentQuote && (
+              <div className="mt-4 space-y-1.5 rounded-xl bg-zinc-100 p-3.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Trả trước</span>
+                  <span className="font-medium">{formatPrice(installmentQuote.downPayment)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Góp hàng tháng × {installmentQuote.months}</span>
+                  <span className="font-semibold text-accent">
+                    {formatPrice(installmentQuote.monthlyAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-zinc-200 pt-1.5">
+                  <span className="text-zinc-500">Lãi suất</span>
+                  <span className="font-medium">0%</span>
+                </div>
+                <p className="pt-1 text-xs text-zinc-500">
+                  Tổng phải trả đúng bằng giá trị đơn hàng. Hồ sơ cần được{" "}
+                  {installmentQuote.providerName} duyệt trước khi đơn được xử lý.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card space-y-1.5 p-4 text-sm">
@@ -556,7 +687,9 @@ export default function CheckoutForm({
           ? "Đang xử lý..."
           : paymentMethod === "MOMO"
             ? "Đặt hàng & thanh toán qua MoMo"
-            : isStorePickup
+            : paymentMethod === "INSTALLMENT"
+              ? "Đặt hàng & gửi hồ sơ trả góp"
+              : isStorePickup
               ? "Đặt hàng (thanh toán khi nhận tại cửa hàng)"
               : "Đặt hàng (thanh toán khi nhận hàng)"}
       </button>

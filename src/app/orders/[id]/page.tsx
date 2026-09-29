@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrderDetail, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS } from "@/lib/orders";
+import InstallmentPlanCard from "@/components/InstallmentPlanCard";
 import { SHIPMENT_STATUS_LABELS } from "@/lib/orderLabels";
 import { buildVietQrUrl, getBankAccountInfo } from "@/lib/bankTransfer";
 import RetryPaymentButton from "./RetryPaymentButton";
@@ -192,6 +193,18 @@ export default async function OrderDetailPage({
       )}
 
       {canRetryPayment && <RetryPaymentButton orderId={order.id} />}
+
+      {order.installmentPlan && (
+        <InstallmentPlanCard
+          plan={{
+            provider: order.installmentPlan.provider,
+            months: order.installmentPlan.months,
+            downPayment: Number(order.installmentPlan.downPayment),
+            monthlyAmount: Number(order.installmentPlan.monthlyAmount),
+            approved: order.installmentPlan.approved,
+          }}
+        />
+      )}
 
       {payment && payment.method === "BANK_TRANSFER" && payment.status === "PENDING" && (
         <div className="card mt-4 p-4">

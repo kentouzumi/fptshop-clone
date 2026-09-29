@@ -7,6 +7,7 @@ import {
   DELIVERY_METHOD_LABELS,
   SHIPMENT_STATUS_LABELS,
 } from "@/lib/orderLabels";
+import InstallmentPlanCard from "@/components/InstallmentPlanCard";
 
 const STATUS_STYLES: Record<string, string> = {
   PENDING: "bg-amber-50 text-amber-700",
@@ -45,6 +46,13 @@ interface LookupOrder {
     trackingCode: string | null;
     estimatedDate: string | null;
     deliveredAt: string | null;
+  } | null;
+  installmentPlan: {
+    provider: string;
+    months: number;
+    downPayment: number;
+    monthlyAmount: number;
+    approved: boolean;
   } | null;
   items: { id: string; productName: string; variantLabel: string | null; quantity: number; lineTotal: number }[];
   payments: { id: string; method: string; status: string }[];
@@ -180,6 +188,8 @@ export default function OrderLookupForm() {
               )}
             </div>
           )}
+
+          {order.installmentPlan && <InstallmentPlanCard plan={order.installmentPlan} />}
 
           <div className="card divide-y divide-zinc-100">
             {order.items.map((item) => (

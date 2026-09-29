@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import StarRating from "@/components/StarRating";
 import CompareToggle from "@/components/CompareToggle";
+import { getLowestMonthlyQuote } from "@/lib/installment";
 
 export interface ProductCardData {
   id: string;
@@ -40,6 +41,8 @@ export default function ProductCard({
   const router = useRouter();
   const [inWishlist, setInWishlist] = useState(initialInWishlist);
   const [loading, setLoading] = useState(false);
+
+  const installmentQuote = getLowestMonthlyQuote(product.minPrice);
 
   async function toggleWishlist(e: React.MouseEvent) {
     e.preventDefault();
@@ -134,6 +137,23 @@ export default function ProductCard({
             <span className="rounded-full bg-red-600/10 px-1.5 py-0.5 font-semibold text-red-500">
               -{product.discountPercent}%
             </span>
+          </>
+        )}
+      </div>
+      {/* Tinh tren GIA BAN RE NHAT cua san pham (dung con so dang hien phia
+          tren) chu khong phai tong don - tong don con phu thuoc phi ship va
+          ma giam gia, chua biet duoc o trang danh sach; so chot cuoi cung
+          hien lai o /checkout noi tinh tren tong that. San pham duoi muc toi
+          thieu thi khong hien gi, thay vi hua mot muc gop khong dang ky duoc.
+          Khoi giu chieu cao co dinh nhu khoi gia gach ngang o tren. */}
+      <div className="mt-0.5 min-h-[1rem] text-xs text-zinc-500">
+        {installmentQuote && (
+          <>
+            Trả góp 0% từ{" "}
+            <span className="font-medium text-zinc-700">
+              {formatPrice(installmentQuote.monthlyAmount)}
+            </span>
+            /tháng
           </>
         )}
       </div>

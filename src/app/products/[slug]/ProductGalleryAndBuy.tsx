@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { getLowestMonthlyQuote } from "@/lib/installment";
 
 interface VariantOption {
   id: string;
@@ -108,6 +109,7 @@ export default function ProductGalleryAndBuy({
   const selectedVariantId = selectedVariant?.id ?? null;
   const price = selectedVariant?.price ?? basePrice;
   const compareAtPrice = selectedVariant?.compareAtPrice ?? null;
+  const installmentQuote = getLowestMonthlyQuote(price);
 
   // stock === undefined (chưa chọn được biến thể nào) và stock === null (không
   // quản lý tồn kho) đều coi như "không có gì để nói" — chỉ chặn mua khi biết
@@ -248,6 +250,25 @@ export default function ProductGalleryAndBuy({
             </>
           )}
         </div>
+
+        {/* Tinh theo GIA CUA BIEN THE DANG CHON (doi mau/dung luong la so nay
+            doi theo), khac card o trang danh sach von chi biet gia re nhat.
+            Van chua phai so chot: tong don con cong phi ship / tru ma giam
+            gia, nen /checkout moi la noi tinh tren tong that. */}
+        {installmentQuote && (
+          <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl bg-zinc-100 px-3.5 py-2.5 text-sm">
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
+              Trả góp 0%
+            </span>
+            <span className="text-zinc-600">
+              từ{" "}
+              <span className="font-semibold text-zinc-900">
+                {formatPrice(installmentQuote.monthlyAmount)}
+              </span>
+              /tháng · {installmentQuote.months} tháng qua {installmentQuote.providerName}
+            </span>
+          </div>
+        )}
 
         {colors.length > 0 && (
           <div className="mb-5">

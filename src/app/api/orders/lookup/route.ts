@@ -66,6 +66,15 @@ export async function POST(request: Request) {
             deliveredAt: order.shipment.deliveredAt,
           }
         : null,
+      installmentPlan: order.installmentPlan
+        ? {
+            provider: order.installmentPlan.provider,
+            months: order.installmentPlan.months,
+            downPayment: Number(order.installmentPlan.downPayment),
+            monthlyAmount: Number(order.installmentPlan.monthlyAmount),
+            approved: order.installmentPlan.approved,
+          }
+        : null,
       items: order.items.map((item) => ({
         id: item.id,
         productName: item.productName,

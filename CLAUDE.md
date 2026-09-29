@@ -5028,6 +5028,104 @@
       màn, gom theo khoảng như "13-14 inch"/"15-16 inch" sẽ hợp lý hơn nhưng
       cần đổi cả dữ liệu lẫn cách khai báo bộ lọc).
 
+- [x] Trả góp 0% qua công ty tài chính — dùng model `InstallmentPlan` đã có
+      trong schema từ đầu dự án nhưng CHƯA MỘT DÒNG CODE NÀO dùng tới (mục
+      "Trả góp 0%" trong bản rà soát so với fptshop.com.vn). KHÔNG cần đổi
+      schema: giá trị `INSTALLMENT` đã có sẵn trong enum `PaymentMethod` và
+      quan hệ `Order.installmentPlan` đã khai báo sẵn.
+
+      QUY TẮC MVP TỰ ĐẶT (ghi rõ ngay đầu src/lib/installment.ts, giống cách
+      lib/loyalty.ts tự đặt quy tắc tích điểm): 3 nhà cấp vốn Home Credit
+      (6/9/12 tháng, trả trước 20%), HD SAISON (6/12 tháng, 25%), FE Credit
+      (6/9/12/18 tháng, 30%); lãi suất LUÔN 0% — khách trả đúng giá niêm yết,
+      shop chịu phần lãi. Đây KHÔNG phải chính sách thật của FPT Shop hay của
+      các công ty tài chính được nêu tên.
+
+      CÁCH TÍNH (điểm dễ sai nhất): làm tròn SỐ TIỀN GÓP HÀNG THÁNG lên bội
+      1.000đ TRƯỚC, rồi suy ngược `downPayment = tổng - góp * số kỳ`. Nhờ vậy
+      trả trước + N kỳ góp khớp CHÍNH XÁC tổng đơn. Làm ngược lại (làm tròn
+      khoản trả trước trước) sẽ để dư/thiếu vài nghìn đồng ở kỳ cuối mà không
+      ai chịu phần lệch. Đã test lại bằng script: cả 9 tổ hợp nhà cấp vốn ×
+      kỳ hạn ở 3 mức giá đều khớp tổng tuyệt đối.
+
+      src/lib/installment.ts CỐ Ý KHÔNG import Prisma (cùng lý do đã tách
+      lib/orderLabels.ts): cả CheckoutForm, ProductCard lẫn ProductGalleryAndBuy
+      đều là CLIENT COMPONENT và đều cần tính số tiền góp — import từ file có
+      Prisma sẽ kéo Prisma vào bundle trình duyệt. Phần đụng DB
+      (`approveInstallmentPlan`) nằm ở lib/orders.ts.
+
+      KHÔNG TIN CLIENT: `/api/orders` chỉ nhận `installment: { providerId,
+      months }`; `createOrderFromCart()` tự tính LẠI gói từ `grandTotal` vừa
+      chốt TRONG transaction (cùng nguyên tắc "giá luôn tính từ DB" đã áp dụng
+      cho coupon). Đã test bằng cách cố tình gửi kèm `downPayment: 1000,
+      monthlyAmount: 1000` — server bỏ qua hoàn toàn, ghi đúng số tự tính.
+
+      LUỒNG: đặt đơn -> Payment method INSTALLMENT status PENDING +
+      InstallmentPlan `approved: false`, đơn nằm ở PENDING. Admin bấm "Duyệt
+      hồ sơ trả góp" ở /admin/orders/[id] -> `approveInstallmentPlan()` set
+      approved, chuyển Payment sang **PAID** và đơn PENDING -> CONFIRMED.
+      Payment thành PAID là có chủ ý và KHÁC COD: tiền hàng do CÔNG TY TÀI
+      CHÍNH trả cho shop ngay khi duyệt, khách trả dần cho bên cấp vốn chứ
+      không trả cho shop nữa. Hàm IDEMPOTENT (bấm 2 lần không tạo thêm lịch
+      sử trạng thái/thông báo trùng), theo đúng khuôn
+      `confirmBankTransferPayment()`.
+
+      ĐIỀU KIỆN xét trên TỔNG ĐƠN CUỐI (đã cộng phí ship, đã trừ giảm giá),
+      không phải giá hàng — `MIN_INSTALLMENT_TOTAL = 3.000.000đ`. Hệ quả cần
+      biết: một sản phẩm 2.990.000đ KHÔNG hiện nhãn trả góp trên card nhưng
+      khi thêm phí ship 20.000đ thì đơn LẠI đủ điều kiện ở /checkout (phát
+      hiện đúng chuyện này lúc test — ban đầu tưởng là bug). Chiều ngược lại
+      cũng có thể xảy ra: sản phẩm 3.1tr có nhãn nhưng áp mã giảm 500k thì
+      tổng tụt dưới ngưỡng, lúc đó ô chọn trả góp ở /checkout tự disable kèm
+      lý do rõ ("đơn từ 3.000.000₫ mới áp dụng") chứ không im lặng. Nhãn trên
+      card buộc phải tính theo giá sản phẩm vì trang danh sách chưa biết phí
+      ship/mã giảm giá — FPT Shop thật cũng làm vậy.
+
+      3 chỗ hiện nhãn, mỗi chỗ tính trên một con số KHÁC NHAU có chủ đích:
+      ProductCard tính trên `minPrice` (giá rẻ nhất — đúng con số đang hiện
+      ngay trên nó); trang chi tiết tính trên giá của BIẾN THỂ ĐANG CHỌN (đổi
+      màu/dung lượng là số góp đổi theo); /checkout tính trên tổng đơn thật và
+      là con số chốt. Cả 3 đều dùng chung `getLowestMonthlyQuote()`/
+      `quoteInstallment()` nên không thể lệch công thức.
+
+      src/components/InstallmentPlanCard.tsx thuần trình bày (nhận prop số/
+      chuỗi) nên dùng lại được ở CẢ Server Component (/orders/[id],
+      /admin/orders/[id]) LẪN Client Component (OrderLookupForm ở trang tra
+      cứu đơn cho khách chưa đăng nhập) — API `/api/orders/lookup` cũng đã trả
+      kèm hồ sơ trả góp.
+
+      Đã test qua dev server bằng DB THẬT (45/45 assertion đúng, tạo khách +
+      admin test rồi dọn sạch): 5 trường hợp đầu vào sai (dưới mức tối thiểu,
+      thiếu hẳn thông tin gói, nhà cấp vốn không tồn tại, kỳ hạn nhà cấp vốn
+      không hỗ trợ, kỳ hạn âm) đều 400 VÀ không tạo đơn dở dang VÀ giỏ hàng
+      không bị xóa (kiểm tra rollback chứ không chỉ kiểm tra status code); đơn
+      thật lưu đúng nhà cấp vốn/kỳ hạn/trả trước/góp hàng tháng khớp hàm tính,
+      `downPayment + góp × kỳ == grandTotal` tuyệt đối, lãi suất 0, approved
+      false, Payment INSTALLMENT/PENDING, đơn PENDING; số tiền bịa từ client bị
+      bỏ qua; chưa đăng nhập và khách thường gọi API duyệt đều 403; đơn COD
+      không duyệt được (400); admin duyệt -> approved + Payment PAID + đơn
+      CONFIRMED + đúng 1 lịch sử trạng thái ghi rõ nhà cấp vốn/kỳ hạn + đúng 1
+      thông báo, duyệt lần 2 không nhân đôi; trang khách/admin/tra cứu đều hiện
+      đúng khối, nút duyệt ẩn sau khi duyệt; sản phẩm dưới ngưỡng không hiện
+      khối trả góp ở hero. `tsc --noEmit`/`eslint`/`npm run build` sạch (route
+      `/api/admin/orders/[id]/approve-installment` xuất hiện đúng trong danh
+      sách route).
+
+      LƯU Ý khi viết test cho phần này (2 assertion đầu tiên tôi viết bị sai,
+      không phải lỗi app): (1) chuỗi "Duyệt hồ sơ trả góp" cũng nằm trong GHI
+      CHÚ LỊCH SỬ TRẠNG THÁI ("Duyệt hồ sơ trả góp FE Credit 18 tháng") nên
+      grep cả trang sẽ luôn khớp dù nút đã ẩn — phải tìm đúng thẻ nút
+      (`>Duyệt hồ sơ trả góp<`); (2) chuỗi "Trả góp 0%" cũng xuất hiện ở CARD
+      SẢN PHẨM LIÊN QUAN phía dưới trang chi tiết, nên muốn kiểm tra khối ở
+      hero phải tìm dấu hiệu riêng của nó (`bg-accent/15`).
+
+      CHƯA LÀM: không nối API thật của công ty tài chính (admin bấm duyệt thay,
+      giống cách xác nhận chuyển khoản thủ công), không thu thập/lưu hồ sơ giấy
+      tờ của khách (CMND/bảng lương — thứ công ty tài chính thật luôn yêu cầu),
+      không có đường HỦY hồ sơ đã duyệt, và không có trang admin liệt kê riêng
+      các hồ sơ đang chờ duyệt (hiện phải vào từng đơn — nhưng /admin đã đếm
+      sẵn đơn PENDING nên vẫn thấy được).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -5090,10 +5188,11 @@
       cho mọi trang công khai, JSON-LD Product/BreadcrumbList/WebSite, chống
       nội dung trùng lặp cho URL có filter. Còn lại 2 việc ngoài code: gắn
       Google Search Console và làm 1 ảnh OG mặc định 1200x630.
-- [ ] **Trả góp 0%.** Model `InstallmentPlan` có trong schema nhưng KHÔNG một
-      dòng code nào dùng. FPT Shop in "Trả góp từ x đ/tháng" ngay trên card.
-      Làm cho đúng thì cần cả luồng chọn kỳ hạn/nhà cấp vốn ở /checkout, không
-      phải chỉ thêm nhãn (xem lý do cố ý chưa làm ở mục giá gạch ngang).
+- [x] **Trả góp 0%** — ĐÃ LÀM trọn luồng (xem mục "Trả góp 0%" cuối phần Tiến
+      độ): nhãn "Trả góp 0% từ x đ/tháng" trên card + trang chi tiết, chọn nhà
+      cấp vốn/kỳ hạn ở /checkout, admin duyệt hồ sơ. Còn thiếu: không có API
+      thật của công ty tài chính (admin bấm duyệt thay), không lưu hồ sơ/giấy
+      tờ khách, và không cho hủy hồ sơ đã duyệt.
 - [x] **Tình trạng còn hàng cho khách** — ĐÃ LÀM: trang chi tiết hiện "Còn
       hàng / Chỉ còn N / Hết hàng" theo đúng biến thể đang chọn, kèm danh sách
       cửa hàng còn hàng, khóa nút mua khi hết, và chặn lại ở API giỏ hàng. Badge

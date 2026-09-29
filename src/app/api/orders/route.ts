@@ -20,7 +20,9 @@ export async function POST(request: Request) {
       ? "MOMO"
       : body?.paymentMethod === "BANK_TRANSFER"
         ? "BANK_TRANSFER"
-        : "COD";
+        : body?.paymentMethod === "INSTALLMENT"
+          ? "INSTALLMENT"
+          : "COD";
   const deliveryMethod = body?.deliveryMethod === "STORE_PICKUP" ? "STORE_PICKUP" : "HOME_DELIVERY";
   const pickupStoreId =
     typeof body?.pickupStoreId === "string" && body.pickupStoreId ? body.pickupStoreId : undefined;
@@ -37,6 +39,21 @@ export async function POST(request: Request) {
       { error: "Chuyển khoản ngân hàng chưa được cấu hình trên hệ thống. Vui lòng chọn phương thức khác." },
       { status: 400 }
     );
+  }
+
+  // Chỉ nhận providerId + số kỳ hạn; số tiền trả trước/góp hàng tháng do
+  // createOrderFromCart tự tính lại từ grandTotal trong transaction.
+  let installment: CheckoutInput["installment"];
+  if (paymentMethod === "INSTALLMENT") {
+    const providerId = typeof body?.installment?.providerId === "string" ? body.installment.providerId : "";
+    const months = Number(body?.installment?.months);
+    if (!providerId || !Number.isInteger(months) || months <= 0) {
+      return NextResponse.json(
+        { error: "Vui lòng chọn nhà cấp vốn và kỳ hạn trả góp." },
+        { status: 400 }
+      );
+    }
+    installment = { providerId, months };
   }
 
   if (deliveryMethod === "STORE_PICKUP" && !pickupStoreId) {
@@ -79,6 +96,7 @@ export async function POST(request: Request) {
       note,
       couponCode,
       paymentMethod,
+      installment,
       deliveryMethod,
       pickupStoreId,
     });
