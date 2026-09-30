@@ -167,6 +167,10 @@ model Brand {
   name     String    @unique
   slug     String    @unique
   logoUrl  String?
+  /// Đoạn giới thiệu ngắn hiện ở trang thương hiệu /thuong-hieu/[slug].
+  /// Không có thì trang chỉ còn lưới sản phẩm — mỏng với cả người đọc lẫn
+  /// Google, nên đây là nội dung chính của trang microsite đó.
+  description String?
   isActive Boolean   @default(true)
 
   products Product[]

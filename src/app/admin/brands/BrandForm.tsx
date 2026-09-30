@@ -8,6 +8,7 @@ export interface BrandFormValues {
   name: string;
   slug: string;
   logoUrl: string;
+  description: string;
   isActive: boolean;
 }
 
@@ -28,6 +29,7 @@ export default function BrandForm({ initial }: { initial?: BrandFormValues }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [slug, setSlug] = useState(initial?.slug ?? "");
   const [logoUrl, setLogoUrl] = useState(initial?.logoUrl ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
   const [isActive, setIsActive] = useState(initial?.isActive ?? true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -43,7 +45,13 @@ export default function BrandForm({ initial }: { initial?: BrandFormValues }) {
     setSaving(true);
 
     try {
-      const payload = { name, slug, logoUrl: logoUrl || null, isActive };
+      const payload = {
+        name,
+        slug,
+        logoUrl: logoUrl || null,
+        description: description || null,
+        isActive,
+      };
       const res = await fetch(isEdit ? `/api/admin/brands/${initial!.id}` : "/api/admin/brands", {
         method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -83,6 +91,23 @@ export default function BrandForm({ initial }: { initial?: BrandFormValues }) {
           value={logoUrl}
           onChange={(e) => setLogoUrl(e.target.value)}
         />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium">
+          Giới thiệu thương hiệu (không bắt buộc)
+        </label>
+        <textarea
+          className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+          rows={5}
+          placeholder="Hãng này nổi tiếng về gì, shop đang bán dòng sản phẩm nào của hãng..."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+        <p className="mt-1 text-xs text-zinc-500">
+          Hiện ở đầu trang thương hiệu <code>/thuong-hieu/{slug || "<slug>"}</code>. Để trống thì
+          trang đó chỉ còn lưới sản phẩm.
+        </p>
       </div>
 
       <label className="flex items-center gap-2 text-sm">

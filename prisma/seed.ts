@@ -41,23 +41,128 @@ async function main() {
     }),
   ]);
 
+  // DANH MỤC CON THẬT (dùng Category.parentId — quan hệ có sẵn trong schema
+  // từ đầu dự án). Mỗi danh mục cấp cao giờ là NHÓM ĐIỀU HƯỚNG, không còn
+  // được gán sản phẩm trực tiếp; toàn bộ sản phẩm nằm ở danh mục con. Cách
+  // này chạy được ngay vì getProducts() và getAttributeFacets() (src/lib/
+  // products.ts) đã coi "danh mục cha = union sản phẩm các danh mục con" từ
+  // trước.
+  //
+  // CÁCH CHỌN TIÊU CHÍ CHIA — mỗi danh mục một tiêu chí khác nhau, có lý do:
+  //  - Điện thoại: theo DÒNG SẢN PHẨM (iPhone 15 Series, Galaxy S Series...)
+  //    đúng như sidebar FPT Shop thật. Mịn hơn thương hiệu: Apple về sau có
+  //    thêm iPhone 16 Series thì đó là 1 danh mục con mới, không phải đổi
+  //    thương hiệu.
+  //  - Laptop: theo NHU CẦU DÙNG (MacBook / gaming / mỏng nhẹ) — KHÔNG suy
+  //    ra được từ thương hiệu (Asus có mặt ở cả gaming lẫn mỏng nhẹ), nên
+  //    đây là thứ bộ lọc hãng không thay thế được.
+  //  - Tivi: theo CÔNG NGHỆ TẤM NỀN (QLED / LED). Cố ý KHÔNG chia theo loại
+  //    tivi hay kích thước vì 2 thứ đó ĐÃ LÀ bộ lọc thông số của danh mục
+  //    Tivi (xem CATEGORY_FILTER_SPECS) — danh mục con trùng bộ lọc chỉ tạo
+  //    thêm một đường thứ hai tới cùng tập sản phẩm. Công nghệ tấm nền thì
+  //    không còn trong bảng thông số (đã bỏ ở đợt rút gọn) nên không trùng.
+  const childCategoryDefs = [
+    { parent: "dien-thoai", slug: "iphone-15-series", name: "iPhone 15 Series" },
+    { parent: "dien-thoai", slug: "samsung-galaxy-s-series", name: "Samsung Galaxy S Series" },
+    { parent: "dien-thoai", slug: "xiaomi-redmi-series", name: "Xiaomi Redmi Series" },
+    { parent: "dien-thoai", slug: "oppo-reno-series", name: "OPPO Reno Series" },
+    { parent: "laptop", slug: "macbook", name: "MacBook" },
+    { parent: "laptop", slug: "laptop-gaming", name: "Laptop gaming" },
+    { parent: "laptop", slug: "laptop-mong-nhe", name: "Laptop mỏng nhẹ" },
+    { parent: "tivi", slug: "tivi-qled", name: "Tivi QLED" },
+    { parent: "tivi", slug: "tivi-led", name: "Tivi LED" },
+  ];
+  const parentIdBySlug: Record<string, string> = {
+    "dien-thoai": dienThoai.id,
+    laptop: laptopCategory.id,
+    tivi: tivi.id,
+  };
+  const sub: Record<string, string> = {};
+  for (const [i, c] of childCategoryDefs.entries()) {
+    const row = await prisma.category.upsert({
+      where: { slug: c.slug },
+      // Đồng bộ lại parentId/name/sortOrder mỗi lần chạy seed (không dùng
+      // `update: {}` no-op) — nếu không, đổi tên hay chuyển danh mục con sang
+      // cha khác trong code sẽ không có tác dụng với bản ghi đã tồn tại.
+      update: { parentId: parentIdBySlug[c.parent], name: c.name, sortOrder: i + 1 },
+      create: {
+        name: c.name,
+        slug: c.slug,
+        parentId: parentIdBySlug[c.parent],
+        sortOrder: i + 1,
+      },
+    });
+    sub[c.slug] = row.id;
+  }
+
+  // `description` là nội dung chính của trang thương hiệu /thuong-hieu/[slug]
+  // — không có thì trang chỉ còn lưới sản phẩm. Viết theo đúng mảng hàng mà
+  // shop THẬT SỰ đang bán của hãng đó, không phải câu quảng cáo chung.
   const brandDefs = [
-    { slug: "apple", name: "Apple" },
-    { slug: "samsung", name: "Samsung" },
-    { slug: "xiaomi", name: "Xiaomi" },
-    { slug: "dell", name: "Dell" },
-    { slug: "oppo", name: "OPPO" },
-    { slug: "asus", name: "Asus" },
-    { slug: "lg", name: "LG" },
-    { slug: "philips", name: "Philips" },
-    { slug: "tcl", name: "TCL" },
+    {
+      slug: "apple",
+      name: "Apple",
+      description:
+        "Apple là thương hiệu Mỹ, nổi tiếng với iPhone và MacBook dùng chip Apple Silicon tự thiết kế. Tại đây bạn có thể mua iPhone 15 Series cùng MacBook Air và MacBook Pro chip M3 — cả hai dòng đều dùng chung hệ sinh thái iOS/macOS nên đồng bộ dữ liệu giữa máy tính và điện thoại rất tiện.",
+    },
+    {
+      slug: "samsung",
+      name: "Samsung",
+      description:
+        "Samsung là tập đoàn Hàn Quốc, tự sản xuất tấm nền màn hình cho chính sản phẩm của mình. Ở đây có dòng Galaxy S cao cấp (bút S Pen, camera zoom xa) và tivi QLED dùng công nghệ Quantum Dot cho màu rực hơn tivi LED thường.",
+    },
+    {
+      slug: "xiaomi",
+      name: "Xiaomi",
+      description:
+        "Xiaomi là thương hiệu Trung Quốc được biết đến vì cấu hình cao so với tầm giá. Shop đang bán dòng điện thoại Redmi (pin 5000mAh, màn 90–120Hz) và Google Tivi A Pro — lựa chọn phổ biến cho người cần máy tốt trong ngân sách vừa phải.",
+    },
+    {
+      slug: "dell",
+      name: "Dell",
+      description:
+        "Dell là hãng máy tính Mỹ, mạnh ở nhóm laptop dành cho công việc. Dòng XPS bán tại đây thuộc nhóm mỏng nhẹ cao cấp: vỏ nhôm nguyên khối, màn hình viền siêu mỏng, phù hợp mang đi làm hằng ngày.",
+    },
+    {
+      slug: "oppo",
+      name: "OPPO",
+      description:
+        "OPPO là thương hiệu điện thoại Trung Quốc, chú trọng camera chân dung và sạc nhanh. Dòng Reno bán tại đây có camera tele zoom quang và sạc nhanh công suất cao — sạc đầy nhanh hơn hẳn mức phổ thông cùng giá.",
+    },
+    {
+      slug: "asus",
+      name: "Asus",
+      description:
+        "Asus là hãng máy tính Đài Loan, phủ cả hai đầu nhu cầu laptop. Tại đây có ROG/TUF Gaming dùng card đồ họa RTX rời và màn hình tần số quét cao, cạnh dòng Zenbook mỏng nhẹ màn OLED cho người ưu tiên tính di động.",
+    },
+    {
+      slug: "lg",
+      name: "LG",
+      description:
+        "LG là tập đoàn Hàn Quốc, lâu năm trong ngành tivi. Sản phẩm bán tại đây là tivi UHD 4K chạy hệ điều hành webOS riêng của LG, có điều khiển bằng giọng nói và bộ xử lý hình ảnh α5 AI.",
+    },
+    {
+      slug: "philips",
+      name: "Philips",
+      description:
+        "Philips là thương hiệu Hà Lan, có mặt lâu năm ở thị trường tivi Việt Nam. Shop bán dòng Google Tivi 6900 Series — mức giá vừa phải cho phòng nhỏ, chạy Google TV nên cài ứng dụng xem phim trực tiếp trên máy.",
+    },
+    {
+      slug: "tcl",
+      name: "TCL",
+      description:
+        "TCL là hãng Trung Quốc, một trong những nhà sản xuất tivi lớn nhất thế giới về số lượng. Dòng C655 bán tại đây là tivi QLED chạy Google TV, có âm thanh do Onkyo tinh chỉnh và hỗ trợ cả Dolby Vision lẫn HDR10+.",
+    },
   ];
   const brands: Record<string, string> = {};
   for (const b of brandDefs) {
     const row = await prisma.brand.upsert({
       where: { slug: b.slug },
-      update: {},
-      create: { name: b.name, slug: b.slug },
+      // Đồng bộ `description` mỗi lần seed: sửa mô tả trong code phải có tác
+      // dụng với thương hiệu đã tồn tại, nếu không `update: {}` sẽ nuốt mất
+      // thay đổi (đúng lớp lỗi no-op đã gặp với categoryId/compareAtPrice).
+      update: { description: b.description },
+      create: { name: b.name, slug: b.slug, description: b.description },
     });
     brands[b.slug] = row.id;
   }
@@ -85,7 +190,7 @@ async function main() {
       name: "iPhone 15 Pro Max",
       slug: "iphone-15-pro-max",
       description: "iPhone 15 Pro Max với chip A17 Pro, khung viền Titan và camera 48MP.",
-      categoryId: dienThoai.id,
+      categoryId: sub["iphone-15-series"],
       brandId: brands.apple,
       basePrice: 29990000,
       isFeatured: true,
@@ -108,7 +213,7 @@ async function main() {
       name: "Samsung Galaxy S24 Ultra",
       slug: "samsung-galaxy-s24-ultra",
       description: "Galaxy S24 Ultra tích hợp Galaxy AI, bút S Pen và camera 200MP.",
-      categoryId: dienThoai.id,
+      categoryId: sub["samsung-galaxy-s-series"],
       brandId: brands.samsung,
       basePrice: 26990000,
       isFeatured: true,
@@ -133,7 +238,7 @@ async function main() {
       name: "Xiaomi Redmi Note 13",
       slug: "xiaomi-redmi-note-13",
       description: "Redmi Note 13 màn hình AMOLED 120Hz, pin 5000mAh, giá tốt.",
-      categoryId: dienThoai.id,
+      categoryId: sub["xiaomi-redmi-series"],
       brandId: brands.xiaomi,
       basePrice: 4990000,
       isFeatured: false,
@@ -154,7 +259,7 @@ async function main() {
       name: "OPPO Reno11 5G",
       slug: "oppo-reno11-5g",
       description: "OPPO Reno11 5G camera chân dung AI, sạc nhanh SUPERVOOC 67W.",
-      categoryId: dienThoai.id,
+      categoryId: sub["oppo-reno-series"],
       brandId: brands.oppo,
       basePrice: 9990000,
       isFeatured: false,
@@ -175,7 +280,7 @@ async function main() {
       slug: "iphone-15",
       description:
         "iPhone 15 chip A16 Bionic, camera chính 48MP, cổng USB-C và màn hình Super Retina XDR 6.1 inch.",
-      categoryId: dienThoai.id,
+      categoryId: sub["iphone-15-series"],
       brandId: brands.apple,
       basePrice: 19990000,
       isFeatured: false,
@@ -200,7 +305,7 @@ async function main() {
       slug: "xiaomi-redmi-13c",
       description:
         "Redmi 13C màn hình 6.74 inch 90Hz, camera chính 50MP, pin 5000mAh sạc nhanh 18W.",
-      categoryId: dienThoai.id,
+      categoryId: sub["xiaomi-redmi-series"],
       brandId: brands.xiaomi,
       basePrice: 2990000,
       isFeatured: false,
@@ -230,7 +335,7 @@ async function main() {
       name: "MacBook Air M3",
       slug: "macbook-air-m3",
       description: "MacBook Air M3 mỏng nhẹ, màn hình Liquid Retina, pin tới 18 giờ.",
-      categoryId: laptopCategory.id,
+      categoryId: sub["macbook"],
       brandId: brands.apple,
       basePrice: 27990000,
       isFeatured: true,
@@ -249,7 +354,7 @@ async function main() {
       name: "Dell XPS 13",
       slug: "dell-xps-13",
       description: "Dell XPS 13 viền màn hình siêu mỏng, vỏ nhôm nguyên khối.",
-      categoryId: laptopCategory.id,
+      categoryId: sub["laptop-mong-nhe"],
       brandId: brands.dell,
       basePrice: 32990000,
       isFeatured: false,
@@ -268,7 +373,7 @@ async function main() {
       name: "Asus Zenbook 14 OLED",
       slug: "asus-zenbook-14-oled",
       description: "Asus Zenbook 14 OLED màn hình 2.8K 120Hz, chip Intel Core Ultra.",
-      categoryId: laptopCategory.id,
+      categoryId: sub["laptop-mong-nhe"],
       brandId: brands.asus,
       basePrice: 22990000,
       isFeatured: false,
@@ -289,7 +394,7 @@ async function main() {
       slug: "macbook-pro-14-m3",
       description:
         "MacBook Pro 14 chip M3, màn hình Liquid Retina XDR 120Hz và thời lượng pin tới 22 giờ.",
-      categoryId: laptopCategory.id,
+      categoryId: sub["macbook"],
       brandId: brands.apple,
       basePrice: 39990000,
       isFeatured: false,
@@ -315,7 +420,7 @@ async function main() {
       slug: "asus-tuf-gaming-a15",
       description:
         "Asus TUF Gaming A15 chip AMD Ryzen 7, card rời RTX 4050, màn hình 15.6 inch 144Hz và chuẩn bền bỉ MIL-STD-810H.",
-      categoryId: laptopCategory.id,
+      categoryId: sub["laptop-gaming"],
       brandId: brands.asus,
       basePrice: 26990000,
       isFeatured: false,
@@ -337,7 +442,7 @@ async function main() {
       slug: "asus-rog-strix-g16",
       description:
         "ROG Strix G16 chip Intel Core i7, card rời RTX 4060 và màn hình 16 inch 165Hz dành cho game thủ.",
-      categoryId: laptopCategory.id,
+      categoryId: sub["laptop-gaming"],
       brandId: brands.asus,
       basePrice: 34990000,
       isFeatured: false,
@@ -365,7 +470,7 @@ async function main() {
       slug: "samsung-qled-4k-q60d-65-inch",
       description:
         "Smart Tivi QLED 4K Q60D 65 inch với công nghệ Quantum Dot, thiết kế AirSlim mỏng và hệ điều hành Tizen.",
-      categoryId: tivi.id,
+      categoryId: sub["tivi-qled"],
       brandId: brands.samsung,
       basePrice: 18990000,
       isFeatured: true,
@@ -384,7 +489,7 @@ async function main() {
       slug: "lg-uhd-4k-uq8000-55-inch",
       description:
         "Smart Tivi LG UHD 4K 55 inch với bộ xử lý α5 AI 4K Gen5, hệ điều hành webOS và điều khiển bằng giọng nói.",
-      categoryId: tivi.id,
+      categoryId: sub["tivi-led"],
       brandId: brands.lg,
       basePrice: 11490000,
       isFeatured: true,
@@ -406,7 +511,7 @@ async function main() {
       slug: "tcl-google-tivi-qled-4k-c655-50-inch",
       description:
         "Google Tivi TCL QLED 4K 50 inch, bộ xử lý AiPQ, âm thanh Onkyo và hỗ trợ Dolby Vision, HDR10+.",
-      categoryId: tivi.id,
+      categoryId: sub["tivi-qled"],
       brandId: brands.tcl,
       basePrice: 10490000,
       isFeatured: false,
@@ -425,7 +530,7 @@ async function main() {
       slug: "xiaomi-google-tivi-a-pro-43-inch",
       description:
         "Google Tivi Xiaomi A Pro 43 inch, màn hình 4K viền mỏng, âm thanh Dolby Audio và DTS:X.",
-      categoryId: tivi.id,
+      categoryId: sub["tivi-led"],
       brandId: brands.xiaomi,
       basePrice: 6490000,
       isFeatured: false,
@@ -444,7 +549,7 @@ async function main() {
       slug: "xiaomi-google-tivi-a-pro-55-inch",
       description:
         "Google Tivi Xiaomi A Pro 55 inch, màn hình 4K tràn viền, hỗ trợ HDR10 và điều khiển bằng giọng nói.",
-      categoryId: tivi.id,
+      categoryId: sub["tivi-led"],
       brandId: brands.xiaomi,
       basePrice: 9490000,
       isFeatured: false,
@@ -463,7 +568,7 @@ async function main() {
       slug: "philips-google-tivi-led-6900-43-inch",
       description:
         "Google Tivi Philips 6900 Series 43 inch màn hình Full HD, Pixel Plus HD và âm thanh Dolby Atmos.",
-      categoryId: tivi.id,
+      categoryId: sub["tivi-led"],
       brandId: brands.philips,
       basePrice: 6990000,
       isFeatured: false,

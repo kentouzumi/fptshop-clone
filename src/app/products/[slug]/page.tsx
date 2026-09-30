@@ -31,7 +31,10 @@ const getProductBySlug = cache(async (slug: string) =>
   prisma.product.findUnique({
     where: { slug },
     include: {
-      category: true,
+      // `category.parent`: sản phẩm giờ nằm ở danh mục CON ("iPhone 15
+      // Series") nên breadcrumb cần cả danh mục cha ("Điện thoại") để dẫn
+      // được lên đúng 2 cấp.
+      category: { include: { parent: { select: { name: true, slug: true } } } },
       brand: true,
       images: { orderBy: { sortOrder: "asc" } },
       variants: { where: { isActive: true }, orderBy: { price: "asc" } },
@@ -236,15 +239,28 @@ export default async function ProductDetailPage({
         data={{
           "@context": "https://schema.org",
           "@type": "BreadcrumbList",
+          // Cấp danh mục cha chỉ được chèn khi sản phẩm thật sự nằm trong
+          // danh mục con — `position` phải liên tục nên tính theo độ dài mảng
+          // thay vì ghi số cứng.
           itemListElement: [
             { "@type": "ListItem", position: 1, name: "Trang chủ", item: absoluteUrl("/") },
+            ...(product.category.parent
+              ? [
+                  {
+                    "@type": "ListItem",
+                    position: 2,
+                    name: product.category.parent.name,
+                    item: absoluteUrl(`/products?category=${product.category.parent.slug}`),
+                  },
+                ]
+              : []),
             {
               "@type": "ListItem",
-              position: 2,
+              position: product.category.parent ? 3 : 2,
               name: product.category.name,
               item: absoluteUrl(`/products?category=${product.category.slug}`),
             },
-            { "@type": "ListItem", position: 3, name: product.name },
+            { "@type": "ListItem", position: product.category.parent ? 4 : 3, name: product.name },
           ],
         }}
       />
@@ -253,6 +269,17 @@ export default async function ProductDetailPage({
           Trang chủ
         </Link>
         <span>/</span>
+        {product.category.parent && (
+          <>
+            <Link
+              href={`/products?category=${product.category.parent.slug}`}
+              className="hover:underline"
+            >
+              {product.category.parent.name}
+            </Link>
+            <span>/</span>
+          </>
+        )}
         <Link href={`/products?category=${product.category.slug}`} className="hover:underline">
           {product.category.name}
         </Link>
@@ -261,7 +288,17 @@ export default async function ProductDetailPage({
       </nav>
 
       <h1 className="mb-1 text-2xl font-semibold tracking-tight">{product.name}</h1>
-      {product.brand && <p className="mb-6 text-sm text-zinc-500">Thương hiệu: {product.brand.name}</p>}
+      {product.brand && (
+        <p className="mb-6 text-sm text-zinc-500">
+          Thương hiệu:{" "}
+          <Link
+            href={`/thuong-hieu/${product.brand.slug}`}
+            className="font-medium text-accent hover:underline"
+          >
+            {product.brand.name}
+          </Link>
+        </p>
+      )}
 
       <ProductGalleryAndBuy
         productName={product.name}

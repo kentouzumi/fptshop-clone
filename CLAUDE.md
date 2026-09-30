@@ -5274,6 +5274,175 @@
       hỏi được trả lời, không vote hữu ích, và không phân trang (một sản phẩm
       nhiều câu hỏi sẽ hiện hết).
 
+- [x] Danh mục con THẬT + trang thương hiệu (2 mục cuối trong danh sách gap so
+      với fptshop.com.vn). ĐỔI SCHEMA: thêm `Brand.description` (cột nullable
+      mới -> `prisma db push` chạy thẳng, không mất dữ liệu, không cần
+      `--accept-data-loss`), rồi `prisma generate` + restart hẳn dev server.
+
+      **DANH MỤC CON** — dùng `Category.parentId` đã có sẵn. Đây là lần thứ 2
+      dự án có danh mục con (lần 1 là 52 danh mục con của 20 nhóm gộp, đã xóa
+      khi user yêu cầu thu về 3 danh mục phẳng) nhưng khác hẳn về bản chất:
+      lần đó danh mục con chỉ là TÁCH TÊN trong một dòng gộp sẵn, lần này là
+      phân loại thật theo dòng sản phẩm. Toàn bộ 18 sản phẩm chuyển xuống danh
+      mục con, 3 danh mục cấp cao thành NHÓM ĐIỀU HƯỚNG (0 sản phẩm trực
+      tiếp). Chạy được ngay vì `getProducts()` và `getAttributeFacets()` đã
+      coi "danh mục cha = union sản phẩm các con" từ đợt trước.
+
+      9 danh mục con, mỗi danh mục cha một TIÊU CHÍ CHIA khác nhau, chọn theo
+      nguyên tắc "danh mục con phải cho thứ mà bộ lọc hiện có KHÔNG cho được":
+      + Điện thoại -> theo DÒNG SẢN PHẨM (iPhone 15 Series / Samsung Galaxy S
+        Series / Xiaomi Redmi Series / OPPO Reno Series) đúng như sidebar FPT
+        Shop thật. Mịn hơn thương hiệu: Apple sau này có thêm iPhone 16 Series
+        thì đó là danh mục con mới, không phải đổi thương hiệu.
+      + Laptop -> theo NHU CẦU DÙNG (MacBook / Laptop gaming / Laptop mỏng
+        nhẹ). KHÔNG suy được từ thương hiệu — Asus có mặt ở CẢ gaming lẫn mỏng
+        nhẹ — nên đây là thứ bộ lọc hãng không thay thế được.
+      + Tivi -> theo CÔNG NGHỆ TẤM NỀN (Tivi QLED / Tivi LED). CỐ Ý không chia
+        theo "loại tivi" hay "kích thước màn hình" vì 2 thứ đó ĐÃ LÀ bộ lọc
+        thông số của danh mục Tivi — danh mục con trùng bộ lọc chỉ tạo thêm
+        một đường thứ hai tới cùng tập sản phẩm, không thêm giá trị điều
+        hướng nào. Công nghệ tấm nền thì đã bị bỏ khỏi bảng thông số ở đợt
+        rút gọn nên không trùng.
+
+      3 LỖI TIỀM ẨN phải sửa trước khi chuyển sản phẩm xuống danh mục con —
+      cả 3 đều là hồi quy IM LẶNG (trang vẫn 200, chỉ mất nội dung):
+      1. `getBrandsByCategory()` gom brand theo slug của CHÍNH danh mục sản
+         phẩm, nên khóa "dien-thoai" thành RỖNG ngay khi sản phẩm xuống con —
+         mega menu và bộ lọc "Hãng sản xuất" ở mọi trang danh mục cha mất
+         sạch danh sách hãng. Đã sửa: cộng brand vào CẢ slug con LẪN slug cha
+         (qua `category.parent`), khớp đúng cách getProducts() coi danh mục
+         cha = union các con.
+      2. `getAttributeFacets()` tra `CATEGORY_FILTER_SPECS[categorySlug]` —
+         slug danh mục con không có trong bảng khai báo nên trang danh mục con
+         MẤT SẠCH bộ lọc thông số. Đã sửa: kế thừa bộ lọc của danh mục gốc
+         qua `category.parent.slug` (1 danh mục cấp cao = 1 loại sản phẩm = 1
+         bộ thông số, danh mục con của nó vẫn là loại đó).
+      3. `/products` tra tên danh mục bằng `getActiveCategories()` — hàm này
+         lọc `parentId: null` nên slug danh mục con KHÔNG BAO GIỜ khớp: tiêu
+         đề rơi về chữ "Sản phẩm" chung chung VÀ generateMetadata coi như
+         danh mục không tồn tại rồi đặt noindex, tức trang danh mục con —
+         trang đáng index nhất sau trang sản phẩm — bị chặn khỏi Google. Đã
+         thêm `getActiveCategoryBySlug()` (lib/categories.ts, không phân biệt
+         cấp) dùng chung cho cả generateMetadata lẫn component.
+
+      ĐIỀU HƯỚNG: thêm hàng chip danh mục con NGANG, đặt trên lưới sản phẩm —
+      CỐ Ý không đưa vào FilterSidebar vì (a) mục "Danh mục" trong sidebar đã
+      bị bỏ theo yêu cầu trước đó, (b) đây không phải bộ lọc cộng dồn mà là
+      ĐIỀU HƯỚNG sang trang danh mục khác (đổi luôn bộ lọc thông số,
+      breadcrumb, canonical). Đang ở danh mục cha thì chip hiện các con; đang
+      ở danh mục con thì hiện các danh mục ANH EM để nhảy ngang mà không phải
+      quay về cha trước. Trang chi tiết sản phẩm: breadcrumb giờ 4 cấp (Trang
+      chủ / Điện thoại / iPhone 15 Series / tên máy), cả HTML lẫn JSON-LD
+      BreadcrumbList — `position` tính theo việc có danh mục cha hay không
+      thay vì ghi số cứng, để sản phẩm nằm trực tiếp ở danh mục cấp cao
+      (admin tự tạo) vẫn ra dãy position liên tục.
+
+      Mega menu: panel phải giờ có 2 KHỐI TÁCH BIỆT. Trước đây khối duy nhất
+      mang nhãn "Danh mục con" nhưng nội dung là danh sách THƯƠNG HIỆU (fudge
+      có chủ ý vì lúc đó dự án chưa có tầng danh mục con nào — đã ghi rõ
+      trong code). Giờ "Danh mục con" hiện đúng danh mục con thật, và "Thương
+      hiệu" là khối riêng có nhãn đúng. Chip hãng vẫn trỏ `?category=&brand=`
+      (hàng của hãng TRONG danh mục đang chọn) chứ không trỏ trang thương
+      hiệu — trang thương hiệu gom hàng của hãng ở MỌI danh mục nên không
+      khớp ngữ cảnh "đang xem danh mục này"; lối vào trang đó là link "Xem
+      tất cả thương hiệu" phía dưới.
+
+      **TRANG THƯƠNG HIỆU** — `/thuong-hieu` (danh sách) + `/thuong-hieu/[slug]`.
+      KHÁC `/products?brand=<slug>` vốn đã có: trang lọc chỉ hiện hàng của
+      hãng TRONG MỘT danh mục đang xem, còn trang này cắt theo hãng TRƯỚC rồi
+      mới cho lọc danh mục — Apple ở đây hiện cả iPhone lẫn MacBook trong
+      cùng một trang, điều trang lọc không làm được. Đây cũng là lý do nó
+      đáng có URL riêng để Google index, trong khi MỌI URL `/products` có
+      tham số lọc đều đang noindex.
+
+      Chỉ liệt kê/mở được hãng đang có sản phẩm ACTIVE:
+      `getBrandsWithProductCount()` lọc `products: { some: { status: ACTIVE } }`,
+      và `getBrandPageData()` trả `null` (-> 404) khi hãng còn 0 sản phẩm
+      ACTIVE. Phải khớp ĐÚNG cùng điều kiện ở 2 nơi — lần đầu viết chỉ lọc ở
+      trang danh sách, nên `/thuong-hieu/sunhouse` (hãng chỉ còn 1 sản phẩm
+      DISCONTINUED giữ lại vì có đơn hàng thật) vẫn mở ra một trang chỉ có
+      tên hãng + dòng "không có sản phẩm nào", lại đang ở trạng thái ĐƯỢC
+      INDEX trong khi trang danh sách đã cố tình ẩn nó. Bảng Brand vẫn giữ
+      nguyên bản ghi (admin quản lý/dùng lại được), chỉ là không có trang
+      công khai khi chưa có hàng.
+
+      Hàng chip lọc danh mục trong trang hãng gom về danh mục CẤP CAO (qua
+      `parent`) thay vì danh mục con: Apple có hàng ở "iPhone 15 Series" và
+      "MacBook" — hiện 2 chip đó thì lẫn 2 cấp với nhau, gom lên "Điện
+      thoại (2)"/"Laptop (2)" mới đúng là phân loại lớn mà người xem trang
+      hãng cần. Chip tự ẩn khi hãng chỉ có 1 danh mục (Dell) thay vì hiện 1
+      cặp chip vô nghĩa. Slug danh mục lạ trong URL bị BỎ QUA (vẫn hiện đủ
+      hàng của hãng) thay vì ra lưới rỗng không rõ lý do. Lưới sản phẩm tái
+      dùng thẳng `getProducts({ brandSlugs, categorySlug })` + ProductCard
+      nên có đủ giá gạch ngang/rating/badge hết hàng/nút yêu thích như mọi
+      chỗ khác, không viết lại gì.
+
+      `Brand.description` là NỘI DUNG CHÍNH của trang hãng (không có thì
+      trang chỉ còn lưới sản phẩm — mỏng với cả người đọc lẫn Google). Đã
+      viết mô tả thật cho cả 9 hãng, nội dung bám ĐÚNG mảng hàng shop đang
+      bán của hãng đó (vd Asus nói cả ROG/TUF gaming lẫn Zenbook mỏng nhẹ vì
+      shop bán cả hai), không phải câu quảng cáo chung. Seed dùng
+      `update: { description }` chứ không `update: {}` no-op — sửa mô tả
+      trong code phải có tác dụng với hãng đã tồn tại (đúng lớp lỗi đã gặp
+      với categoryId/description/compareAtPrice). Admin sửa được qua ô mới
+      trong BrandForm. Logo: chưa hãng nào có `logoUrl` nên mặc định là CHỮ
+      CÁI ĐẦU trong khối bo góc, không phải ảnh vỡ hay khoảng trống — admin
+      thêm logo thì tự hiện ảnh thật.
+
+      SEO: `/thuong-hieu/[slug]` có generateMetadata (title/description/
+      canonical/OG), JSON-LD `Brand` + `BreadcrumbList` 3 cấp, và noindex khi
+      có tham số lọc/sắp xếp/phân trang nhưng canonical vẫn dồn về trang hãng
+      gốc — y hệt cách `/products` xử lý tham số xem. Query bọc `cache()` của
+      React dùng chung giữa generateMetadata và component (không bọc thì mỗi
+      lần render là 2 lượt query y hệt nhau). Sitemap: bỏ filter
+      `parentId: null` để liệt kê cả danh mục con (priority 0.8, thấp hơn
+      danh mục cấp cao 0.9), thêm `/thuong-hieu` + từng trang hãng, và chỉ
+      lấy hãng còn hàng. Lối vào: thanh nav phụ ở Header, Footer, mega menu,
+      và tên hãng ở trang chi tiết sản phẩm giờ là link.
+
+      Đã test qua dev server bằng DB THẬT (71/71 + 26/26 assertion, tạo
+      SUPER_ADMIN test rồi dọn sạch): DB đúng 3 danh mục cấp cao + 9 danh mục
+      con, 0 sản phẩm ACTIVE nằm trực tiếp ở cấp cao, 0 danh mục cấp 3, mọi
+      danh mục con đều có sản phẩm; danh mục cha hiện đủ union sản phẩm các
+      con (6/6/6) và vẫn liệt kê đủ hãng của nó mà không lẫn hãng danh mục
+      khác; trang danh mục con hiện đúng số máy, đúng tiêu đề, có breadcrumb
+      lên cha và chip anh em; bộ lọc thông số kế thừa đúng xuống danh mục con
+      và lọc thật ra đúng kết quả; danh mục con ĐƯỢC index còn danh mục con
+      kèm bộ lọc thì noindex; sitemap có cả danh mục con lẫn trang hãng và
+      KHÔNG có hãng đã hết hàng; JSON-LD breadcrumb 4 cấp đúng thứ tự
+      position; trang hãng Apple hiện đủ 4 sản phẩm gồm cả iPhone lẫn
+      MacBook, lọc danh mục ra đúng 2 MacBook không lẫn iPhone, hãng hết hàng
+      404, slug lạ 404; luồng admin: sửa mô tả hãng qua API thì mô tả mới
+      hiện NGAY ở trang hãng, mô tả toàn khoảng trắng lưu null, dropdown
+      "Danh mục cha" chỉ liệt kê 3 danh mục cấp cao (không lẫn danh mục con),
+      tạo danh mục cấp 3 bị chặn 409, biến danh mục đang có con thành con bị
+      chặn 409, xóa danh mục con còn sản phẩm và xóa danh mục cha còn con đều
+      chặn 409, danh mục con mới tạo chưa có hàng vẫn mở được (lưới rỗng,
+      không lỗi). `tsc --noEmit`/`eslint`/`npm run build` sạch (2 route
+      `/thuong-hieu` và `/thuong-hieu/[slug]` xuất hiện đúng trong danh sách).
+
+      LƯU Ý khi viết test cho phần này — 3 lỗi đều ở TEST, không phải app:
+      (1) React chèn `<!-- -->` giữa hai biểu thức/text liền nhau, nên chuỗi
+      hiển thị "4 sản phẩm" thật ra là `4<!-- --> sản phẩm` trong HTML: mọi
+      assertion về chuỗi ghép đều báo sai trong khi trang render đúng hoàn
+      toàn — phải bỏ marker trước khi so khớp. (2) Next.js nhúng RSC payload
+      dưới dạng `<script>` ở CUỐI document, trong đó có props của mega menu
+      (đã liệt kê danh mục con + tên hãng) — nên assertion phủ định kiểu
+      "dropdown KHÔNG được liệt kê danh mục con" luôn khớp dù dropdown hoàn
+      toàn đúng; phải trích đúng thẻ `<select>`, và cắt bỏ Header cho các
+      assertion khác. (3) Khối `finally` khôi phục dữ liệu bằng
+      `prisma.update` trực tiếp thì DB đúng nhưng trang vẫn phục vụ bản cache
+      cũ tới hết TTL — phải khôi phục QUA API admin (đường duy nhất gọi
+      `revalidateTag`) và làm TRƯỚC khi xóa session, nếu không API trả 403.
+
+      CHƯA LÀM: danh mục con không có ảnh/icon riêng (dùng chung icon của
+      danh mục cha trong mega menu); admin không sắp được thứ tự danh mục con
+      bằng kéo-thả (chỉ qua ô `sortOrder`); trang thương hiệu không có bộ lọc
+      giá/thông số như `/products` (chỉ lọc theo danh mục + sắp xếp qua URL,
+      chưa có ô chọn sắp xếp trên UI); chưa hãng nào có logo thật; và
+      `CATEGORY_META_DESC` chỉ có mô tả viết tay cho 3 danh mục cấp cao —
+      9 danh mục con dùng câu dự phòng ghép tên danh mục cha.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -5375,9 +5544,13 @@
       `/admin/audit-logs` lọc theo thao tác/đối tượng/người làm. Còn thiếu: chưa
       hook vào CRUD danh mục/thương hiệu/cửa hàng/khuyến mãi, và chưa tự dọn
       bản ghi cũ (bảng sẽ phình dần).
-- [x] **Tin tức/blog** và **Hỏi–đáp (Q&A) dưới sản phẩm** — ĐÃ LÀM (xem 2 mục
-      cuối phần Tiến độ). CÒN THIẾU: **trang thương hiệu** riêng và danh mục con
-      thật (vd iPhone 15 Series / iPhone 16 Series).
+- [x] **Tin tức/blog** và **Hỏi–đáp (Q&A) dưới sản phẩm** — ĐÃ LÀM (xem phần
+      Tiến độ).
+- [x] **Trang thương hiệu** và **danh mục con thật** — ĐÃ LÀM (mục cuối phần
+      Tiến độ): 9 danh mục con (iPhone 15 Series, Laptop gaming, Tivi QLED...)
+      dùng `Category.parentId`, và `/thuong-hieu` + `/thuong-hieu/[slug]` gom
+      hàng của từng hãng ở MỌI danh mục. Còn thiếu: danh mục con chưa có icon
+      riêng, trang hãng chưa có bộ lọc giá/thông số, chưa hãng nào có logo thật.
 - [x] **Mã giảm giá phải tự biết mới nhập được** — ĐÃ LÀM TRỌN: /checkout liệt kê
       sẵn mã đang chạy (bấm là áp), /admin/coupons quản lý mã đầy đủ, và cờ
       `isPublic` cho phép tạo mã riêng không lộ công khai. Chưa làm: tìm kiếm/

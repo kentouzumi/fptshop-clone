@@ -20,6 +20,7 @@ export default async function EditBrandPage({
           name: brand.name,
           slug: brand.slug,
           logoUrl: brand.logoUrl ?? "",
+          description: brand.description ?? "",
           isActive: brand.isActive,
         }}
       />

@@ -7,6 +7,7 @@ interface CategoryItem {
   id: string;
   name: string;
   slug: string;
+  children: { id: string; name: string; slug: string }[];
 }
 
 interface BrandItem {
@@ -42,19 +43,18 @@ const DEFAULT_ICON = (
 // không cần state đóng/mở — tránh race condition mouseleave/mouseenter khi
 // chuột di chuyển giữa nút và panel).
 //
-// Đã đơn giản hóa lại (user yêu cầu quay về đúng 4 danh mục phẳng: Điện
-// thoại/Laptop/Điện máy/Phụ kiện, không còn danh mục con dùng parentId như
-// bản trước) — cột trái giờ chỉ là list phẳng, mỗi category 1 <Link> duy
-// nhất, không còn logic tách nhiều tên trong 1 dòng.
+// Panel bên phải có 2 khối tách biệt, mỗi khối một vai trò KHÁC nhau:
 //
-// Panel bên phải đổi tên từ "Thương hiệu {category}" thành "Danh mục con"
-// theo đúng yêu cầu (vd hover "Điện thoại" muốn thấy danh mục con kiểu
-// "iPhone, Samsung,..."): dữ liệu thật của dự án không có tầng category con
-// theo brand (Category chỉ có 4 hàng phẳng), nên tái dùng ĐÚNG danh sách
-// brand thật đang có sản phẩm trong category đó (getBrandsByCategory) làm
-// nội dung cho "Danh mục con" — Apple/Samsung/Xiaomi/OPPO dưới Điện thoại
-// chính là các "hãng = danh mục con" mà user mô tả, không bịa thêm dữ liệu
-// category giả không gắn với sản phẩm thật nào.
+//  - "Danh mục con": danh mục con THẬT (Category.parentId) — iPhone 15
+//    Series, Laptop gaming, Tivi QLED... Trước đây khối này hiện danh sách
+//    THƯƠNG HIỆU dưới cái tên "Danh mục con" vì dự án chưa có tầng danh mục
+//    con nào; giờ có dữ liệu thật nên nó hiện đúng thứ nó nói.
+//  - "Thương hiệu": vẫn là hãng thật đang có hàng trong danh mục đó, nhưng
+//    giờ là một khối riêng có nhãn đúng. Chip hãng trỏ tới trang lọc
+//    `?category=&brand=` (hàng của hãng TRONG danh mục đang chọn) thay vì
+//    trang thương hiệu — trang thương hiệu gom hàng của hãng ở MỌI danh mục
+//    nên không khớp ngữ cảnh "đang xem danh mục này"; lối vào trang đó là
+//    link "Xem tất cả thương hiệu" phía dưới.
 export default function CategoryMegaMenu({
   categories,
   brandsByCategory,
@@ -68,6 +68,7 @@ export default function CategoryMegaMenu({
   if (!active) return null;
 
   const brands = brandsByCategory[active.slug] ?? [];
+  const children = active.children;
 
   return (
     <div className="group relative">
@@ -81,7 +82,7 @@ export default function CategoryMegaMenu({
         <span className="hidden sm:inline">Danh mục</span>
       </button>
 
-      <div className="invisible absolute left-0 top-full z-40 w-[min(90vw,520px)] pt-2 opacity-0 transition group-hover:visible group-hover:opacity-100">
+      <div className="invisible absolute left-0 top-full z-40 w-[min(92vw,600px)] pt-2 opacity-0 transition group-hover:visible group-hover:opacity-100">
         <div className="flex overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
           <div className="w-48 shrink-0 border-r border-zinc-100 bg-zinc-50 py-2">
             {categories.map((c) => (
@@ -102,7 +103,25 @@ export default function CategoryMegaMenu({
           </div>
 
           <div className="flex-1 p-5">
-            <p className="mb-3 text-sm font-semibold text-zinc-900">Danh mục con</p>
+            {children.length > 0 && (
+              <>
+                <p className="mb-2 text-sm font-semibold text-zinc-900">Danh mục con</p>
+                <ul className="mb-5 space-y-1">
+                  {children.map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        href={`/products?category=${c.slug}`}
+                        className="block rounded-lg px-2 py-1 text-sm text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900"
+                      >
+                        {c.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            <p className="mb-2 text-sm font-semibold text-zinc-900">Thương hiệu</p>
             {brands.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {brands.map((b) => (
@@ -119,12 +138,20 @@ export default function CategoryMegaMenu({
               <p className="text-sm text-zinc-500">Chưa có sản phẩm nào.</p>
             )}
 
-            <Link
-              href={`/products?category=${active.slug}`}
-              className="mt-5 inline-block text-sm font-medium text-accent hover:underline"
-            >
-              Xem tất cả {active.name} →
-            </Link>
+            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <Link
+                href={`/products?category=${active.slug}`}
+                className="text-sm font-medium text-accent hover:underline"
+              >
+                Xem tất cả {active.name} →
+              </Link>
+              <Link
+                href="/thuong-hieu"
+                className="text-sm text-zinc-500 hover:underline"
+              >
+                Xem tất cả thương hiệu
+              </Link>
+            </div>
           </div>
         </div>
       </div>

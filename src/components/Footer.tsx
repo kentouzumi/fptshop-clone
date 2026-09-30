@@ -7,6 +7,7 @@ const FOOTER_LINKS: { title: string; links: { label: string; href: string }[] }[
       { label: "Điện thoại", href: "/products?category=dien-thoai" },
       { label: "Laptop", href: "/products?category=laptop" },
       { label: "Tivi", href: "/products?category=tivi" },
+      { label: "Thương hiệu", href: "/thuong-hieu" },
       { label: "Cửa hàng", href: "/stores" },
       { label: "Tin tức", href: "/tin-tuc" },
       { label: "Yêu thích", href: "/wishlist" },

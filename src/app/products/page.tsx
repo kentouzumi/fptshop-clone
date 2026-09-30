@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getProducts, getAttributeFacets, getBrandsByCategory, type ProductSort } from "@/lib/products";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistedProductIds } from "@/lib/wishlist";
-import { getActiveCategories } from "@/lib/categories";
+import { getActiveCategoryBySlug } from "@/lib/categories";
 import ProductCard from "@/components/ProductCard";
 import SortSelect from "./SortSelect";
 import FilterSidebar, { PRICE_RANGES } from "./FilterSidebar";
@@ -65,7 +65,11 @@ export async function generateMetadata({
     };
   }
 
-  const category = (await getActiveCategories()).find((c) => c.slug === params.category);
+  // Tra qua getActiveCategoryBySlug (không phải getActiveCategories, vốn chỉ
+  // trả cấp cao nhất) để slug của DANH MỤC CON cũng khớp — nếu không, trang
+  // danh mục con bị coi như không tồn tại rồi đặt noindex dù nó là trang có
+  // nội dung thật và đáng index nhất sau trang sản phẩm.
+  const category = await getActiveCategoryBySlug(params.category);
   if (!category) {
     return { title: "Sản phẩm", robots: { index: false, follow: true } };
   }
@@ -78,9 +82,15 @@ export async function generateMetadata({
     Object.keys(params).some((k) => k.startsWith("spec_"));
 
   const title = `${category.name} chính hãng`;
+  // Danh mục con chưa có mô tả viết tay thì ghép thêm tên danh mục cha vào
+  // câu dự phòng ("... thuộc nhóm Điện thoại") — chỉ riêng "Mua iPhone 15
+  // series chính hãng" không cho người đọc kết quả tìm kiếm biết đây là
+  // danh mục gì của cửa hàng nào.
   const description =
     CATEGORY_META_DESC[category.slug] ??
-    `Mua ${category.name.toLowerCase()} chính hãng, giá tốt, bảo hành 12 tháng.`;
+    (category.parent
+      ? `Mua ${category.name} chính hãng thuộc nhóm ${category.parent.name}, giá tốt, bảo hành 12 tháng.`
+      : `Mua ${category.name.toLowerCase()} chính hãng, giá tốt, bảo hành 12 tháng.`);
 
   return {
     title,
@@ -154,7 +164,8 @@ export default async function ProductsPage({
     ? [...(await getAllOutOfStockProductIds())].sort()
     : undefined;
 
-  const [brands, { products, totalPages }, currentUser] = await Promise.all([
+  const [category, brands, { products, totalPages }, currentUser] = await Promise.all([
+    params.category ? getActiveCategoryBySlug(params.category) : null,
     getBrandsByCategory().then((map) =>
       params.category
         ? (map[params.category as string] ?? [])
@@ -178,9 +189,24 @@ export default async function ProductsPage({
 
   // Tiêu đề trang hiện tên danh mục đang xem (thay vì chữ "Sản phẩm" chung
   // chung) — giờ trang này luôn được vào từ 1 danh mục cụ thể hoặc ô tìm kiếm.
-  const categoryName = params.category
-    ? (await getActiveCategories()).find((c) => c.slug === params.category)?.name
-    : undefined;
+  const categoryName = category?.name;
+
+  // Hàng chip điều hướng ngang danh mục con. CỐ Ý không đưa vào FilterSidebar:
+  // mục "Danh mục" trong sidebar đã bị bỏ theo yêu cầu trước đó, và đây không
+  // phải bộ lọc cộng dồn với các bộ lọc khác mà là ĐIỀU HƯỚNG sang một trang
+  // danh mục khác (đổi luôn cả bộ lọc thông số, breadcrumb, canonical).
+  //
+  // Đang ở danh mục CHA thì hiện các con của nó; đang ở danh mục CON thì hiện
+  // các danh mục ANH EM (cùng cha) để nhảy ngang giữa chúng mà không phải
+  // quay về danh mục cha trước.
+  const siblingParent = category?.parent ?? null;
+  const subCategories = category
+    ? category.children.length > 0
+      ? category.children
+      : siblingParent
+        ? ((await getActiveCategoryBySlug(siblingParent.slug))?.children ?? [])
+        : []
+    : [];
 
   const shownIds = products.map((p) => p.id);
   const [wishlistedIds, outOfStockIds] = await Promise.all([
@@ -197,6 +223,20 @@ export default async function ProductsPage({
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-10">
+      {siblingParent && (
+        <nav className="mb-3 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+          <Link href="/" className="hover:underline">
+            Trang chủ
+          </Link>
+          <span>/</span>
+          <Link href={`/products?category=${siblingParent.slug}`} className="hover:underline">
+            {siblingParent.name}
+          </Link>
+          <span>/</span>
+          <span className="text-zinc-900">{categoryName}</span>
+        </nav>
+      )}
+
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">
           {params.search
@@ -205,6 +245,34 @@ export default async function ProductsPage({
         </h1>
         <SortSelect current={sort} />
       </div>
+
+      {subCategories.length > 0 && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          <Link
+            href={`/products?category=${siblingParent?.slug ?? params.category}`}
+            className={
+              siblingParent
+                ? "rounded-full border border-zinc-200 px-4 py-2 text-sm text-zinc-600 transition hover:border-zinc-400"
+                : "rounded-full border border-accent bg-accent/10 px-4 py-2 text-sm font-medium text-zinc-900"
+            }
+          >
+            Tất cả {siblingParent?.name ?? categoryName}
+          </Link>
+          {subCategories.map((c) => (
+            <Link
+              key={c.id}
+              href={`/products?category=${c.slug}`}
+              className={
+                c.slug === params.category
+                  ? "rounded-full border border-accent bg-accent/10 px-4 py-2 text-sm font-medium text-zinc-900"
+                  : "rounded-full border border-zinc-200 px-4 py-2 text-sm text-zinc-600 transition hover:border-zinc-400"
+              }
+            >
+              {c.name}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-col gap-8 md:flex-row md:items-start">
         <FilterSidebar

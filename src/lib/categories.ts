@@ -33,6 +33,72 @@ export const getActiveCategories = unstable_cache(
   { tags: [CATEGORIES_TAG], revalidate: 300 }
 );
 
+/**
+ * Cây danh mục 2 cấp cho mega menu + hàng chip danh mục con ở /products.
+ *
+ * Tách riêng khỏi getActiveCategories() (vốn CHỈ trả cấp cao nhất, dùng cho
+ * lưới trang chủ) vì 2 nơi cần 2 hình dạng khác nhau: lưới trang chủ phải
+ * giữ đúng 3 thẻ danh mục lớn, còn menu/chip cần thấy cả danh mục con.
+ * Dùng CHUNG cache tag nên không cần thêm code invalidate mới.
+ */
+export const getActiveCategoryTree = unstable_cache(
+  async () =>
+    prisma.category.findMany({
+      where: { isActive: true, parentId: null },
+      orderBy: { sortOrder: "asc" },
+      include: {
+        children: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: { id: true, name: true, slug: true },
+        },
+      },
+    }),
+  ["active-category-tree"],
+  { tags: [CATEGORIES_TAG], revalidate: 300 }
+);
+
+export interface ResolvedCategory {
+  id: string;
+  name: string;
+  slug: string;
+  /** Danh mục cha nếu đây là danh mục con — null với danh mục cấp cao nhất. */
+  parent: { name: string; slug: string } | null;
+  /** Danh mục con trực tiếp (rỗng với danh mục lá). */
+  children: { id: string; name: string; slug: string }[];
+}
+
+/**
+ * Tra 1 danh mục theo slug, KHÔNG phân biệt cấp cao hay danh mục con.
+ *
+ * Trang /products trước đây tra tên danh mục bằng cách tìm trong
+ * getActiveCategories() — hàm đó lọc `parentId: null` nên slug của danh mục
+ * CON không bao giờ khớp: tiêu đề rơi về chữ "Sản phẩm" chung chung và
+ * generateMetadata coi như danh mục không tồn tại rồi đặt noindex. Đây là
+ * hàm dùng chung cho cả 2 chỗ đó.
+ */
+export const getActiveCategoryBySlug = unstable_cache(
+  async (slug: string): Promise<ResolvedCategory | null> => {
+    const row = await prisma.category.findFirst({
+      where: { slug, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        parent: { select: { name: true, slug: true } },
+        children: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: { id: true, name: true, slug: true },
+        },
+      },
+    });
+    return row ?? null;
+  },
+  ["active-category-by-slug"],
+  { tags: [CATEGORIES_TAG], revalidate: 300 }
+);
+
 export interface CategoryInput {
   name: string;
   slug: string;

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { absoluteUrl } from "@/lib/siteUrl";
 import { PRODUCTS_TAG } from "@/lib/products";
 import { POSTS_TAG } from "@/lib/posts";
+import { getBrandSlugsForSitemap } from "@/lib/brands";
 import { ProductStatus, PostStatus } from "@prisma/client";
 
 /**
@@ -36,10 +37,14 @@ export const dynamic = "force-dynamic";
 const getSitemapData = unstable_cache(
   async () =>
     Promise.all([
+      // Bỏ filter `parentId: null`: danh mục CON (iPhone 15 Series, Laptop
+      // gaming...) cũng là trang có nội dung thật, tự đặt canonical về chính
+      // nó và được index — không liệt kê thì Google chỉ tìm thấy chúng qua
+      // link nội bộ.
       prisma.category.findMany({
-        where: { isActive: true, parentId: null },
-        orderBy: { sortOrder: "asc" },
-        select: { slug: true },
+        where: { isActive: true },
+        orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }],
+        select: { slug: true, parentId: true },
       }),
       prisma.product.findMany({
         where: { status: ProductStatus.ACTIVE },
@@ -54,6 +59,7 @@ const getSitemapData = unstable_cache(
         orderBy: { publishedAt: "desc" },
         select: { slug: true, updatedAt: true },
       }),
+      getBrandSlugsForSitemap(),
     ]),
   ["sitemap-entries"],
   // Thêm POSTS_TAG: đăng/sửa/xóa bài viết cũng phải làm mới sitemap ngay,
@@ -62,7 +68,7 @@ const getSitemapData = unstable_cache(
 );
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [categories, products, staticPages, posts] = await getSitemapData();
+  const [categories, products, staticPages, posts, brands] = await getSitemapData();
 
   // Sản phẩm mới nhất đại diện cho lần thay đổi gần nhất của cả catalog —
   // dùng cho trang chủ và các trang danh mục (Category không có updatedAt).
@@ -79,7 +85,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: absoluteUrl(`/products?category=${c.slug}`),
       lastModified: catalogUpdatedAt,
       changeFrequency: "daily" as const,
-      priority: 0.9,
+      // Danh mục con hẹp hơn nên ưu tiên thấp hơn danh mục cấp cao một bậc.
+      priority: c.parentId ? 0.8 : 0.9,
+    })),
+    {
+      url: absoluteUrl("/thuong-hieu"),
+      lastModified: catalogUpdatedAt,
+      changeFrequency: "weekly",
+      priority: 0.6,
+    },
+    ...brands.map((b) => ({
+      url: absoluteUrl(`/thuong-hieu/${b.slug}`),
+      lastModified: catalogUpdatedAt,
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
     })),
     ...products.map((p) => ({
       url: absoluteUrl(`/products/${p.slug}`),

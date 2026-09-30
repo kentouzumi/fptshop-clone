@@ -281,7 +281,7 @@ export const getBrandsByCategory = unstable_cache(
     const rows = await prisma.product.findMany({
       where: { status: ProductStatus.ACTIVE, brandId: { not: null } },
       select: {
-        category: { select: { slug: true } },
+        category: { select: { slug: true, parent: { select: { slug: true } } } },
         brand: { select: { name: true, slug: true } },
       },
     });
@@ -289,9 +289,17 @@ export const getBrandsByCategory = unstable_cache(
     const result: Record<string, Map<string, CategoryBrandItem>> = {};
     for (const row of rows) {
       if (!row.brand) continue;
-      const catSlug = row.category.slug;
-      const brandMap = result[catSlug] ?? (result[catSlug] = new Map());
-      brandMap.set(row.brand.slug, row.brand);
+      // Sản phẩm giờ nằm ở danh mục CON ("iPhone 15 Series"), danh mục cha
+      // ("Điện thoại") không còn sản phẩm trực tiếp nào. Nếu chỉ gom theo
+      // slug của chính danh mục sản phẩm thì khóa "dien-thoai" sẽ RỖNG —
+      // mega menu và bộ lọc hãng ở trang danh mục cha mất sạch danh sách
+      // hãng. Cộng brand vào CẢ slug con LẪN slug cha, khớp đúng cách
+      // getProducts() coi danh mục cha = union sản phẩm các danh mục con.
+      for (const catSlug of [row.category.slug, row.category.parent?.slug]) {
+        if (!catSlug) continue;
+        const brandMap = result[catSlug] ?? (result[catSlug] = new Map());
+        brandMap.set(row.brand.slug, row.brand);
+      }
     }
 
     const sorted: Record<string, CategoryBrandItem[]> = {};
@@ -346,14 +354,25 @@ export const CATEGORY_FILTER_SPECS: Record<string, string[]> = {
 
 export const getAttributeFacets = unstable_cache(
   async (categorySlug: string): Promise<AttributeFacet[]> => {
-    const specNames = CATEGORY_FILTER_SPECS[categorySlug];
-    if (!specNames) return [];
-
     const category = await prisma.category.findUnique({
       where: { slug: categorySlug },
-      select: { id: true, children: { select: { id: true } } },
+      select: {
+        id: true,
+        children: { select: { id: true } },
+        parent: { select: { slug: true } },
+      },
     });
     if (!category) return [];
+
+    // CATEGORY_FILTER_SPECS khai theo danh mục CẤP CAO (1 danh mục = 1 loại
+    // sản phẩm = 1 bộ thông số). Danh mục con ("iPhone 15 Series") vẫn là
+    // điện thoại nên phải dùng lại đúng bộ lọc của danh mục gốc — không kế
+    // thừa thì trang danh mục con mất sạch bộ lọc thông số.
+    const specNames =
+      CATEGORY_FILTER_SPECS[categorySlug] ??
+      (category.parent ? CATEGORY_FILTER_SPECS[category.parent.slug] : undefined);
+    if (!specNames) return [];
+
     const categoryIds = [category.id, ...category.children.map((c) => c.id)];
 
     const rows = await prisma.productAttribute.findMany({
