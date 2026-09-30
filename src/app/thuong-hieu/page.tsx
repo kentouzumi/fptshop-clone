@@ -32,17 +32,21 @@ export default async function BrandsIndexPage() {
               href={`/thuong-hieu/${brand.slug}`}
               className="card flex flex-col items-center gap-3 p-5 text-center transition hover:-translate-y-0.5 hover:shadow-lg"
             >
-              {/* Chưa thương hiệu nào có logoUrl trong DB, nên mặc định là chữ
-                  cái đầu thay vì để khoảng trống hay ảnh vỡ — admin thêm logo
-                  qua /admin/brands thì tự hiện ảnh thật. */}
+              {/* bg-zinc-950 = #fbf7ef, tức là bề mặt SÁNG NHẤT của theme, KHÔNG
+                  phải "gần đen" như tên gọi gợi ý: globals.css đảo ngược thang
+                  zinc cho theme tối "Đêm Hổ Phách" (bg-white ở đây là #241a33
+                  tím than, dùng cho bề mặt card). Logo chính hãng phần lớn là
+                  chữ đen (Apple, Asus, Samsung) nên bắt buộc phải nằm trên ô
+                  sáng, đặt thẳng lên nền tối là lặn mất. Hãng chưa có logo thì
+                  hiện chữ cái đầu, không để khoảng trống hay ảnh vỡ. */}
               {brand.logoUrl ? (
-                <div className="relative h-12 w-full">
+                <div className="relative h-12 w-full rounded-xl bg-zinc-950">
                   <Image
                     src={brand.logoUrl}
                     alt={brand.name}
                     fill
                     sizes="160px"
-                    className="object-contain"
+                    className="object-contain p-2"
                   />
                 </div>
               ) : (

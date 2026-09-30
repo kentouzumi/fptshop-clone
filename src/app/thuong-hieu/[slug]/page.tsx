@@ -4,7 +4,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { getBrandPageData } from "@/lib/brands";
-import { getProducts, type ProductSort } from "@/lib/products";
+import { getProducts } from "@/lib/products";
+import FilterSidebar from "@/app/products/FilterSidebar";
+import SortSelect from "@/app/products/SortSelect";
+import { resolveFilterParams } from "@/app/products/filterParams";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistedProductIds } from "@/lib/wishlist";
 import { getOutOfStockProductIds } from "@/lib/inventory";
@@ -44,7 +47,10 @@ export async function generateMetadata({
   // Lọc danh mục / sắp xếp / phân trang = cùng tập sản phẩm nhìn qua URL khác
   // → không index bản đó nhưng canonical vẫn dồn về trang hãng gốc, y hệt
   // cách /products xử lý các tham số xem.
-  const hasViewParams = Boolean(query.category || query.sort || (query.page && query.page !== "1"));
+  const hasViewParams =
+    Boolean(query.category || query.sort || query.minPrice || query.maxPrice || query.instock) ||
+    Boolean(query.page && query.page !== "1") ||
+    Object.keys(query).some((k) => k.startsWith("spec_"));
 
   const title = `${brand.name} chính hãng`;
   const description =
@@ -87,19 +93,36 @@ export default async function BrandPage({
   const brand = await loadBrand(slug);
   if (!brand) notFound();
 
-  const page = Math.max(1, Number(query.page ?? "1") || 1);
-  const sort: ProductSort =
-    query.sort === "price_asc" || query.sort === "price_desc" ? query.sort : "newest";
-
   // Chỉ nhận `category` nếu hãng này THẬT SỰ có hàng ở đó — gõ tay 1 slug lạ
   // vào URL sẽ ra lưới rỗng mà không rõ vì sao, còn bỏ qua thì trang vẫn hiện
   // đúng toàn bộ hàng của hãng.
   const activeCategory = brand.categories.find((c) => c.slug === query.category)?.slug;
 
+  // Dùng CHUNG bộ giải mã tham số lọc với /products (xem filterParams.ts).
+  // Bộ lọc THÔNG SỐ chỉ có khi đã chọn danh mục: chưa chọn thì lưới trộn cả
+  // điện thoại lẫn laptop lẫn tivi, mà 3 loại đó không có thông số nào chung
+  // — hiện ô lọc "RAM" cho một lưới có tivi trong đó là vô nghĩa.
+  const {
+    sort,
+    page,
+    currentFilters,
+    facets,
+    attributeFilters,
+    activePriceKey,
+    minPrice,
+    maxPrice,
+    inStockOnly,
+    excludeProductIds,
+  } = await resolveFilterParams(query, activeCategory, brand.slug);
+
   const [{ products, totalPages }, currentUser] = await Promise.all([
     getProducts({
       brandSlugs: [brand.slug],
       categorySlug: activeCategory,
+      attributeFilters,
+      minPrice,
+      maxPrice,
+      excludeProductIds,
       sort,
       page,
       limit: 12,
@@ -115,6 +138,14 @@ export default async function BrandPage({
 
   function hrefFor(overrides: Record<string, string | undefined>) {
     const merged = { ...query, ...overrides };
+    // Đổi danh mục thì BỎ hết `spec_*` của danh mục cũ: mỗi danh mục có bộ
+    // thông số riêng, mang "spec_ram" sang danh mục Tivi là giữ lại một tham
+    // số không lọc gì cả nhưng vẫn nằm trong URL người dùng copy/chia sẻ.
+    if ("category" in overrides) {
+      for (const key of Object.keys(merged)) {
+        if (key.startsWith("spec_")) delete merged[key];
+      }
+    }
     const qs = new URLSearchParams();
     for (const [key, value] of Object.entries(merged)) {
       if (value) qs.set(key, value);
@@ -170,14 +201,17 @@ export default async function BrandPage({
       </nav>
 
       <div className="card mb-8 flex flex-col gap-5 p-6 sm:flex-row sm:items-start">
+        {/* bg-zinc-950 = #fbf7ef (bề mặt SÁNG NHẤT của theme tối, không phải
+            gần đen như tên gọi) — logo chính hãng phần lớn là chữ đen nên
+            phải nằm trên ô sáng. Xem thêm ghi chú ở /thuong-hieu. */}
         {brand.logoUrl ? (
-          <div className="relative h-16 w-32 shrink-0">
+          <div className="relative h-16 w-36 shrink-0 rounded-xl bg-zinc-950">
             <Image
               src={brand.logoUrl}
               alt={brand.name}
               fill
-              sizes="128px"
-              className="object-contain"
+              sizes="144px"
+              className="object-contain p-3"
             />
           </div>
         ) : (
@@ -216,38 +250,64 @@ export default async function BrandPage({
         </div>
       )}
 
-      {products.length === 0 ? (
-        <p className="card p-6 text-sm text-zinc-500">Không có sản phẩm nào.</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-          {products.map((p) => (
-            <ProductCard
-              key={p.id}
-              product={p}
-              initialInWishlist={wishlistedIds.has(p.id)}
-              outOfStock={outOfStockIds.has(p.id)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-zinc-500">
+          {products.length > 0 ? `Đang xem ${products.length} sản phẩm` : ""}
+        </p>
+        <SortSelect current={sort} />
+      </div>
 
-      {totalPages > 1 && (
-        <div className="mt-10 flex justify-center gap-2">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-            <Link
-              key={n}
-              href={hrefFor({ page: n === 1 ? undefined : String(n) })}
-              className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
-                n === page
-                  ? "bg-zinc-900 text-white"
-                  : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
-              }`}
-            >
-              {n}
-            </Link>
-          ))}
+      <div className="flex flex-col gap-8 md:flex-row md:items-start">
+        {/* brands={[]} -> sidebar tự ẩn mục "Hãng sản xuất": trang này đã cố
+            định đúng 1 hãng, để ô chọn hãng ở đây là mời người dùng rời khỏi
+            chính trang họ đang xem. basePath giữ slug hãng trên đường dẫn. */}
+        <FilterSidebar
+          brands={[]}
+          selectedBrands={[]}
+          activePriceKey={activePriceKey}
+          facets={facets}
+          currentFilters={currentFilters}
+          inStockOnly={inStockOnly}
+          basePath={`/thuong-hieu/${slug}`}
+        />
+
+        <div className="min-w-0 flex-1">
+          {products.length === 0 ? (
+            <p className="card p-6 text-sm text-zinc-500">
+              Không có sản phẩm nào khớp bộ lọc.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+              {products.map((p) => (
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  initialInWishlist={wishlistedIds.has(p.id)}
+                  outOfStock={outOfStockIds.has(p.id)}
+                />
+              ))}
+            </div>
+          )}
+
+          {totalPages > 1 && (
+            <div className="mt-10 flex justify-center gap-2">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <Link
+                  key={n}
+                  href={hrefFor({ page: n === 1 ? undefined : String(n) })}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
+                    n === page
+                      ? "bg-zinc-900 text-white"
+                      : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                  }`}
+                >
+                  {n}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -39,6 +39,84 @@ const DEFAULT_ICON = (
   </svg>
 );
 
+// Icon cho DANH MỤC CON. Mỗi icon cố ý gắn với ĐẶC ĐIỂM THẬT phân biệt dòng
+// đó, không phải hình trang trí cho khác nhau: 4 dòng điện thoại nếu vẽ 4 cái
+// điện thoại giống hệt thì icon không nói thêm được gì so với chữ, nên mỗi
+// cái mang đúng thứ dòng máy đó được biết tới.
+//  - iPhone 15 Series: viên thuốc Dynamic Island ở đỉnh màn hình.
+//  - Galaxy S Series: bút S Pen (S24 Ultra trong shop có bút).
+//  - Redmi Series: cục pin đầy — Redmi bán chạy nhờ pin 5000mAh.
+//  - Reno Series: cụm camera nổi bật — Reno lấy camera/zoom làm điểm mạnh.
+//  - MacBook / Laptop gaming / mỏng nhẹ: máy tính, tay cầm game, chiếc lông vũ.
+//  - Tivi QLED / LED: màn hình có chấm lượng tử, và màn hình trơn.
+const SUBCATEGORY_ICONS: Record<string, React.ReactNode> = {
+  "iphone-15-series": (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+      <path strokeLinecap="round" d="M10.5 5.5h3" />
+    </svg>
+  ),
+  "samsung-galaxy-s-series": (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <rect x="4" y="2.5" width="10" height="19" rx="2.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M18 4.5l2.5 2.5-8 8-3 .5.5-3 8-8z" />
+    </svg>
+  ),
+  "xiaomi-redmi-series": (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+      <rect x="9" y="7" width="6" height="10" rx="1" fill="currentColor" stroke="none" />
+      <path strokeLinecap="round" d="M10.5 5.5h3" />
+    </svg>
+  ),
+  "oppo-reno-series": (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+      <circle cx="12" cy="9" r="2.5" />
+      <circle cx="12" cy="9" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  ),
+  macbook: (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <rect x="4" y="5" width="16" height="11" rx="1.5" />
+      <path strokeLinecap="round" d="M2 19h20" />
+    </svg>
+  ),
+  "laptop-gaming": (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <path strokeLinejoin="round" d="M7 8h10a4 4 0 014 4v2a3 3 0 01-5.4 1.8L14 14h-4l-1.6 1.8A3 3 0 013 14v-2a4 4 0 014-4z" />
+      <path strokeLinecap="round" d="M7 11.5v2M6 12.5h2M16 12h.01M17.5 13.5h.01" />
+    </svg>
+  ),
+  "laptop-mong-nhe": (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 20c0-7 5-12 12-13 1 7-3 12-8 12.5L4 20z" />
+      <path strokeLinecap="round" d="M7 17c2-3 5-5 8-6" />
+    </svg>
+  ),
+  "tivi-qled": (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <rect x="2.5" y="4.5" width="19" height="12" rx="1.5" />
+      <path strokeLinecap="round" d="M8.5 20h7" />
+      <circle cx="9" cy="9" r="1" fill="currentColor" stroke="none" />
+      <circle cx="13" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="8" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  ),
+  "tivi-led": (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <rect x="2.5" y="4.5" width="19" height="12" rx="1.5" />
+      <path strokeLinecap="round" d="M8.5 20h7" />
+    </svg>
+  ),
+};
+
+const DEFAULT_SUB_ICON = (
+  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" />
+  </svg>
+);
+
 // Mega menu kiểu FPT Shop thật: hiện khi di chuột vào (thuần CSS group-hover,
 // không cần state đóng/mở — tránh race condition mouseleave/mouseenter khi
 // chuột di chuyển giữa nút và panel).
@@ -111,8 +189,11 @@ export default function CategoryMegaMenu({
                     <li key={c.id}>
                       <Link
                         href={`/products?category=${c.slug}`}
-                        className="block rounded-lg px-2 py-1 text-sm text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900"
+                        className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900"
                       >
+                        <span className="shrink-0 text-zinc-400">
+                          {SUBCATEGORY_ICONS[c.slug] ?? DEFAULT_SUB_ICON}
+                        </span>
                         {c.name}
                       </Link>
                     </li>

@@ -98,57 +98,92 @@ async function main() {
   // `description` là nội dung chính của trang thương hiệu /thuong-hieu/[slug]
   // — không có thì trang chỉ còn lưới sản phẩm. Viết theo đúng mảng hàng mà
   // shop THẬT SỰ đang bán của hãng đó, không phải câu quảng cáo chung.
+  //
+  // `logoUrl`: logo CHÍNH THỨC của từng hãng, lấy từ Wikimedia Commons (cả 9
+  // file đều Public domain — logo dạng chữ/hình khối đơn giản không đạt
+  // ngưỡng sáng tạo để có bản quyền), tải về xử lý bằng sharp (cắt lề trong
+  // suốt thừa rồi đưa về CÙNG khung 480x160 theo "contain" để logo ngang như
+  // PHILIPS và logo vuông như Apple/Xiaomi không cái nào bị phóng lệch) rồi
+  // tải lên Supabase Storage. Giữ nền TRONG SUỐT (PNG có alpha) chứ không ép
+  // nền trắng: site đang là theme tối nên logo hiển thị trên một ô nền sáng
+  // riêng, để nguyên alpha thì ô đó muốn đổi màu gì cũng được.
+  //
+  // LƯU Ý về logo Samsung: bản chữ đen trên Commons là CC BY 4.0 (phải ghi
+  // công — bất tiện cho một logo nằm trong UI cửa hàng), còn bản Public
+  // domain lại là chữ TRẮNG trên hộp ĐEN, đặt cạnh 8 logo nền trong suốt còn
+  // lại thì thành một khối đen đặc. Đã tự dựng bản chữ đen nền trong suốt từ
+  // chính bản PD: lấy độ sáng từng điểm ảnh làm kênh alpha rồi tô đen toàn
+  // bộ. Hộp đỏ của TCL và hộp cam của Xiaomi thì GIỮ NGUYÊN — đó là logo
+  // chính thức của 2 hãng đó, không phải lỗi đảo màu.
   const brandDefs = [
     {
       slug: "apple",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/apple.png",
       name: "Apple",
       description:
         "Apple là thương hiệu Mỹ, nổi tiếng với iPhone và MacBook dùng chip Apple Silicon tự thiết kế. Tại đây bạn có thể mua iPhone 15 Series cùng MacBook Air và MacBook Pro chip M3 — cả hai dòng đều dùng chung hệ sinh thái iOS/macOS nên đồng bộ dữ liệu giữa máy tính và điện thoại rất tiện.",
     },
     {
       slug: "samsung",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/samsung.png",
       name: "Samsung",
       description:
         "Samsung là tập đoàn Hàn Quốc, tự sản xuất tấm nền màn hình cho chính sản phẩm của mình. Ở đây có dòng Galaxy S cao cấp (bút S Pen, camera zoom xa) và tivi QLED dùng công nghệ Quantum Dot cho màu rực hơn tivi LED thường.",
     },
     {
       slug: "xiaomi",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/xiaomi.png",
       name: "Xiaomi",
       description:
         "Xiaomi là thương hiệu Trung Quốc được biết đến vì cấu hình cao so với tầm giá. Shop đang bán dòng điện thoại Redmi (pin 5000mAh, màn 90–120Hz) và Google Tivi A Pro — lựa chọn phổ biến cho người cần máy tốt trong ngân sách vừa phải.",
     },
     {
       slug: "dell",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/dell.png",
       name: "Dell",
       description:
         "Dell là hãng máy tính Mỹ, mạnh ở nhóm laptop dành cho công việc. Dòng XPS bán tại đây thuộc nhóm mỏng nhẹ cao cấp: vỏ nhôm nguyên khối, màn hình viền siêu mỏng, phù hợp mang đi làm hằng ngày.",
     },
     {
       slug: "oppo",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/oppo.png",
       name: "OPPO",
       description:
         "OPPO là thương hiệu điện thoại Trung Quốc, chú trọng camera chân dung và sạc nhanh. Dòng Reno bán tại đây có camera tele zoom quang và sạc nhanh công suất cao — sạc đầy nhanh hơn hẳn mức phổ thông cùng giá.",
     },
     {
       slug: "asus",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/asus.png",
       name: "Asus",
       description:
         "Asus là hãng máy tính Đài Loan, phủ cả hai đầu nhu cầu laptop. Tại đây có ROG/TUF Gaming dùng card đồ họa RTX rời và màn hình tần số quét cao, cạnh dòng Zenbook mỏng nhẹ màn OLED cho người ưu tiên tính di động.",
     },
     {
       slug: "lg",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/lg.png",
       name: "LG",
       description:
         "LG là tập đoàn Hàn Quốc, lâu năm trong ngành tivi. Sản phẩm bán tại đây là tivi UHD 4K chạy hệ điều hành webOS riêng của LG, có điều khiển bằng giọng nói và bộ xử lý hình ảnh α5 AI.",
     },
     {
       slug: "philips",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/philips.png",
       name: "Philips",
       description:
         "Philips là thương hiệu Hà Lan, có mặt lâu năm ở thị trường tivi Việt Nam. Shop bán dòng Google Tivi 6900 Series — mức giá vừa phải cho phòng nhỏ, chạy Google TV nên cài ứng dụng xem phim trực tiếp trên máy.",
     },
     {
       slug: "tcl",
+      logoUrl:
+        "https://uotajmwqhjcfnfexbjax.supabase.co/storage/v1/object/public/product-images/catalog/brands/tcl.png",
       name: "TCL",
       description:
         "TCL là hãng Trung Quốc, một trong những nhà sản xuất tivi lớn nhất thế giới về số lượng. Dòng C655 bán tại đây là tivi QLED chạy Google TV, có âm thanh do Onkyo tinh chỉnh và hỗ trợ cả Dolby Vision lẫn HDR10+.",
@@ -158,11 +193,16 @@ async function main() {
   for (const b of brandDefs) {
     const row = await prisma.brand.upsert({
       where: { slug: b.slug },
-      // Đồng bộ `description` mỗi lần seed: sửa mô tả trong code phải có tác
-      // dụng với thương hiệu đã tồn tại, nếu không `update: {}` sẽ nuốt mất
-      // thay đổi (đúng lớp lỗi no-op đã gặp với categoryId/compareAtPrice).
-      update: { description: b.description },
-      create: { name: b.name, slug: b.slug, description: b.description },
+      // Đồng bộ `description` + `logoUrl` mỗi lần seed: sửa trong code phải có
+      // tác dụng với thương hiệu đã tồn tại, nếu không `update: {}` sẽ nuốt
+      // mất thay đổi (đúng lớp lỗi no-op đã gặp với categoryId/compareAtPrice).
+      update: { description: b.description, logoUrl: b.logoUrl },
+      create: {
+        name: b.name,
+        slug: b.slug,
+        description: b.description,
+        logoUrl: b.logoUrl,
+      },
     });
     brands[b.slug] = row.id;
   }

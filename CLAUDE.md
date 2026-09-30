@@ -5443,6 +5443,121 @@
       `CATEGORY_META_DESC` chỉ có mô tả viết tay cho 3 danh mục cấp cao —
       9 danh mục con dùng câu dự phòng ghép tên danh mục cha.
 
+- [x] 3 việc còn thiếu của đợt danh mục con + trang thương hiệu: icon riêng
+      cho danh mục con, bộ lọc/sắp xếp cho trang thương hiệu, và logo thật cho
+      cả 9 hãng.
+
+      **ICON DANH MỤC CON** (CategoryMegaMenu.tsx): mỗi icon gắn với ĐẶC ĐIỂM
+      THẬT phân biệt dòng đó, không phải hình vẽ khác nhau cho có. 4 dòng điện
+      thoại mà vẽ 4 cái điện thoại giống hệt thì icon không nói thêm được gì
+      so với chữ bên cạnh, nên: iPhone 15 Series = viên thuốc Dynamic Island;
+      Galaxy S Series = bút S Pen (S24 Ultra trong shop có bút); Redmi Series
+      = cục pin đầy (Redmi bán chạy nhờ pin 5000mAh); Reno Series = cụm camera
+      (Reno lấy camera/zoom làm điểm mạnh); MacBook = máy tính; Laptop gaming
+      = tay cầm game; Laptop mỏng nhẹ = chiếc lông vũ; Tivi QLED = màn hình có
+      chấm lượng tử; Tivi LED = màn hình trơn. Đây là ngoại lệ có lý do so với
+      quyết định cũ "không vẽ ~20 icon SVG chỉ để trang trí" (mục tách 23 danh
+      mục): lần đó icon thuần trang trí, lần này icon mã hóa thông tin thật.
+
+      **BỘ LỌC + SẮP XẾP Ở TRANG THƯƠNG HIỆU**: tách
+      `src/app/products/filterParams.ts` (mới) chứa `PRICE_RANGES` +
+      `resolveFilterParams()` — toàn bộ việc giải mã tham số lọc trên URL
+      (sort/trang/spec_*/giá/tồn kho) giờ dùng CHUNG cho /products và trang
+      thương hiệu. Giữ 2 bản sao thì chỉ cần thêm 1 bộ lọc mới là hai trang
+      lệch nhau ngay (sidebar vẫn hiện ô tick nhưng trang kia bấm vào không
+      lọc gì). FilterSidebar thêm prop `basePath` (mặc định "/products") —
+      trước đó hardcode "/products" ở CẢ `buildHref()` LẪN `action` của form
+      nhập khoảng giá, dùng nguyên si ở trang hãng thì mọi ô tick đá người
+      dùng về /products và mất luôn ngữ cảnh hãng đang xem. `brands={[]}` làm
+      sidebar tự ẩn mục "Hãng sản xuất" (trang này đã cố định 1 hãng, để ô
+      chọn hãng ở đây là mời người dùng rời khỏi chính trang họ đang xem).
+      SortSelect tái dùng nguyên vẹn, không sửa dòng nào, vì nó vốn đã dựng
+      URL từ `usePathname()` chứ không ghi cứng "/products".
+
+      LỖI THẬT phát hiện lúc test (không phải user báo): facet thông số ở
+      trang hãng đếm theo CẢ DANH MỤC, nên /thuong-hieu/apple?category=laptop
+      hiện bộ lọc "RAM 16GB (4)" trong khi Apple KHÔNG có máy 16GB nào (16GB
+      là của Asus/Dell) — bấm vào ra lưới rỗng, và con số 4 là nói dối trên
+      trang đó. Đã thêm tham số `brandSlug` cho `getAttributeFacets()` để bó
+      facet trong phạm vi 1 hãng; /products vẫn gọi KHÔNG kèm tham số này vì ở
+      đó đếm theo cả danh mục mới đúng. (`unstable_cache` tự đưa tham số vào
+      khóa cache nên không phải thêm gì.) Cùng loại với nguyên tắc đã áp dụng
+      trước đó: không liệt kê hãng/danh mục dẫn tới trang rỗng.
+      Thêm 1 chi tiết nhỏ: đổi chip danh mục ở trang hãng thì BỎ hết `spec_*`
+      của danh mục cũ khỏi URL — mỗi danh mục có bộ thông số riêng, mang
+      "spec_ram" sang danh mục Tivi là giữ một tham số không lọc gì nhưng vẫn
+      nằm trong URL người dùng copy/chia sẻ. Và `hasViewParams` (quyết định
+      noindex) mở rộng cho cả minPrice/maxPrice/instock/spec_*, không chỉ
+      category/sort/page như bản đầu.
+
+      **LOGO 9 HÃNG**: lấy từ Wikimedia Commons, CẢ 9 FILE đều Public domain
+      (logo dạng chữ/hình khối đơn giản không đạt ngưỡng sáng tạo để có bản
+      quyền — đã đọc trường `LicenseShortName` của từng file qua API, không
+      giả định). Xử lý bằng sharp: `.trim()` cắt lề trong suốt thừa (mỗi file
+      Commons chừa lề một kiểu) rồi đưa về CÙNG khung 480x160 theo "contain"
+      nên logo ngang (PHILIPS) và logo vuông (Apple, Xiaomi) không cái nào bị
+      phóng lệch; GIỮ nền trong suốt (PNG có alpha) thay vì ép nền trắng, để
+      ô nền phía sau muốn đổi màu gì cũng được. Upload lên Supabase Storage
+      `catalog/brands/<slug>.png`, ghi thẳng `logoUrl` vào prisma/seed.ts nên
+      tái lập được, và khối `update` của brand đồng bộ cả `description` lẫn
+      `logoUrl` (không phải `{}` no-op).
+
+      2 điểm phải xử lý riêng, đều tự phát hiện bằng cách XEM LẠI ẢNH:
+      1. Dùng lại mẹo CONTACT SHEET (ghép cả 9 logo vào 1 ảnh có đánh số rồi
+         đọc 1 lượt bằng Read tool) — nhờ vậy thấy ngay bản
+         "Samsung logo wordmark.svg" là chữ TRẮNG trên hộp ĐEN, đặt cạnh 8
+         logo nền trong suốt còn lại thì thành một khối đen đặc. Bản chữ đen
+         trên Commons lại là CC BY 4.0 (phải ghi công — bất tiện cho một logo
+         nằm trong UI cửa hàng), nên đã TỰ DỰNG bản chữ đen nền trong suốt từ
+         chính bản PD: lấy độ sáng từng điểm ảnh làm kênh alpha rồi tô đen
+         toàn bộ (phái sinh từ tác phẩm PD, không kèm nghĩa vụ ghi công). Hộp
+         đỏ của TCL và hộp cam của Xiaomi thì GIỮ NGUYÊN — đó là logo chính
+         thức của 2 hãng, không phải lỗi đảo màu.
+      2. LỖI THEME suýt ship: viết `bg-white` cho ô nền đặt logo, nhưng
+         globals.css ĐẢO NGƯỢC thang màu cho theme tối "Đêm Hổ Phách" —
+         `--color-white` = #241a33 (tím than, dùng cho bề mặt card), còn bề
+         mặt SÁNG NHẤT lại là `--color-zinc-950` = #fbf7ef. Logo Apple/Asus/
+         Samsung là chữ đen nên đặt lên `bg-white` sẽ lặn mất hoàn toàn. Đã
+         đổi sang `bg-zinc-950` kèm comment tại chỗ, vì đọc lướt thì
+         "zinc-950" nghe như gần đen — đúng lớp bẫy đã gặp với `bg-zinc-50`
+         hồi áp theme.
+
+      Commons trả 429 "too many requests" giữa chừng (đúng như đã ghi ở các
+      đợt lấy ảnh trước) — chèn delay giữa các request là qua; TCL phải tìm
+      bằng truy vấn khác ("TCL Corporation") mới ra `Logo of the TCL
+      Corporation.svg`.
+
+      Đã test qua dev server bằng DB THẬT (44/44 assertion): 9 hãng đều có
+      logoUrl và cả 9 file TẢI THẬT về được đúng content-type ảnh (không chỉ
+      tin URL có trong DB), trang danh sách render đủ 9 logo, không hãng nào
+      còn rơi về chữ cái đầu, logo nằm đúng trên ô sáng; mega menu có icon
+      riêng cho từng danh mục con (HTML chỉ chứa icon của danh mục đang
+      active nên 5 icon còn lại kiểm trong chunk JS gửi xuống client); trang
+      hãng có sidebar + ô sắp xếp, KHÔNG có mục "Hãng sản xuất", chưa chọn
+      danh mục thì không hiện bộ lọc thông số, mọi link trong sidebar giữ
+      đúng đường dẫn hãng (0 link đá về /products) và form giá submit đúng
+      chỗ; lọc giá/thông số/sắp xếp đều cho kết quả đúng; facet bó theo hãng
+      (Apple không còn hiện 16GB); và /products KHÔNG bị refactor làm hỏng
+      (đủ 6 điện thoại, còn nguyên mục Hãng sản xuất + bộ lọc thông số, lọc
+      giá/tồn kho/thông số vẫn đúng). `tsc --noEmit`/`eslint`/`npm run build`
+      sạch.
+
+      LƯU Ý khi viết test — 5 assertion sai đều ở TEST, không phải app:
+      React render thẻ SVG dạng `<rect ...></rect>` chứ KHÔNG tự đóng `/>`
+      như trong mã nguồn, nên so khớp cả thẻ sẽ trượt; mega menu là client
+      component nên HTML server render CHỈ chứa icon của danh mục đang
+      active; và kỳ vọng "RAM 8GB ra 3 máy" là số cũ từ hồi catalog mới có 4
+      điện thoại — giờ đúng là 4 máy (đã đối chiếu thẳng ProductAttribute
+      trong DB thay vì đoán).
+
+      CHƯA LÀM: admin chưa upload được logo qua UI (ô "Logo (URL)" trong
+      BrandForm vẫn là dán URL thủ công, khác ProductForm đã có nút chọn
+      tệp); danh mục con vẫn chưa dùng `Category.imageUrl` (icon đang
+      hard-code theo slug trong CategoryMegaMenu, thêm danh mục con mới sẽ rơi
+      về icon mũi tên mặc định cho tới khi bổ sung icon); trang thương hiệu
+      chưa có phân trang dạng "xem thêm" và chưa hiện đánh giá trung bình của
+      hãng.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -5546,11 +5661,12 @@
       bản ghi cũ (bảng sẽ phình dần).
 - [x] **Tin tức/blog** và **Hỏi–đáp (Q&A) dưới sản phẩm** — ĐÃ LÀM (xem phần
       Tiến độ).
-- [x] **Trang thương hiệu** và **danh mục con thật** — ĐÃ LÀM (mục cuối phần
-      Tiến độ): 9 danh mục con (iPhone 15 Series, Laptop gaming, Tivi QLED...)
-      dùng `Category.parentId`, và `/thuong-hieu` + `/thuong-hieu/[slug]` gom
-      hàng của từng hãng ở MỌI danh mục. Còn thiếu: danh mục con chưa có icon
-      riêng, trang hãng chưa có bộ lọc giá/thông số, chưa hãng nào có logo thật.
+- [x] **Trang thương hiệu** và **danh mục con thật** — ĐÃ LÀM ĐẦY ĐỦ (2 mục
+      cuối phần Tiến độ): 9 danh mục con (iPhone 15 Series, Laptop gaming,
+      Tivi QLED...) dùng `Category.parentId` kèm icon riêng từng mục, và
+      `/thuong-hieu` + `/thuong-hieu/[slug]` gom hàng của từng hãng ở MỌI danh
+      mục, có logo thật cả 9 hãng + bộ lọc giá/thông số + ô sắp xếp. Còn
+      thiếu: admin chưa upload logo qua UI (mới dán URL thủ công).
 - [x] **Mã giảm giá phải tự biết mới nhập được** — ĐÃ LÀM TRỌN: /checkout liệt kê
       sẵn mã đang chạy (bấm là áp), /admin/coupons quản lý mã đầy đủ, và cờ
       `isPublic` cho phép tạo mã riêng không lộ công khai. Chưa làm: tìm kiếm/

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { PRICE_RANGES } from "./filterParams";
 
 interface BrandLite {
   name: string;
@@ -18,23 +19,12 @@ interface AttributeFacet {
   values: AttributeFacetValue[];
 }
 
-export interface PriceRangeDef {
-  key: string;
-  label: string;
-  min?: number;
-  max?: number;
-}
-
-// Dùng chung giữa page.tsx (tính activePriceKey) và component này (render list).
-export const PRICE_RANGES: PriceRangeDef[] = [
-  { key: "all", label: "Tất cả" },
-  { key: "under5", label: "Dưới 5 triệu", min: 0, max: 5_000_000 },
-  { key: "5-15", label: "Từ 5 - 15 triệu", min: 5_000_000, max: 15_000_000 },
-  { key: "15-30", label: "Từ 15 - 30 triệu", min: 15_000_000, max: 30_000_000 },
-  { key: "over30", label: "Trên 30 triệu", min: 30_000_000 },
-];
-
+// `basePath` thay cho "/products" cứng: sidebar giờ dùng ở CẢ trang thương
+// hiệu (/thuong-hieu/[slug]), nơi đường dẫn mang slug hãng ở path chứ không
+// phải query — hardcode thì mọi ô tick đều đá người dùng về /products và mất
+// luôn ngữ cảnh hãng đang xem.
 function buildHref(
+  basePath: string,
   current: Record<string, string | undefined>,
   overrides: Record<string, string | undefined>
 ) {
@@ -44,7 +34,7 @@ function buildHref(
     if (value) qs.set(key, value);
   }
   const query = qs.toString();
-  return query ? `/products?${query}` : "/products";
+  return query ? `${basePath}?${query}` : basePath;
 }
 
 function CheckSquare({ checked }: { checked: boolean }) {
@@ -114,13 +104,16 @@ export default function FilterSidebar({
   facets,
   currentFilters,
   inStockOnly,
+  basePath = "/products",
 }: {
+  /** Rỗng thì ẩn hẳn mục "Hãng sản xuất" — trang thương hiệu đã cố định 1 hãng. */
   brands: BrandLite[];
   selectedBrands: string[];
   activePriceKey: string;
   facets: AttributeFacet[];
   currentFilters: Record<string, string | undefined>;
   inStockOnly: boolean;
+  basePath?: string;
 }) {
   const visibleBrands = brands.slice(0, 6);
   const extraBrands = brands.slice(6);
@@ -130,7 +123,7 @@ export default function FilterSidebar({
   // THẾ hoàn toàn lựa chọn cũ (không cộng dồn nhiều hãng như trước).
   function brandHref(slug: string) {
     const alreadySelected = selectedBrands.length === 1 && selectedBrands[0] === slug;
-    return buildHref(currentFilters, { brand: alreadySelected ? undefined : slug });
+    return buildHref(basePath, currentFilters, { brand: alreadySelected ? undefined : slug });
   }
 
   // Mỗi thông số kỹ thuật (vd "RAM") CHO CHỌN NHIỀU giá trị cùng lúc (OR
@@ -143,7 +136,7 @@ export default function FilterSidebar({
     const next = currentSlugs.includes(valueSlug)
       ? currentSlugs.filter((s) => s !== valueSlug)
       : [...currentSlugs, valueSlug];
-    return buildHref(currentFilters, { [key]: next.length ? next.join(",") : undefined });
+    return buildHref(basePath, currentFilters, { [key]: next.length ? next.join(",") : undefined });
   }
 
   function renderBrand(b: BrandLite) {
@@ -185,7 +178,7 @@ export default function FilterSidebar({
             chính nó thì tắt lọc (buildHref nhận undefined là bỏ query). */}
         <div className="border-b border-zinc-100 px-4 py-3.5">
           <Link
-            href={buildHref(currentFilters, { instock: inStockOnly ? undefined : "1" })}
+            href={buildHref(basePath, currentFilters, { instock: inStockOnly ? undefined : "1" })}
             className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition ${
               inStockOnly
                 ? "border-accent bg-accent/10 font-medium text-zinc-900"
@@ -216,7 +209,7 @@ export default function FilterSidebar({
             {PRICE_RANGES.map((r) => (
               <FilterRow
                 key={r.key}
-                href={buildHref(currentFilters, {
+                href={buildHref(basePath, currentFilters, {
                   minPrice: r.min !== undefined ? String(r.min) : undefined,
                   maxPrice: r.max !== undefined ? String(r.max) : undefined,
                 })}
@@ -226,7 +219,7 @@ export default function FilterSidebar({
             ))}
           </div>
 
-          <form action="/products" method="GET" className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3">
+          <form action={basePath} method="GET" className="mt-3 flex flex-col gap-2 border-t border-zinc-100 pt-3">
             <p className="text-xs text-zinc-500">Hoặc nhập khoảng giá phù hợp với bạn:</p>
             {/* Giữ lại MỌI filter khác (category/brand/sort/search/spec_*) khi
                 submit form giá — dùng vòng lặp thay vì liệt kê từng field cố

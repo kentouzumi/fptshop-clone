@@ -353,7 +353,14 @@ export const CATEGORY_FILTER_SPECS: Record<string, string[]> = {
 };
 
 export const getAttributeFacets = unstable_cache(
-  async (categorySlug: string): Promise<AttributeFacet[]> => {
+  /**
+   * `brandSlug` bó facet lại trong phạm vi MỘT hãng — dùng cho trang thương
+   * hiệu. Không có nó thì trang /thuong-hieu/apple?category=laptop hiện bộ
+   * lọc "RAM 16GB (4)" trong khi Apple không có máy 16GB nào: con số đếm
+   * được của cả danh mục Laptop, bấm vào ra lưới rỗng. Trang /products vẫn
+   * gọi không kèm tham số này vì ở đó đếm theo cả danh mục mới đúng.
+   */
+  async (categorySlug: string, brandSlug?: string): Promise<AttributeFacet[]> => {
     const category = await prisma.category.findUnique({
       where: { slug: categorySlug },
       select: {
@@ -378,7 +385,11 @@ export const getAttributeFacets = unstable_cache(
     const rows = await prisma.productAttribute.findMany({
       where: {
         attrName: { in: specNames },
-        product: { categoryId: { in: categoryIds }, status: ProductStatus.ACTIVE },
+        product: {
+          categoryId: { in: categoryIds },
+          status: ProductStatus.ACTIVE,
+          ...(brandSlug ? { brand: { slug: brandSlug } } : {}),
+        },
       },
       select: { productId: true, attrName: true, attrValue: true },
     });
