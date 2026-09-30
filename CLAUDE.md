@@ -5558,6 +5558,88 @@
       chưa có phân trang dạng "xem thêm" và chưa hiện đánh giá trung bình của
       hãng.
 
+- [x] Admin tự quản lý được ảnh thương hiệu/danh mục + ghi nhật ký cho CRUD
+      danh mục/thương hiệu/cửa hàng/khuyến mãi (2 điểm còn thiếu tự ghi ra ở
+      đợt trước, cộng 1 mục trong danh sách gap).
+
+      **ẢNH DO ADMIN UPLOAD**: `src/app/admin/ImageUploadField.tsx` (mới, dùng
+      chung cho BrandForm + CategoryForm) — chọn tệp để upload lên Supabase
+      HOẶC dán URL có sẵn. Giữ cả 2 cách như ProductForm/ReviewForm đã làm:
+      ảnh sẵn trên Storage (vd logo do script seed tải lên) vẫn cần gán lại
+      được mà không phải tải xuống rồi upload lại. Khác ProductForm ở chỗ đây
+      là ảnh ĐƠN — chọn tệp mới thì THAY thế ảnh cũ chứ không cộng dồn.
+
+      `/api/admin/upload` nhận thêm trường `folder`. BẢO MẬT: giá trị đó đi
+      thẳng vào path trên Storage nên KHÔNG nhận tự do — chỉ là TÊN NGẮN
+      ("brands"/"categories") được ánh xạ qua bảng `ADMIN_UPLOAD_FOLDERS` ở
+      lib/supabaseStorage.ts; client gửi "../../hack" thì đơn giản là không
+      khớp và rơi về thư mục gốc như trước (đã test đúng ca này). Nhân tiện
+      XÓA HẲN `uploadProductImage()` vì hết nơi gọi sau khi route chuyển sang
+      `uploadAdminImage()` — không để lại code chết.
+
+      **`Category.imageUrl` TRƯỚC ĐÓ LÀ FIELD CHẾT**: có trong schema từ đầu
+      dự án, `parseCategoryInput()` đã parse, CategoryForm đã có ô nhập URL —
+      nhưng KHÔNG hiển thị ở đâu cả, tức admin điền vào rồi không thấy gì đổi.
+      Giờ nó hiện ở 2 chỗ: lưới danh mục trang chủ (chỉ dựng khung ảnh khi CÓ
+      ảnh, không có thì thẻ giữ nguyên dạng chỉ-có-chữ như trước) và làm icon
+      trong mega menu, ƯU TIÊN hơn icon SVG hard-code theo slug. Nhờ vậy đóng
+      luôn điểm yếu đã ghi ở đợt trước: danh mục con admin tự tạo không còn
+      rơi về icon mũi tên mặc định — admin gán ảnh là có icon riêng ngay, không
+      phải sửa code.
+
+      LỖI THEME suýt ship LẦN THỨ HAI (cùng cái bẫy đã gặp với logo hãng):
+      viết `bg-white` cho ô nền ảnh xem trước trong form admin. Theme "Đêm Hổ
+      Phách" ĐẢO NGƯỢC thang màu — `--color-white` = #241a33 (tím than), bề
+      mặt SÁNG NHẤT là `--color-zinc-950` = #fbf7ef. Đã dùng `bg-zinc-950` cho
+      cả 3 chỗ (form admin, lưới trang chủ, mega menu). GHI NHỚ: trong dự án
+      này, muốn nền sáng thì dùng `bg-zinc-950`, KHÔNG phải `bg-white`.
+      Ảnh danh mục/logo đều để `alt=""` CỐ Ý: tên đã nằm ngay cạnh dưới dạng
+      chữ, đặt alt trùng tên sẽ khiến trình đọc màn hình đọc hai lần.
+
+      **NHẬT KÝ CHO 4 NHÓM CRUD CÒN THIẾU** (danh mục/thương hiệu/cửa hàng/
+      khuyến mãi — trước đó AuditLog mới hook 12 thao tác khác): thêm 12 nhãn
+      thao tác + 4 nhãn đối tượng vào lib/audit.ts, hook vào 8 route. Giữ đúng
+      2 quy tắc đã đặt từ đầu: `logAudit()` gọi SAU khi thao tác thành công
+      (thao tác bị chặn 409 thì KHÔNG để lại dấu vết nói rằng nó đã xảy ra —
+      đã test riêng 2 ca xóa bị chặn), và đọc bản ghi CŨ trước khi ghi đè để
+      nhật ký nói được "đổi từ gì sang gì".
+      Chọn lọc metadata theo thứ THẬT SỰ đáng truy, không đổ cả bản ghi vào:
+      + Danh mục: `parentIdFrom/To` — chuyển danh mục sang cha khác là thay
+        đổi lớn (đổi cả đường duyệt lẫn bộ lọc thông số kế thừa) nhưng nhìn
+        trên UI rất kín.
+      + Cửa hàng: `isActiveFrom/To` — tắt cửa hàng ảnh hưởng thẳng tới tồn kho
+        và lựa chọn nhận hàng ở /checkout.
+      + Thương hiệu/danh mục: ghi CỜ `logoChanged`/`imageChanged` thay vì cả
+        URL — URL Supabase rất dài mà điều admin cần biết chỉ là "lần sửa đó
+        có đổi ảnh hay không".
+      + Mọi thao tác XÓA đều ghi kèm TÊN: bản ghi đã mất rồi, dòng nhật ký chỉ
+        có id trơ thì vô dụng.
+      Không phải sửa `getAuditFilterOptions()` vì nó suy danh sách bộ lọc từ
+      chính dữ liệu trong bảng (`distinct`), thao tác mới tự xuất hiện khi có
+      dòng đầu tiên.
+
+      Đã test qua dev server bằng DB THẬT (25/25 + 26/26 assertion, tạo
+      SUPER_ADMIN test rồi dọn sạch cả bản ghi lẫn ẢNH TEST TRÊN SUPABASE):
+      chưa đăng nhập upload -> 403, SVG bị từ chối (đường XSS lưu trữ), ảnh
+      quá 5MB bị chặn, upload thật vào đúng `catalog/brands`/`catalog/categories`
+      và tải lại được đúng content-type ảnh, thư mục lạ không tạo được đường
+      dẫn tùy ý; 2 form admin đều có ô chọn tệp + vẫn giữ ô dán URL; gán ảnh
+      cho danh mục qua API admin thì ảnh hiện NGAY ở mega menu và lưới trang
+      chủ (revalidateTag chạy), danh mục chưa có ảnh không bị dựng khung rỗng;
+      upload KHÔNG kèm folder (luồng ảnh sản phẩm cũ) vẫn vào gốc bucket như
+      trước và /admin/products/new không hỏng. Nhật ký: đủ create/update/delete
+      cho cả 4 nhóm, ghi đúng người thao tác, đúng giá trị cũ->mới, thao tác bị
+      chặn 409 không ghi dòng nào, trang /admin/audit-logs hiện đúng nhãn tiếng
+      Việt mới và lọc theo thao tác mới hoạt động.
+      `tsc --noEmit`/`eslint`/`npm run build` sạch.
+
+      CHƯA LÀM: AuditLog vẫn chưa tự dọn bản ghi cũ (bảng sẽ phình dần — cần
+      quyết định thời hạn lưu trước); chưa hook nhật ký cho FAQ/trang tĩnh
+      (2 nhóm nội dung tĩnh, ít rủi ro hơn hẳn 4 nhóm trên); và ảnh cũ bị thay
+      vẫn nằm lại trên Supabase Storage (không ai trỏ tới nữa) — dọn thì phải
+      lọc file trong bucket không xuất hiện ở ProductImage/Banner/Brand.logoUrl/
+      Category.imageUrl.
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -5655,18 +5737,18 @@
       trạng thái đơn; khách xem được ở /orders/[id] và ở trang tra cứu. Còn
       thiếu: link tra cứu sang website hãng (chưa xác minh được mẫu URL) và
       timeline từng chặng.
-- [x] **`AuditLog`** — ĐÃ LÀM: ghi nhật ký 12 loại thao tác quản trị + trang
-      `/admin/audit-logs` lọc theo thao tác/đối tượng/người làm. Còn thiếu: chưa
-      hook vào CRUD danh mục/thương hiệu/cửa hàng/khuyến mãi, và chưa tự dọn
-      bản ghi cũ (bảng sẽ phình dần).
+- [x] **`AuditLog`** — ĐÃ LÀM: ghi nhật ký 24 loại thao tác quản trị (gồm cả
+      CRUD danh mục/thương hiệu/cửa hàng/khuyến mãi) + trang `/admin/audit-logs`
+      lọc theo thao tác/đối tượng/người làm. Còn thiếu: chưa hook FAQ/trang
+      tĩnh, và chưa tự dọn bản ghi cũ (bảng sẽ phình dần).
 - [x] **Tin tức/blog** và **Hỏi–đáp (Q&A) dưới sản phẩm** — ĐÃ LÀM (xem phần
       Tiến độ).
 - [x] **Trang thương hiệu** và **danh mục con thật** — ĐÃ LÀM ĐẦY ĐỦ (2 mục
       cuối phần Tiến độ): 9 danh mục con (iPhone 15 Series, Laptop gaming,
       Tivi QLED...) dùng `Category.parentId` kèm icon riêng từng mục, và
       `/thuong-hieu` + `/thuong-hieu/[slug]` gom hàng của từng hãng ở MỌI danh
-      mục, có logo thật cả 9 hãng + bộ lọc giá/thông số + ô sắp xếp. Còn
-      thiếu: admin chưa upload logo qua UI (mới dán URL thủ công).
+      mục, có logo thật cả 9 hãng + bộ lọc giá/thông số + ô sắp xếp, và admin
+      tự upload được logo hãng/ảnh danh mục qua UI.
 - [x] **Mã giảm giá phải tự biết mới nhập được** — ĐÃ LÀM TRỌN: /checkout liệt kê
       sẵn mã đang chạy (bấm là áp), /admin/coupons quản lý mã đầy đủ, và cờ
       `isPublic` cho phép tạo mã riêng không lộ công khai. Chưa làm: tìm kiếm/

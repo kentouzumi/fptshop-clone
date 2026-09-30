@@ -28,6 +28,18 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   CREATE_POST: "Tạo bài viết",
   UPDATE_POST: "Sửa bài viết",
   DELETE_POST: "Xóa bài viết",
+  CREATE_CATEGORY: "Tạo danh mục",
+  UPDATE_CATEGORY: "Sửa danh mục",
+  DELETE_CATEGORY: "Xóa danh mục",
+  CREATE_BRAND: "Tạo thương hiệu",
+  UPDATE_BRAND: "Sửa thương hiệu",
+  DELETE_BRAND: "Xóa thương hiệu",
+  CREATE_STORE: "Tạo cửa hàng",
+  UPDATE_STORE: "Sửa cửa hàng",
+  DELETE_STORE: "Xóa cửa hàng",
+  CREATE_PROMOTION: "Tạo khuyến mãi",
+  UPDATE_PROMOTION: "Sửa khuyến mãi",
+  DELETE_PROMOTION: "Xóa khuyến mãi",
 };
 
 export const AUDIT_ENTITY_LABELS: Record<string, string> = {
@@ -38,6 +50,10 @@ export const AUDIT_ENTITY_LABELS: Record<string, string> = {
   User: "Người dùng",
   Coupon: "Mã giảm giá",
   Post: "Bài viết",
+  Category: "Danh mục",
+  Brand: "Thương hiệu",
+  Store: "Cửa hàng",
+  Promotion: "Khuyến mãi",
 };
 
 export interface AuditInput {

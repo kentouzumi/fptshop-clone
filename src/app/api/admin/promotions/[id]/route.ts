@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { logAudit } from "@/lib/audit";
 import { parsePromotionInput, updatePromotion, deletePromotion } from "@/lib/promotions";
 
 export async function PATCH(
@@ -21,7 +23,23 @@ export async function PATCH(
     );
   }
 
+  const before = await prisma.promotion.findUnique({
+    where: { id },
+    select: { title: true, isActive: true },
+  });
   const promotion = await updatePromotion(id, input);
+  await logAudit({
+    userId: admin.id,
+    action: "UPDATE_PROMOTION",
+    entityType: "Promotion",
+    entityId: promotion.id,
+    metadata: {
+      titleFrom: before?.title ?? null,
+      titleTo: promotion.title,
+      isActiveFrom: before?.isActive ?? null,
+      isActiveTo: promotion.isActive,
+    },
+  });
   return NextResponse.json(promotion);
 }
 
@@ -35,6 +53,14 @@ export async function DELETE(
   }
 
   const { id } = await params;
+  const before = await prisma.promotion.findUnique({ where: { id }, select: { title: true } });
   await deletePromotion(id);
+  await logAudit({
+    userId: admin.id,
+    action: "DELETE_PROMOTION",
+    entityType: "Promotion",
+    entityId: id,
+    metadata: { title: before?.title ?? null },
+  });
   return NextResponse.json({ ok: true });
 }

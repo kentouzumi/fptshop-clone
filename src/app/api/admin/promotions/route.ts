@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import { parsePromotionInput, createPromotion } from "@/lib/promotions";
 
 export async function POST(request: Request) {
@@ -18,5 +19,12 @@ export async function POST(request: Request) {
   }
 
   const promotion = await createPromotion(input);
+  await logAudit({
+    userId: admin.id,
+    action: "CREATE_PROMOTION",
+    entityType: "Promotion",
+    entityId: promotion.id,
+    metadata: { title: promotion.title },
+  });
   return NextResponse.json(promotion, { status: 201 });
 }

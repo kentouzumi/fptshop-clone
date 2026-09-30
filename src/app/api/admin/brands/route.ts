@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import { parseBrandInput, createBrand } from "@/lib/brands";
 
 export async function POST(request: Request) {
@@ -19,6 +20,13 @@ export async function POST(request: Request) {
 
   try {
     const brand = await createBrand(input);
+    await logAudit({
+      userId: admin.id,
+      action: "CREATE_BRAND",
+      entityType: "Brand",
+      entityId: brand.id,
+      metadata: { name: brand.name, slug: brand.slug },
+    });
     return NextResponse.json(brand, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 409 });

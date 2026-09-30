@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import { parseStoreInput, createStore } from "@/lib/stores";
 
 export async function POST(request: Request) {
@@ -18,5 +19,12 @@ export async function POST(request: Request) {
   }
 
   const store = await createStore(input);
+  await logAudit({
+    userId: admin.id,
+    action: "CREATE_STORE",
+    entityType: "Store",
+    entityId: store.id,
+    metadata: { name: store.name, province: store.province },
+  });
   return NextResponse.json(store, { status: 201 });
 }

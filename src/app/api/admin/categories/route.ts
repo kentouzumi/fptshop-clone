@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import { parseCategoryInput, createCategory } from "@/lib/categories";
 
 export async function POST(request: Request) {
@@ -19,6 +20,13 @@ export async function POST(request: Request) {
 
   try {
     const category = await createCategory(input);
+    await logAudit({
+      userId: admin.id,
+      action: "CREATE_CATEGORY",
+      entityType: "Category",
+      entityId: category.id,
+      metadata: { name: category.name, slug: category.slug, parentId: category.parentId },
+    });
     return NextResponse.json(category, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 409 });
