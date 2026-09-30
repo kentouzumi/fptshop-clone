@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import ImageUploadField from "../ImageUploadField";
 
 type Option = { id: string; name: string };
 
@@ -116,25 +117,23 @@ export default function CategoryForm({
         </select>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1 block text-sm font-medium">Ảnh (URL, không bắt buộc)</label>
-          <input
-            className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-            placeholder="https://..."
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium">Thứ tự hiển thị</label>
-          <input
-            type="number"
-            className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2"
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value)}
-          />
-        </div>
+      <ImageUploadField
+        label="Ảnh danh mục (không bắt buộc)"
+        value={imageUrl}
+        onChange={setImageUrl}
+        folder="categories"
+        previewClassName="h-16 w-16"
+        hint="Hiện ở lưới danh mục trang chủ và làm icon trong menu Danh mục. Để trống thì dùng icon vẽ sẵn."
+      />
+
+      <div>
+        <label className="mb-1 block text-sm font-medium">Thứ tự hiển thị</label>
+        <input
+          type="number"
+          className="bg-white text-zinc-900 w-full max-w-[12rem] rounded-lg border border-zinc-300 px-3 py-2"
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value)}
+        />
       </div>
 
       <label className="flex items-center gap-2 text-sm">

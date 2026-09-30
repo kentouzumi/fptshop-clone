@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -111,8 +112,16 @@ export default async function Home() {
             <Link
               key={c.id}
               href={`/products?category=${c.slug}`}
-              className="card flex items-center justify-center p-6 text-center font-medium text-zinc-700 transition hover:-translate-y-0.5 hover:text-zinc-900 hover:shadow-lg"
+              className="card flex flex-col items-center justify-center gap-3 p-6 text-center font-medium text-zinc-700 transition hover:-translate-y-0.5 hover:text-zinc-900 hover:shadow-lg"
             >
+              {/* Ảnh danh mục (admin tự gán qua /admin/categories) — không có
+                  thì thẻ giữ nguyên dạng chỉ-có-chữ như trước, không dựng
+                  khung ảnh rỗng. */}
+              {c.imageUrl && (
+                <span className="relative block h-20 w-20 overflow-hidden rounded-xl bg-zinc-950">
+                  <Image src={c.imageUrl} alt="" fill sizes="80px" className="object-contain p-2" />
+                </span>
+              )}
               {c.name}
             </Link>
           ))}

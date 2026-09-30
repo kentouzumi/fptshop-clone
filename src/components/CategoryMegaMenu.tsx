@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 interface CategoryItem {
   id: string;
   name: string;
   slug: string;
-  children: { id: string; name: string; slug: string }[];
+  imageUrl: string | null;
+  children: { id: string; name: string; slug: string; imageUrl: string | null }[];
 }
 
 interface BrandItem {
@@ -111,6 +113,37 @@ const SUBCATEGORY_ICONS: Record<string, React.ReactNode> = {
   ),
 };
 
+/**
+ * Ảnh danh mục do admin tải lên ĐƯỢC ƯU TIÊN hơn icon vẽ sẵn.
+ *
+ * Bảng icon SVG bên trên chỉ phủ 9 danh mục con hiện có (hard-code theo slug)
+ * — danh mục admin tự tạo sau này không có trong đó và sẽ rơi về icon mũi tên
+ * mặc định. `Category.imageUrl` là đường để admin tự gán ảnh mà không phải sửa
+ * code; trước đợt này nó là field CHẾT: lưu được, sửa được trong form, nhưng
+ * không hiển thị ở đâu cả.
+ *
+ * Nền sáng (bg-zinc-950 = #fbf7ef, bề mặt sáng nhất của theme tối — không
+ * phải "gần đen" như tên gọi) vì ảnh danh mục thường là ảnh sản phẩm nền
+ * trắng hoặc icon nét đen.
+ */
+function CategoryIcon({
+  imageUrl,
+  fallback,
+}: {
+  imageUrl: string | null;
+  fallback: React.ReactNode;
+}) {
+  if (!imageUrl) return <>{fallback}</>;
+  // alt rỗng là CỐ Ý: tên danh mục đã nằm ngay cạnh dưới dạng chữ, đặt alt
+  // trùng tên sẽ khiến trình đọc màn hình đọc tên hai lần. Đây là ảnh trang
+  // trí theo đúng nghĩa của thuộc tính alt rỗng.
+  return (
+    <span className="relative block h-5 w-5 overflow-hidden rounded bg-zinc-950">
+      <Image src={imageUrl} alt="" fill sizes="20px" className="object-contain p-0.5" />
+    </span>
+  );
+}
+
 const DEFAULT_SUB_ICON = (
   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" />
@@ -174,7 +207,12 @@ export default function CategoryMegaMenu({
                     : "text-zinc-600 hover:bg-white hover:text-zinc-900"
                 }`}
               >
-                <span className="shrink-0 text-zinc-500">{CATEGORY_ICONS[c.slug] ?? DEFAULT_ICON}</span>
+                <span className="shrink-0 text-zinc-500">
+                  <CategoryIcon
+                    imageUrl={c.imageUrl}
+                    fallback={CATEGORY_ICONS[c.slug] ?? DEFAULT_ICON}
+                  />
+                </span>
                 {c.name}
               </Link>
             ))}
@@ -192,7 +230,10 @@ export default function CategoryMegaMenu({
                         className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900"
                       >
                         <span className="shrink-0 text-zinc-400">
-                          {SUBCATEGORY_ICONS[c.slug] ?? DEFAULT_SUB_ICON}
+                          <CategoryIcon
+                            imageUrl={c.imageUrl}
+                            fallback={SUBCATEGORY_ICONS[c.slug] ?? DEFAULT_SUB_ICON}
+                          />
                         </span>
                         {c.name}
                       </Link>

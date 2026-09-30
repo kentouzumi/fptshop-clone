@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
-import { uploadProductImage, isAllowedImageType } from "@/lib/supabaseStorage";
+import { uploadAdminImage, isAllowedImageType } from "@/lib/supabaseStorage";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -12,6 +12,10 @@ export async function POST(request: Request) {
 
   const formData = await request.formData().catch(() => null);
   const file = formData?.get("file");
+  // Chỉ là TÊN NGẮN ("brands"/"categories"), được ánh xạ sang đường dẫn thật
+  // ở lib/supabaseStorage.ts — không ghép thẳng vào path (xem ghi chú ở đó).
+  const folderRaw = formData?.get("folder");
+  const folder = typeof folderRaw === "string" ? folderRaw : undefined;
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Thiếu file ảnh." }, { status: 400 });
@@ -27,7 +31,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const url = await uploadProductImage(file);
+    const url = await uploadAdminImage(file, folder);
     return NextResponse.json({ url });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });

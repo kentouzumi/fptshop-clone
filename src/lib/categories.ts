@@ -50,7 +50,7 @@ export const getActiveCategoryTree = unstable_cache(
         children: {
           where: { isActive: true },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-          select: { id: true, name: true, slug: true },
+          select: { id: true, name: true, slug: true, imageUrl: true },
         },
       },
     }),

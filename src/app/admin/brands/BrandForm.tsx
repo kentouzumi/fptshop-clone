@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import ImageUploadField from "../ImageUploadField";
 
 export interface BrandFormValues {
   id?: string;
@@ -83,15 +84,13 @@ export default function BrandForm({ initial }: { initial?: BrandFormValues }) {
         />
       </div>
 
-      <div>
-        <label className="mb-1 block text-sm font-medium">Logo (URL, không bắt buộc)</label>
-        <input
-          className="bg-white text-zinc-900 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-          placeholder="https://..."
-          value={logoUrl}
-          onChange={(e) => setLogoUrl(e.target.value)}
-        />
-      </div>
+      <ImageUploadField
+        label="Logo thương hiệu (không bắt buộc)"
+        value={logoUrl}
+        onChange={setLogoUrl}
+        folder="brands"
+        hint="Nên dùng ảnh nền trong suốt (PNG). Logo hiện trên ô nền sáng ở trang /thuong-hieu."
+      />
 
       <div>
         <label className="mb-1 block text-sm font-medium">

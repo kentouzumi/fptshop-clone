@@ -57,10 +57,23 @@ async function uploadToBucket(file: File, folder?: string): Promise<string> {
   return data.publicUrl;
 }
 
-export async function uploadProductImage(file: File): Promise<string> {
-  return uploadToBucket(file);
-}
-
 export async function uploadReviewImage(file: File): Promise<string> {
   return uploadToBucket(file, "reviews");
+}
+
+/**
+ * Thư mục hợp lệ cho ảnh admin upload, theo TÊN NGẮN chứ không phải đường dẫn
+ * client tự gửi. Route /api/admin/upload nhận `folder` từ form, mà giá trị đó
+ * đi thẳng vào path trên Storage — nhận tự do thì client gửi được "../" hay
+ * tên thư mục bất kỳ và rải file khắp bucket. Ánh xạ qua bảng này nên giá trị
+ * lạ chỉ đơn giản là không khớp, rơi về thư mục gốc như trước.
+ */
+const ADMIN_UPLOAD_FOLDERS: Record<string, string> = {
+  brands: "catalog/brands",
+  categories: "catalog/categories",
+};
+
+export async function uploadAdminImage(file: File, folderKey?: string): Promise<string> {
+  const folder = folderKey ? ADMIN_UPLOAD_FOLDERS[folderKey] : undefined;
+  return uploadToBucket(file, folder);
 }
