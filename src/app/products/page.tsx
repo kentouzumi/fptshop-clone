@@ -7,7 +7,7 @@ import { getActiveCategoryBySlug } from "@/lib/categories";
 import ProductCard from "@/components/ProductCard";
 import SortSelect from "./SortSelect";
 import FilterSidebar from "./FilterSidebar";
-import { resolveFilterParams } from "./filterParams";
+import { resolveFilterParams, pageWindow } from "./filterParams";
 import { getOutOfStockProductIds } from "@/lib/inventory";
 
 function buildHref(
@@ -132,7 +132,6 @@ export default async function ProductsPage({
     minPrice,
     maxPrice,
     inStockOnly,
-    excludeProductIds,
   } = await resolveFilterParams(params, params.category);
 
   // Bộ lọc "Hãng sản xuất" phụ thuộc danh mục đang xem: chỉ hiện hãng THẬT SỰ
@@ -156,7 +155,7 @@ export default async function ProductsPage({
       minPrice,
       maxPrice,
       attributeFilters,
-      excludeProductIds,
+      inStockOnly,
       sort,
       page,
     }),
@@ -271,19 +270,28 @@ export default async function ProductsPage({
 
           {totalPages > 1 && (
             <div className="mt-10 flex justify-center gap-2">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-                <Link
-                  key={n}
-                  href={buildHref(currentFilters, { page: n === 1 ? undefined : String(n) })}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
-                    n === page
-                      ? "bg-zinc-900 text-white"
-                      : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
-                  }`}
-                >
-                  {n}
-                </Link>
-              ))}
+              {pageWindow(page, totalPages).map((n, i) =>
+                n === null ? (
+                  <span
+                    key={`gap-${i}`}
+                    className="flex h-9 w-9 items-center justify-center text-sm text-zinc-400"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <Link
+                    key={n}
+                    href={buildHref(currentFilters, { page: n === 1 ? undefined : String(n) })}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
+                      n === page
+                        ? "bg-zinc-900 text-white"
+                        : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                    }`}
+                  >
+                    {n}
+                  </Link>
+                )
+              )}
             </div>
           )}
         </div>

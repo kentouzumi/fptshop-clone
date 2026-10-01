@@ -7,7 +7,7 @@ import { getBrandPageData } from "@/lib/brands";
 import { getProducts } from "@/lib/products";
 import FilterSidebar from "@/app/products/FilterSidebar";
 import SortSelect from "@/app/products/SortSelect";
-import { resolveFilterParams } from "@/app/products/filterParams";
+import { resolveFilterParams, pageWindow } from "@/app/products/filterParams";
 import { getCurrentUser } from "@/lib/auth";
 import { getWishlistedProductIds } from "@/lib/wishlist";
 import { getOutOfStockProductIds } from "@/lib/inventory";
@@ -112,7 +112,6 @@ export default async function BrandPage({
     minPrice,
     maxPrice,
     inStockOnly,
-    excludeProductIds,
   } = await resolveFilterParams(query, activeCategory, brand.slug);
 
   const [{ products, totalPages }, currentUser] = await Promise.all([
@@ -122,7 +121,7 @@ export default async function BrandPage({
       attributeFilters,
       minPrice,
       maxPrice,
-      excludeProductIds,
+      inStockOnly,
       sort,
       page,
       limit: 12,
@@ -291,19 +290,28 @@ export default async function BrandPage({
 
           {totalPages > 1 && (
             <div className="mt-10 flex justify-center gap-2">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-                <Link
-                  key={n}
-                  href={hrefFor({ page: n === 1 ? undefined : String(n) })}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
-                    n === page
-                      ? "bg-zinc-900 text-white"
-                      : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
-                  }`}
-                >
-                  {n}
-                </Link>
-              ))}
+              {pageWindow(page, totalPages).map((n, i) =>
+                n === null ? (
+                  <span
+                    key={`gap-${i}`}
+                    className="flex h-9 w-9 items-center justify-center text-sm text-zinc-400"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <Link
+                    key={n}
+                    href={hrefFor({ page: n === 1 ? undefined : String(n) })}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
+                      n === page
+                        ? "bg-zinc-900 text-white"
+                        : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                    }`}
+                  >
+                    {n}
+                  </Link>
+                )
+              )}
             </div>
           )}
         </div>

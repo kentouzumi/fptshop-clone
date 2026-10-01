@@ -278,57 +278,61 @@ export const EMPTY_VARIANT_STOCK: VariantStockInfo = { total: 0, deliverable: 0,
  *   đang hoạt động. Còn hàng ở 1 cửa hàng lẻ vẫn mua được qua "Nhận tại cửa
  *   hàng" nên không tính là hết.
  */
-export async function getOutOfStockProductIds(productIds: string[]): Promise<Set<string>> {
-  if (productIds.length === 0) return new Set();
-  return collectOutOfStockProductIds(productIds);
+/**
+ * Điều kiện Prisma cho "sản phẩm đã HẾT HÀNG" — dùng CHUNG cho cả badge trên
+ * card lẫn bộ lọc "Chỉ hiện hàng còn". Hai chỗ đó phải dựa trên ĐÚNG một định
+ * nghĩa, nếu không sẽ có sản phẩm bị gắn nhãn hết hàng mà vẫn hiện khi lọc
+ * hàng còn (và ngược lại).
+ *
+ * Định nghĩa: CÓ biến thể đang bán, nhưng KHÔNG biến thể nào còn hàng ở cửa
+ * hàng đang hoạt động. Sản phẩm không có biến thể đang bán KHÔNG bị gắn hết
+ * hàng — nó không mua được vì lý do khác, và nút mua ở trang chi tiết đã tự
+ * khóa sẵn.
+ *
+ * Trả `null` khi không còn cửa hàng nào hoạt động: lúc đó
+ * reserveStockOrThrow() cũng BỎ QUA kiểm tra tồn kho (fail-open, xem ghi chú
+ * ở resolveInventoryStoreId), nên không được gắn hết hàng cho cả catalog.
+ *
+ * Dùng `quantity > 0` thay cho SUM(quantity) > 0: tồn kho luôn không âm
+ * (setInventoryQuantity chặn số âm, reserveStockOrThrow chỉ trừ sau khi đã
+ * kiểm tra đủ hàng) nên hai cách tương đương — mà cách này chạy được ở tầng
+ * SQL dưới dạng EXISTS, không phải kéo mọi dòng Inventory về cộng bằng JS.
+ */
+export async function getOutOfStockWhere(): Promise<Prisma.ProductWhereInput | null> {
+  const activeStoreCount = await prisma.store.count({ where: { isActive: true } });
+  if (activeStoreCount === 0) return null;
+
+  return {
+    variants: { some: { isActive: true } },
+    NOT: {
+      variants: {
+        some: {
+          isActive: true,
+          // Biến thể chưa có dòng Inventory nào thì không khớp -> coi như 0,
+          // khớp với việc reserveStockOrThrow() đọc `?? 0` rồi chặn.
+          inventories: { some: { quantity: { gt: 0 }, store: { isActive: true } } },
+        },
+      },
+    },
+  };
 }
 
 /**
- * Như trên nhưng quét TOÀN BỘ sản phẩm thay vì một danh sách id cho trước —
- * dùng cho bộ lọc "Chỉ hiện hàng còn" ở /products, nơi phải loại sản phẩm hết
- * hàng NGAY TRONG truy vấn thì phân trang mới đúng (lọc sau khi phân trang sẽ
- * ra trang thiếu sản phẩm và tổng số trang sai).
+ * Các sản phẩm đã hết hàng trong một danh sách id cho trước — dùng để gắn
+ * badge "Hết hàng" lên card. Bị giới hạn bởi số card đang hiển thị trên trang
+ * nên luôn là truy vấn nhỏ.
  *
  * KHÔNG cache: tồn kho đổi theo từng đơn hàng.
  */
-export async function getAllOutOfStockProductIds(): Promise<Set<string>> {
-  return collectOutOfStockProductIds(null);
-}
+export async function getOutOfStockProductIds(productIds: string[]): Promise<Set<string>> {
+  if (productIds.length === 0) return new Set();
 
-async function collectOutOfStockProductIds(productIds: string[] | null): Promise<Set<string>> {
-  const [activeStoreCount, variants] = await Promise.all([
-    prisma.store.count({ where: { isActive: true } }),
-    prisma.productVariant.findMany({
-      where: {
-        ...(productIds ? { productId: { in: productIds } } : {}),
-        isActive: true,
-      },
-      select: {
-        productId: true,
-        inventories: {
-          where: { store: { isActive: true } },
-          select: { quantity: true },
-        },
-      },
-    }),
-  ]);
+  const outOfStockWhere = await getOutOfStockWhere();
+  if (!outOfStockWhere) return new Set();
 
-  if (activeStoreCount === 0) return new Set();
-
-  // Biến thể chưa có dòng Inventory nào -> tổng 0, khớp với việc
-  // reserveStockOrThrow() đọc `inventory?.quantity ?? 0` rồi chặn.
-  const hasStockByProduct = new Map<string, boolean>();
-  for (const variant of variants) {
-    const total = variant.inventories.reduce((sum, row) => sum + row.quantity, 0);
-    hasStockByProduct.set(
-      variant.productId,
-      (hasStockByProduct.get(variant.productId) ?? false) || total > 0
-    );
-  }
-
-  const outOfStock = new Set<string>();
-  for (const [productId, hasStock] of hasStockByProduct) {
-    if (!hasStock) outOfStock.add(productId);
-  }
-  return outOfStock;
+  const rows = await prisma.product.findMany({
+    where: { id: { in: productIds }, ...outOfStockWhere },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => r.id));
 }

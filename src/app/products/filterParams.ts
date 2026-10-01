@@ -1,5 +1,4 @@
 import { getAttributeFacets, type AttributeFacet, type ProductSort } from "@/lib/products";
-import { getAllOutOfStockProductIds } from "@/lib/inventory";
 
 /**
  * Giải mã tham số bộ lọc trên URL thành dữ liệu cho getProducts() +
@@ -39,7 +38,37 @@ export interface ResolvedFilters {
   minPrice: number | undefined;
   maxPrice: number | undefined;
   inStockOnly: boolean;
-  excludeProductIds: string[] | undefined;
+}
+
+/**
+ * Dãy số trang nên hiện, có cắt bớt ở giữa (`null` = chỗ đặt dấu "…").
+ *
+ * Hai trang lưới trước đó render MỘT LINK CHO MỖI TRANG
+ * (`Array.from({ length: totalPages })`). MAX_PRODUCT_PAGE đã chặn con số đó
+ * không còn lên hàng chục nghìn, nhưng 50 link liền nhau vẫn vô dụng để bấm —
+ * nên chỉ hiện trang đầu, trang cuối và một cửa sổ quanh trang hiện tại.
+ */
+export function pageWindow(current: number, total: number, span = 2): (number | null)[] {
+  // Kẹp `current` vào [1, total]: URL gõ tay kiểu ?page=999 trên danh sách 5
+  // trang sẽ làm cả cửa sổ rơi ra ngoài phạm vi, chỉ còn trang đầu và trang
+  // cuối — ra "1 … 5", trông như các trang ở giữa bị ẩn vì lý do nào đó.
+  const cur = Math.min(Math.max(1, current), Math.max(1, total));
+
+  const keep = new Set<number>([1, total, cur]);
+  for (let i = 1; i <= span; i++) {
+    keep.add(cur - i);
+    keep.add(cur + i);
+  }
+
+  const pages = [...keep].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
+  const out: (number | null)[] = [];
+  let prev = 0;
+  for (const p of pages) {
+    if (prev > 0 && p - prev > 1) out.push(null);
+    out.push(p);
+    prev = p;
+  }
+  return out;
 }
 
 export async function resolveFilterParams(
@@ -79,14 +108,10 @@ export async function resolveFilterParams(
     if (values.length > 0) attributeFilters[facet.attrName] = values;
   }
 
-  // Tồn kho phải biết TRƯỚC khi truy vấn để loại ngay trong where — lọc sau
-  // khi đã lấy trang sẽ làm mỗi trang thiếu sản phẩm và tổng số trang sai.
-  // Sắp xếp id để khóa cache của getProducts() ổn định (thứ tự Prisma trả về
-  // không đảm bảo).
+  // Chỉ là cờ bật/tắt: điều kiện tồn kho giờ được đẩy thẳng vào where của
+  // getProducts() dưới dạng EXISTS, không còn phải tra trước danh sách id hết
+  // hàng rồi truyền vào (xem GetProductsParams.inStockOnly).
   const inStockOnly = params.instock === "1";
-  const excludeProductIds = inStockOnly
-    ? [...(await getAllOutOfStockProductIds())].sort()
-    : undefined;
 
   const activePriceKey =
     PRICE_RANGES.find(
@@ -106,6 +131,5 @@ export async function resolveFilterParams(
     minPrice: params.minPrice ? Number(params.minPrice) : undefined,
     maxPrice: params.maxPrice ? Number(params.maxPrice) : undefined,
     inStockOnly,
-    excludeProductIds,
   };
 }

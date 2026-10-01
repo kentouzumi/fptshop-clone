@@ -10,6 +10,7 @@ import { getProducts } from "@/lib/products";
 import { getRelatedProductGroups, getFrequentlyBoughtTogether } from "@/lib/productRelations";
 import ComboBuyBox from "./ComboBuyBox";
 import { getProductReviews, getUserReviewForProduct } from "@/lib/reviews";
+import { pageWindow } from "@/app/products/filterParams";
 import { isInWishlist, getWishlistedProductIds } from "@/lib/wishlist";
 import { getCurrentUser } from "@/lib/auth";
 import ProductGalleryAndBuy from "./ProductGalleryAndBuy";
@@ -95,10 +96,14 @@ export async function generateMetadata({
 
 export default async function ProductDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const { slug } = await params;
+  const query = await searchParams;
+  const reviewPage = Math.max(1, Number(query.review_page ?? "1") || 1);
 
   const product = await getProductBySlug(slug);
 
@@ -158,7 +163,7 @@ export default async function ProductDetailPage({
   ];
 
   const [
-    { reviews, count: reviewCount, average: averageRating },
+    { reviews, count: reviewCount, average: averageRating, totalPages: reviewTotalPages },
     userReview,
     inWishlist,
     cardWishlistedIds,
@@ -166,7 +171,7 @@ export default async function ProductDetailPage({
     cardOutOfStockIds,
     qaQuestions,
   ] = await Promise.all([
-    getProductReviews(product.id, currentUser?.id),
+    getProductReviews(product.id, currentUser?.id, reviewPage),
     currentUser ? getUserReviewForProduct(currentUser.id, product.id) : Promise.resolve(null),
     currentUser ? isInWishlist(currentUser.id, product.id) : Promise.resolve(false),
     currentUser
@@ -386,7 +391,9 @@ export default async function ProductDetailPage({
           }))}
         />
 
-        <h2 className="mb-3 mt-10 text-lg font-semibold tracking-tight">Đánh giá sản phẩm</h2>
+        <h2 id="danh-gia" className="mb-3 mt-10 text-lg font-semibold tracking-tight">
+          Đánh giá sản phẩm
+        </h2>
         <div className="mb-4 flex items-center gap-3">
           <StarRating rating={averageRating} size="text-xl" />
           <span className="text-sm text-zinc-600">
@@ -453,6 +460,37 @@ export default async function ProductDetailPage({
                 />
               </div>
             ))}
+
+            {reviewTotalPages > 1 && (
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                {pageWindow(reviewPage, reviewTotalPages).map((n, i) =>
+                  n === null ? (
+                    <span
+                      key={`gap-${i}`}
+                      className="flex h-9 w-9 items-center justify-center text-sm text-zinc-400"
+                    >
+                      …
+                    </span>
+                  ) : (
+                    <a
+                      key={n}
+                      href={
+                        n === 1
+                          ? `/products/${product.slug}#danh-gia`
+                          : `/products/${product.slug}?review_page=${n}#danh-gia`
+                      }
+                      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition ${
+                        n === reviewPage
+                          ? "bg-zinc-900 text-white"
+                          : "border border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                      }`}
+                    >
+                      {n}
+                    </a>
+                  )
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>

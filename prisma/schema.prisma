@@ -578,7 +578,10 @@ model Review {
   images  ReviewImage[]
   votes   ReviewVote[]
 
-  @@index([productId, isVisible])
+  // Truy vấn phân trang đánh giá sắp theo createdAt desc, nên cột này phải
+  // nằm trong index — nếu không, mỗi trang vẫn phải Sort toàn bộ đánh giá
+  // của sản phẩm trước khi lấy ra 10 dòng.
+  @@index([productId, isVisible, createdAt])
   @@unique([productId, userId])
 }
 

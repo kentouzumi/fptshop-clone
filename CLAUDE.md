@@ -5767,6 +5767,126 @@
       CÒN LẠI (Giai đoạn 2-3, chưa làm — xem mục "Khoảng cách chịu tải" bên
       dưới để biết chi tiết và lý do xếp thứ tự).
 
+- [x] Giai đoạn 2 của việc chịu tải — 5 việc, không đụng tới dữ liệu, chỉ viết
+      lại truy vấn + chặn các chỗ không có giới hạn trên.
+
+      **1. Bộ lọc "Chỉ hiện hàng còn" — đẩy vào where dưới dạng EXISTS.** Bản
+      cũ: `getAllOutOfStockProductIds()` load MỌI biến thể active kèm toàn bộ
+      dòng Inventory, cộng dồn bằng JS, rồi filterParams truyền danh sách id
+      vào `getProducts({ excludeProductIds })` → `id: { notIn: [...] }`. Hai
+      hệ quả cùng lúc ở quy mô lớn: câu SQL mang theo hàng trăm nghìn id dạng
+      literal, VÀ cả danh sách đó lọt vào khóa cache của `unstable_cache`.
+      Giờ có `getOutOfStockWhere()` (lib/inventory.ts) trả về MỘT
+      `Prisma.ProductWhereInput` dùng CHUNG cho cả badge "Hết hàng" trên card
+      lẫn bộ lọc — hai chỗ đó phải dựa trên đúng một định nghĩa, nếu không sẽ
+      có sản phẩm bị gắn nhãn hết hàng mà vẫn hiện khi lọc hàng còn.
+      `GetProductsParams.excludeProductIds` đổi thành `inStockOnly: boolean`.
+
+      3 chi tiết BẮT BUỘC phải giữ đúng khi đổi sang EXISTS, đều đã test riêng:
+      + Dùng `quantity > 0` thay cho `SUM(quantity) > 0` — tương đương vì tồn
+        kho luôn không âm (setInventoryQuantity chặn số âm, reserveStockOrThrow
+        chỉ trừ sau khi kiểm tra đủ hàng), mà cách này chạy được ở tầng SQL.
+      + Sản phẩm KHÔNG có biến thể đang bán vẫn KHÔNG bị gắn hết hàng (hành vi
+        cũ). Nên điều kiện là `NOT(có biến thể đang bán AND không biến thể nào
+        còn hàng)`, chứ không phải `NOT(có biến thể còn hàng)` — viết cách sau
+        là đổi hành vi một cách âm thầm.
+      + FAIL-OPEN khi không còn cửa hàng nào hoạt động: `getOutOfStockWhere()`
+        trả `null` và bên gọi bỏ qua điều kiện. ĐÂY LÀ CHỖ DỄ ĐẢO NGƯỢC HÀNH VI
+        NHẤT — nếu chỉ dịch thẳng sang EXISTS thì không cửa hàng nào active
+        nghĩa là không dòng Inventory nào khớp `store.isActive`, tức MỌI sản
+        phẩm thành hết hàng và bộ lọc trả về rỗng, ngược hẳn với bản cũ (và
+        ngược với việc reserveStockOrThrow() cũng fail-open ở đúng trường hợp
+        đó). Đã test riêng ca này bằng cách tắt cả 2 cửa hàng rồi khôi phục.
+
+      **2. `getBrandsByCategory()` — groupBy thay vì load toàn bộ sản phẩm.**
+      Bản cũ `findMany` trên MỌI sản phẩm active (không `take`) chỉ để dựng
+      danh sách hãng, mà hàm này nằm trong Header nên chạy ở mọi trang: 1 triệu
+      sản phẩm = 1 triệu dòng vào RAM Node mỗi lần cache miss. Giờ
+      `groupBy({ by: ["categoryId", "brandId"] })` trả về đúng một dòng cho mỗi
+      cặp khác nhau — bị giới hạn bởi số danh mục × số thương hiệu, KHÔNG phải
+      số sản phẩm. Category/Brand load hết rồi tra bằng Map (2 bảng nhỏ, rẻ hơn
+      join lặp trên từng dòng sản phẩm). Logic cộng hãng lên danh mục CHA giữ
+      nguyên.
+
+      **3. Trần số trang + phân trang có cắt bớt.** OFFSET buộc Postgres đi qua
+      rồi BỎ mọi dòng bị skip. Nhưng phát hiện thêm một thứ tệ hơn trong lúc
+      làm: UI phân trang ở CẢ /products LẪN /thuong-hieu/[slug] render MỘT LINK
+      CHO MỖI TRANG (`Array.from({ length: totalPages })`) — 1 triệu sản phẩm
+      là hơn 83.000 thẻ `<a>` trong HTML của đúng một trang. Thêm
+      `MAX_PRODUCT_PAGE = 50` (kẹp cả `page` lẫn `totalPages`) và
+      `pageWindow(current, total)` (filterParams.ts) trả về trang đầu + trang
+      cuối + cửa sổ quanh trang hiện tại, `null` là chỗ đặt dấu "…".
+      Chọn chặn 50 trang thay vì làm keyset/cursor: các URL có tham số phân
+      trang đều đã noindex nên không ảnh hưởng SEO, và đi sâu hơn 600 sản phẩm
+      bằng cách bấm "trang sau" không phải cách ai thật sự tìm hàng — đó là
+      việc của bộ lọc và ô tìm kiếm.
+
+      **4. `getProductReviews()` — phân trang + đếm vote bằng groupBy.** Bản cũ
+      load TOÀN BỘ đánh giá của sản phẩm kèm TOÀN BỘ `votes` của từng đánh giá
+      rồi đếm bằng JS. Giờ: tổng số + điểm trung bình bằng `aggregate` ở tầng
+      SQL (2 con số, không phụ thuộc số đánh giá), chỉ load 10 đánh giá
+      (`REVIEWS_PER_PAGE`), số lượt vote bằng `groupBy` trên ĐÚNG các đánh giá
+      của trang đó, và lựa chọn vote của người đang xem là 1 truy vấn riêng
+      cũng bó trong trang đó.
+      UI: trang chi tiết nhận thêm `searchParams`, phân trang qua
+      `?review_page=N` + neo `#danh-gia` để bấm đổi trang không bị kéo về đầu
+      trang sản phẩm. Dùng `<a>` thường chứ không `<Link>` vì cần neo hoạt
+      động. SEO an toàn vì canonical của trang này đã cố định về
+      `/products/<slug>` từ đợt SEO, nên `?review_page=2` không sinh URL trùng
+      nội dung trong mắt Google.
+      Đổi index `Review(productId, isVisible)` thành
+      `(productId, isVisible, createdAt)` — truy vấn phân trang sắp theo
+      `createdAt desc`, thiếu cột đó thì mỗi trang vẫn phải Sort toàn bộ đánh
+      giá của sản phẩm trước khi lấy 10 dòng.
+
+      **5. Chỉ cache những hình dạng truy vấn lặp lại nhiều.** Khóa cache của
+      `unstable_cache` gồm toàn bộ tham số: danh mục × thương hiệu × 4-6 bộ lọc
+      thông số CHỌN NHIỀU × khoảng giá tự nhập × sắp xếp × trang. Số tổ hợp là
+      tổ hợp nhân nên phần lớn khóa chỉ dùng đúng một lần: Data Cache đầy entry
+      vô dụng, hit rate tụt về gần 0, và Data Cache của Vercel SỐNG QUA CÁC LẦN
+      DEPLOY nên rác tích lại mãi — tức tầng cache ngừng gánh ĐÚNG lúc traffic
+      tăng. `getProducts()` giờ là hàm thường, tự chọn giữa `getProductsCached`
+      và `getProductsUncached` qua `isCacheableShape()`: CÓ cache cho danh mục
+      + thương hiệu + sắp xếp + trang <= 3 (số tổ hợp bị giới hạn, và đó đúng
+      là các trang được xem nhiều nhất), KHÔNG cache khi có bộ lọc thông số /
+      tìm kiếm / khoảng giá / lọc tồn kho / trang sâu. Với tổ hợp hiếm thì đi
+      thẳng DB còn rẻ hơn vì đỡ luôn chi phí ghi cache, và các truy vấn đó giờ
+      đã có index khớp (xem Giai đoạn 1).
+
+      Đã test bằng DB THẬT (38/38 assertion ở script chính + 11/11 cho
+      pageWindow; tạo 13 user + 12 đánh giá + 2 lượt vote, tạm đổi tồn kho/
+      trạng thái biến thể/trạng thái cửa hàng rồi KHÔI PHỤC trong `finally` —
+      kiểm kê lại DB: 8 user thật, 0 user test, 0 đánh giá, 3 đơn thật, 2 cửa
+      hàng active, 0 biến thể bị tắt, 0 dòng rating lệch).
+      Đáng kể nhất: so danh sách hãng trong sidebar với kỳ vọng suy ĐỘC LẬP
+      bằng SQL thuần (gồm cả hãng cộng lên danh mục cha) cho 5 danh mục —
+      khớp hết, chứng minh groupBy tương đương bản JS cũ. Lọc tồn kho test đủ
+      4 ca (a) hết sạch → bị loại + có badge, (b) còn hàng ở 1 cửa hàng → vẫn
+      hiện, (c) không có biến thể đang bán → không bị loại, (d) không cửa hàng
+      nào active → không loại gì và không badge nào. Đánh giá: trang 1 đúng 10
+      dòng, trang 2 đúng 2 dòng, tổng 12 và trung bình 2.8 hiện đúng, mới nhất
+      trước. `tsc --noEmit`/`eslint src`/`npm run build` sạch, không còn code
+      chết (đã grep xác nhận `getAllOutOfStockProductIds`/
+      `collectOutOfStockProductIds`/`excludeProductIds` biến mất hoàn toàn).
+
+      LỖI THẬT tìm được NHỜ unit-test `pageWindow` (không lộ ra qua UI vì DB
+      chỉ có 19 sản phẩm, không đủ trang để thấy dấu "…"): `pageWindow(99, 5)`
+      trả `[1, …, 5]` — cửa sổ quanh trang 99 rơi hết ra ngoài phạm vi nên chỉ
+      còn trang đầu/cuối, ra giao diện "1 … 5" trông như các trang giữa bị ẩn
+      vì lý do nào đó. Đã kẹp `current` vào `[1, total]` ngay trong hàm.
+      Trường hợp này xảy ra thật khi gõ tay `?page=999`.
+
+      LỖI CỦA TEST, không phải app (5 assertion, đều trúng đúng 2 cái bẫy đã
+      ghi ở mục "Lưu ý quan trọng" — ghi lại vì tôi vẫn mắc lại): đếm chuỗi
+      trên cả trang ra ĐÚNG GẤP ĐÔI (10 ra 20, 2 ra 4) vì Next.js nhúng RSC
+      flight payload vào `<script>` ở cuối document, trong đó có lại toàn bộ
+      chuỗi đã render; và `(12 đánh giá)`/`2.8/5` không khớp vì React chèn
+      `<!-- -->` giữa 2 biểu thức JSX liền nhau. Cách làm đúng: bỏ hết
+      `<script>...</script>` và `<!-- -->` khỏi HTML trước khi so khớp.
+      Thêm một lỗi test nhỏ: `ReviewVote` KHÔNG có cột `createdAt` — đọc schema
+      trước khi viết SQL thay vì suy theo trực giác (đúng bài học đã ghi ở mục
+      vận đơn).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -5892,37 +6012,16 @@
 Giai đoạn 1 đã xong (xem mục cuối phần Tiến độ). Phần còn lại, xếp theo thứ tự
 nên làm — lý do xếp vậy: cái vỡ sớm nhất không phải cái tốn công nhất.
 
-**Giai đoạn 2 (vừa sức, nên làm khi bắt đầu có traffic thật):**
-- [ ] `getBrandsByCategory()` (src/lib/products.ts) `findMany` trên TOÀN BỘ sản
-      phẩm active, không `take`, chỉ để dựng danh sách hãng — và nó nằm trong
-      Header nên chạy ở mọi trang. 1 triệu sản phẩm = 1 triệu dòng vào RAM
-      Node mỗi lần cache miss. Viết lại thành `groupBy`/`distinct` ở tầng SQL.
-- [ ] `getAllOutOfStockProductIds()` (src/lib/inventory.ts) load MỌI biến thể
-      active kèm toàn bộ dòng Inventory, cộng dồn bằng JS, và KHÔNG cache.
-      Nhưng chỗ thật sự vỡ là bước sau: filterParams.ts đưa kết quả vào
-      `excludeProductIds` → products.ts biến thành `id: { notIn: [...] }`. Hai
-      hệ quả cùng lúc — câu SQL mang theo hàng trăm nghìn id dạng literal, VÀ
-      `unstable_cache` nhét cả danh sách đó vào cache key. Bộ lọc "Chỉ hiện
-      hàng còn" sẽ không chỉ chậm mà lỗi hẳn. Cách sửa đảo ngược hướng: dùng
-      `EXISTS (inventory có quantity > 0)` làm điều kiện trong chính
-      where-clause — mất cả danh sách id lẫn cache key khổng lồ.
-- [ ] OFFSET pagination (`skip: (page-1)*limit`) ở 4 chỗ: products.ts,
-      orders.ts, users.ts, audit.ts. Postgres phải đi qua rồi bỏ mọi dòng bị
-      skip. Trang phân trang đã noindex sẵn nên **giới hạn độ sâu trang** là
-      cách sửa gần như miễn phí; keyset/cursor chỉ cần cho chỗ nào thật sự
-      phải đi sâu.
-- [ ] `getProductReviews()` load TOÀN BỘ review của 1 sản phẩm kèm `votes` rồi
-      đếm vote bằng JS — một sản phẩm nhiều đánh giá là một trang rất nặng.
-      Cần phân trang + đếm vote bằng `_count` (đã nằm trong mục "CHƯA LÀM" của
-      phần Hỏi đáp/đánh giá).
-- [ ] Cache key cardinality: `getProducts` cache theo cả object params (danh
-      mục × hãng × 4-6 bộ lọc thông số chọn-nhiều × khoảng giá × sắp xếp ×
-      trang) → số tổ hợp là tổ hợp nhân, hàng triệu key khả dĩ. Data Cache
-      đầy entry dùng đúng một lần, hit rate tụt về gần 0, mà Data Cache của
-      Vercel lại SỐNG QUA DEPLOY (xem mục "Lưu ý quan trọng") nên rác tích
-      lại. Nghĩa là tầng cache đang gánh cho phần nặng sẽ ngừng gánh ĐÚNG lúc
-      traffic tăng. Hướng: chỉ cache các hình dạng phổ biến (danh mục trần,
-      trang 1), để tổ hợp filter hiếm đi thẳng DB.
+**Giai đoạn 2 — ĐÃ XONG** (xem mục cuối phần Tiến độ): lọc tồn kho đổi sang
+EXISTS, `getBrandsByCategory` dùng groupBy, trần 50 trang +
+`pageWindow`, phân trang đánh giá, và chỉ cache các hình dạng truy vấn lặp
+lại nhiều. Còn lại 2 chỗ OFFSET chưa chặn độ sâu, đều là trang admin nên
+không ai bấm tới trang thứ 1.000, nhưng vẫn nên chặn nếu bảng phình to:
+- [ ] `getAllOrdersForAdmin` (orders.ts), `getAllUsersForAdmin` (users.ts),
+      `getAuditLogsForAdmin` (audit.ts) vẫn dùng `skip: (page-1)*limit` và vẫn
+      render một link cho mỗi trang. AuditLog là bảng dễ phình nhất (chưa có
+      hạn lưu) nên là chỗ đáng chặn đầu tiên — dùng lại `pageWindow()` ở
+      app/products/filterParams.ts và kẹp totalPages y như MAX_PRODUCT_PAGE.
 
 **Giai đoạn 3 (chỉ làm khi có traffic thật, cần hạ tầng thêm):**
 - [ ] `getCurrentUser()` query Session trên MỌI request (Header ở layout) —

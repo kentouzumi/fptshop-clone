@@ -1,28 +1,86 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
-export async function getProductReviews(productId: string, currentUserId?: string) {
-  const reviews = await prisma.review.findMany({
-    where: { productId, isVisible: true },
-    orderBy: { createdAt: "desc" },
-    include: {
-      user: { select: { fullName: true } },
-      votes: { select: { userId: true, isHelpful: true } },
-      images: { select: { id: true, url: true } },
-    },
-  });
+export const REVIEWS_PER_PAGE = 10;
 
-  const count = reviews.length;
-  const average = count > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / count : 0;
+/**
+ * Đánh giá của một sản phẩm, PHÂN TRANG.
+ *
+ * Bản trước load TOÀN BỘ đánh giá của sản phẩm kèm TOÀN BỘ `votes` của từng
+ * đánh giá, rồi đếm bằng JS — một sản phẩm 50.000 đánh giá là 50.000 dòng cộng
+ * với toàn bộ lượt vote của chúng, cho một trang chi tiết. Giờ:
+ *   - tổng số + điểm trung bình lấy bằng `aggregate` ở tầng SQL (2 con số,
+ *     không phụ thuộc số đánh giá),
+ *   - chỉ load đúng 1 trang đánh giá,
+ *   - số lượt vote đếm bằng `groupBy` trên ĐÚNG các đánh giá của trang đó,
+ *   - lựa chọn vote của người đang xem là 1 truy vấn riêng, cũng bó trong
+ *     trang đó, thay vì lọc ra từ toàn bộ bảng vote.
+ */
+export async function getProductReviews(
+  productId: string,
+  currentUserId?: string,
+  page = 1
+) {
+  const [agg, reviews] = await Promise.all([
+    prisma.review.aggregate({
+      where: { productId, isVisible: true },
+      _avg: { rating: true },
+      _count: { _all: true },
+    }),
+    prisma.review.findMany({
+      where: { productId, isVisible: true },
+      orderBy: { createdAt: "desc" },
+      skip: (Math.max(1, page) - 1) * REVIEWS_PER_PAGE,
+      take: REVIEWS_PER_PAGE,
+      include: {
+        user: { select: { fullName: true } },
+        images: { select: { id: true, url: true } },
+      },
+    }),
+  ]);
 
-  const reviewsWithVotes = reviews.map(({ votes, ...review }) => ({
+  const count = agg._count._all;
+  // _avg trả null khi chưa có đánh giá nào hiển thị.
+  const average = agg._avg.rating ?? 0;
+  const ids = reviews.map((r) => r.id);
+
+  const [voteGroups, myVotes] = await Promise.all([
+    ids.length > 0
+      ? prisma.reviewVote.groupBy({
+          by: ["reviewId", "isHelpful"],
+          where: { reviewId: { in: ids } },
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
+    currentUserId && ids.length > 0
+      ? prisma.reviewVote.findMany({
+          where: { reviewId: { in: ids }, userId: currentUserId },
+          select: { reviewId: true, isHelpful: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const helpful = new Map<string, number>();
+  const notHelpful = new Map<string, number>();
+  for (const g of voteGroups) {
+    (g.isHelpful ? helpful : notHelpful).set(g.reviewId, g._count._all);
+  }
+  const mine = new Map(myVotes.map((v) => [v.reviewId, v.isHelpful]));
+
+  const reviewsWithVotes = reviews.map((review) => ({
     ...review,
-    helpfulCount: votes.filter((v) => v.isHelpful).length,
-    notHelpfulCount: votes.filter((v) => !v.isHelpful).length,
-    myVote: currentUserId ? votes.find((v) => v.userId === currentUserId)?.isHelpful ?? null : null,
+    helpfulCount: helpful.get(review.id) ?? 0,
+    notHelpfulCount: notHelpful.get(review.id) ?? 0,
+    myVote: mine.get(review.id) ?? null,
   }));
 
-  return { reviews: reviewsWithVotes, count, average };
+  return {
+    reviews: reviewsWithVotes,
+    count,
+    average,
+    page: Math.max(1, page),
+    totalPages: Math.max(1, Math.ceil(count / REVIEWS_PER_PAGE)),
+  };
 }
 
 export async function voteReview(reviewId: string, userId: string, isHelpful: boolean) {

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getOutOfStockProductIds } from "@/lib/inventory";
+import { getOutOfStockProductIds, getOutOfStockWhere } from "@/lib/inventory";
 import { ProductStatus, Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 
@@ -44,23 +44,37 @@ export interface GetProductsParams {
   search?: string;
   featuredOnly?: boolean;
   /**
-   * Id sản phẩm cần LOẠI khỏi kết quả — dùng cho bộ lọc "Chỉ hiện hàng còn"
-   * ở /products. Tồn kho KHÔNG đưa thẳng vào where được vì getProducts()
-   * đang cache 60s, còn tồn kho thì đổi theo từng đơn; nên bên gọi tự tra
-   * danh sách hết hàng (không cache, xem getAllOutOfStockProductIds) rồi
-   * truyền vào đây. Danh sách này nằm trong khóa cache nên kho đổi là sinh
-   * entry mới, không phục vụ dữ liệu cũ.
+   * Bộ lọc "Chỉ hiện hàng còn". Đẩy thẳng vào where dưới dạng EXISTS (xem
+   * getOutOfStockWhere ở lib/inventory.ts) thay vì nhận danh sách id cần
+   * loại như bản trước: bản đó tra TOÀN BỘ id hết hàng rồi truyền vào
+   * `id: { notIn: [...] }`, nên câu SQL mang theo hàng trăm nghìn id dạng
+   * literal VÀ cả danh sách đó lọt vào khóa cache của unstable_cache.
    *
-   * Phải loại NGAY TRONG truy vấn chứ không lọc sau khi lấy trang, nếu không
-   * mỗi trang sẽ thiếu sản phẩm và tổng số trang bị sai.
+   * Vẫn phải lọc NGAY TRONG truy vấn chứ không lọc sau khi lấy trang, nếu
+   * không mỗi trang sẽ thiếu sản phẩm và tổng số trang bị sai.
    */
-  excludeProductIds?: string[];
+  inStockOnly?: boolean;
   minPrice?: number;
   maxPrice?: number;
   sort?: ProductSort;
   page?: number;
   limit?: number;
 }
+
+/**
+ * Trần số trang của lưới sản phẩm.
+ *
+ * OFFSET pagination buộc Postgres đi qua rồi BỎ mọi dòng bị skip, nên trang
+ * thứ 10.000 phải quét 120.000 dòng để trả về 12. Tệ hơn: UI phân trang render
+ * MỘT LINK CHO MỖI TRANG, nên 1 triệu sản phẩm = hơn 83.000 thẻ <a> trong
+ * HTML của đúng một trang.
+ *
+ * Chặn ở 50 trang (600 sản phẩm) thay vì làm keyset/cursor: các trang có tham
+ * số phân trang đều đã noindex nên không ảnh hưởng SEO, và đi sâu hơn 600 sản
+ * phẩm bằng cách bấm "trang sau" vốn không phải cách ai thật sự tìm hàng —
+ * đó là việc của bộ lọc và ô tìm kiếm.
+ */
+export const MAX_PRODUCT_PAGE = 50;
 
 export interface GetProductsResult {
   products: ProductListItem[];
@@ -165,17 +179,56 @@ export async function searchSuggestions(query: string, limit = 6): Promise<Produ
 // filter phổ biến). revalidateTag(PRODUCTS_TAG) được gọi thêm ở các API tạo/
 // sửa/xóa sản phẩm và biến thể để admin thấy thay đổi của chính mình ngay,
 // không phải đợi hết 60 giây.
-export const getProducts = unstable_cache(
+const getProductsCached = unstable_cache(
   getProductsUncached,
   ["get-products"],
   { tags: [PRODUCTS_TAG], revalidate: 60 }
 );
 
+/**
+ * CHỈ cache những hình dạng truy vấn thật sự lặp lại nhiều.
+ *
+ * Khóa cache của `unstable_cache` gồm toàn bộ tham số: danh mục × thương hiệu
+ * × 4-6 bộ lọc thông số CHỌN NHIỀU × khoảng giá tự nhập × sắp xếp × trang. Số
+ * tổ hợp là tổ hợp nhân, nên phần lớn khóa chỉ được dùng đúng một lần: Data
+ * Cache đầy entry vô dụng, hit rate tụt về gần 0, và Data Cache của Vercel
+ * SỐNG QUA CÁC LẦN DEPLOY (xem mục "Lưu ý quan trọng" ở CLAUDE.md) nên rác
+ * tích lại mãi. Nói cách khác, tầng cache sẽ ngừng gánh ĐÚNG lúc traffic tăng.
+ *
+ * Với tổ hợp hiếm, đi thẳng DB còn rẻ hơn — đỡ luôn chi phí ghi cache — và
+ * các truy vấn đó giờ đã có index khớp (xem @@index trên Product).
+ *
+ * Danh mục + thương hiệu + sắp xếp VẪN được cache: số tổ hợp của chúng bị
+ * giới hạn bởi số danh mục × số thương hiệu × 3, và đó đúng là các trang được
+ * xem nhiều nhất (trang chủ, trang danh mục, trang thương hiệu).
+ */
+function isCacheableShape(p: GetProductsParams): boolean {
+  return (
+    !p.attributeFilters &&
+    !p.search &&
+    !p.inStockOnly &&
+    p.minPrice === undefined &&
+    p.maxPrice === undefined &&
+    (p.page ?? 1) <= 3
+  );
+}
+
+export async function getProducts(
+  params: GetProductsParams = {}
+): Promise<GetProductsResult> {
+  return isCacheableShape(params) ? getProductsCached(params) : getProductsUncached(params);
+}
+
 async function getProductsUncached(
   params: GetProductsParams = {}
 ): Promise<GetProductsResult> {
-  const page = Math.max(1, params.page ?? 1);
+  const page = Math.min(MAX_PRODUCT_PAGE, Math.max(1, params.page ?? 1));
   const limit = Math.min(48, Math.max(1, params.limit ?? 12));
+
+  // Tra 1 lần ở đây rồi dùng trong where bên dưới. Nằm TRONG hàm đã cache nên
+  // không thêm round-trip cho các request trùng bộ lọc; chỉ chạy khi người
+  // dùng thật sự bật "Chỉ hiện hàng còn".
+  const outOfStockWhere = params.inStockOnly ? await getOutOfStockWhere() : null;
 
   // Category cấp cao (vd "tivi-may-lanh-dieu-hoa") giờ chỉ là nhóm hiển thị
   // cho mega menu — bản thân nó KHÔNG còn được gán sản phẩm trực tiếp nữa
@@ -216,9 +269,10 @@ async function getProductsUncached(
       ? { name: { contains: params.search, mode: "insensitive" } }
       : {}),
     ...(params.featuredOnly ? { isFeatured: true } : {}),
-    ...(params.excludeProductIds?.length
-      ? { id: { notIn: params.excludeProductIds } }
-      : {}),
+    // NOT(có biến thể đang bán AND không biến thể nào còn hàng)
+    //   = (không có biến thể đang bán) OR (có biến thể còn hàng)
+    // — đúng hành vi cũ: sản phẩm không có biến thể đang bán không bị loại.
+    ...(outOfStockWhere ? { NOT: outOfStockWhere } : {}),
     ...(params.minPrice !== undefined || params.maxPrice !== undefined
       ? {
           basePrice: {
@@ -260,7 +314,7 @@ async function getProductsUncached(
     total,
     page,
     limit,
-    totalPages: Math.max(1, Math.ceil(total / limit)),
+    totalPages: Math.min(MAX_PRODUCT_PAGE, Math.max(1, Math.ceil(total / limit))),
   };
 }
 
@@ -278,17 +332,37 @@ export interface CategoryBrandItem {
 // khi tạo/sửa/xóa sản phẩm nên không cần thêm tag riêng.
 export const getBrandsByCategory = unstable_cache(
   async (): Promise<Record<string, CategoryBrandItem[]>> => {
-    const rows = await prisma.product.findMany({
-      where: { status: ProductStatus.ACTIVE, brandId: { not: null } },
-      select: {
-        category: { select: { slug: true, parent: { select: { slug: true } } } },
-        brand: { select: { name: true, slug: true } },
-      },
-    });
+    // groupBy trả về ĐÚNG MỘT dòng cho mỗi cặp (danh mục, thương hiệu) khác
+    // nhau — bị giới hạn bởi số danh mục × số thương hiệu, KHÔNG phải số sản
+    // phẩm. Bản trước findMany toàn bộ sản phẩm active rồi gom bằng JS: hàm
+    // này nằm trong Header nên chạy ở mọi trang, tức 1 triệu sản phẩm là 1
+    // triệu dòng vào RAM Node mỗi lần cache miss.
+    //
+    // Category/Brand là 2 bảng nhỏ (danh mục và thương hiệu của một cửa hàng
+    // không lên tới hàng nghìn) nên load hết rồi tra bằng Map vẫn rẻ hơn nhiều
+    // so với join lặp lại trên từng dòng sản phẩm.
+    const [pairs, categories, brands] = await Promise.all([
+      prisma.product.groupBy({
+        by: ["categoryId", "brandId"],
+        where: { status: ProductStatus.ACTIVE, brandId: { not: null } },
+      }),
+      prisma.category.findMany({
+        select: { id: true, slug: true, parent: { select: { slug: true } } },
+      }),
+      prisma.brand.findMany({ select: { id: true, name: true, slug: true } }),
+    ]);
+
+    const categoryById = new Map(categories.map((c) => [c.id, c]));
+    const brandById = new Map(brands.map((b) => [b.id, b]));
+
+    const rows = pairs.map((p) => ({
+      category: categoryById.get(p.categoryId),
+      brand: p.brandId ? brandById.get(p.brandId) : undefined,
+    }));
 
     const result: Record<string, Map<string, CategoryBrandItem>> = {};
     for (const row of rows) {
-      if (!row.brand) continue;
+      if (!row.brand || !row.category) continue;
       // Sản phẩm giờ nằm ở danh mục CON ("iPhone 15 Series"), danh mục cha
       // ("Điện thoại") không còn sản phẩm trực tiếp nào. Nếu chỉ gom theo
       // slug của chính danh mục sản phẩm thì khóa "dien-thoai" sẽ RỖNG —
