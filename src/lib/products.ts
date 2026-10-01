@@ -80,7 +80,8 @@ interface ProductRowForMapping {
   category: { name: string; slug: string };
   images: { url: string }[];
   variants: { price: Prisma.Decimal; compareAtPrice: Prisma.Decimal | null }[];
-  reviews: { rating: number }[];
+  avgRating: number;
+  reviewCount: number;
 }
 
 export function mapProductToListItem(p: ProductRowForMapping): ProductListItem {
@@ -99,10 +100,10 @@ export function mapProductToListItem(p: ProductRowForMapping): ProductListItem {
   const discountPercent =
     compareAtPrice !== null ? Math.round(((compareAtPrice - minPrice) / compareAtPrice) * 100) : null;
 
-  const reviewCount = p.reviews.length;
-  const averageRating = reviewCount
-    ? p.reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount
-    : 0;
+  // Đọc thẳng 2 cột đã denormalize trên Product thay vì tự trung bình từ
+  // bảng Review — xem recalcProductRating() ở lib/reviews.ts để biết vì sao.
+  const reviewCount = p.reviewCount;
+  const averageRating = p.avgRating;
   return {
     id: p.id,
     name: p.name,
@@ -248,7 +249,6 @@ async function getProductsUncached(
         category: { select: { name: true, slug: true } },
         images: { orderBy: { sortOrder: "asc" }, take: 1 },
         variants: { select: { price: true, compareAtPrice: true }, where: { isActive: true } },
-        reviews: { where: { isVisible: true }, select: { rating: true } },
       },
     }),
   ]);
@@ -471,7 +471,6 @@ export async function getProductsForCompare(ids: string[]): Promise<CompareProdu
       category: { select: { name: true, slug: true } },
       images: { orderBy: { sortOrder: "asc" }, take: 1 },
       variants: { select: { price: true, compareAtPrice: true }, where: { isActive: true } },
-      reviews: { where: { isVisible: true }, select: { rating: true } },
       attributes: { orderBy: { sortOrder: "asc" } },
     },
   });

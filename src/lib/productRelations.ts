@@ -261,7 +261,6 @@ export const getRelatedProductGroups = unstable_cache(
               where: { isActive: true },
               select: { id: true, price: true, compareAtPrice: true },
             },
-            reviews: { where: { isVisible: true }, select: { rating: true } },
           },
         },
       },
@@ -340,7 +339,6 @@ export const getFrequentlyBoughtTogether = unstable_cache(
         category: { select: { name: true, slug: true } },
         images: { orderBy: { sortOrder: "asc" }, take: 1 },
         variants: { where: { isActive: true }, select: { price: true, compareAtPrice: true } },
-        reviews: { where: { isVisible: true }, select: { rating: true } },
       },
     });
 

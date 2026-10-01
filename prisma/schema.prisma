@@ -5,10 +5,12 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
+  extensions = [pg_trgm]
 }
 
 // ============================================================
@@ -193,6 +195,13 @@ model Product {
   status        ProductStatus @default(DRAFT)
   basePrice     Decimal       @db.Decimal(12, 0)
   isFeatured    Boolean       @default(false)
+  /// Điểm đánh giá trung bình + số đánh giá, denormalize sẵn trên Product và
+  /// cập nhật qua recalcProductRating() (lib/reviews.ts) mỗi khi review thay
+  /// đổi. KHÔNG tính lại từ bảng Review lúc hiển thị: trang danh sách lấy 12
+  /// sản phẩm một lúc, nếu kéo toàn bộ lịch sử đánh giá của từng sản phẩm về
+  /// rồi trung bình bằng JS thì 12 con số đó tốn hàng trăm nghìn dòng.
+  avgRating     Float         @default(0)
+  reviewCount   Int           @default(0)
   metaTitle     String?
   metaDesc      String?
   createdAt     DateTime      @default(now())
@@ -211,8 +220,19 @@ model Product {
 
   @@index([categoryId])
   @@index([brandId])
-  // Với Postgres, tạo full-text search index riêng bằng raw SQL migration:
-  // CREATE INDEX product_name_search_idx ON "Product" USING GIN (to_tsvector('simple', name));
+  // Mọi truy vấn trong getProducts() đều lọc status='ACTIVE' trước, rồi tùy
+  // trang mà thêm categoryId / isFeatured, và sắp xếp theo createdAt hoặc
+  // basePrice. Thiếu các index này thì Postgres Seq Scan toàn bảng rồi Sort
+  // toàn bộ tập đã lọc — đã xác minh bằng EXPLAIN trước khi thêm.
+  @@index([status, categoryId, createdAt])
+  @@index([status, createdAt])
+  @@index([status, basePrice])
+  @@index([status, isFeatured, createdAt])
+  // Tìm kiếm dùng ILIKE '%...%' (Prisma `contains` + mode insensitive) nên
+  // btree vô dụng — bắt buộc GIN + pg_trgm mới tránh quét toàn bảng. Khai
+  // trong schema (không phải raw SQL) để `prisma db push` không xóa nó ở
+  // lần đồng bộ sau.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 // Biến thể: màu sắc, dung lượng RAM/ROM... mỗi biến thể có SKU/giá/tồn kho riêng
@@ -264,6 +284,10 @@ model ProductAttribute {
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
+  // getAttributeFacets() chỉ select productId/attrName/attrValue và lọc theo
+  // attrName — thứ tự cột này cho phép index-only scan, không phải vào heap.
+  // Cũng phục vụ chính điều kiện `attributes.some` khi lọc sản phẩm.
+  @@index([attrName, attrValue, productId])
 }
 
 // Sản phẩm liên quan / gợi ý mua kèm
@@ -389,8 +413,9 @@ model Order {
   installmentPlan InstallmentPlan?
   reviews         Review[]
 
-  @@index([userId])
-  @@index([status])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
 }
 
 model OrderStatusHistory {
@@ -553,7 +578,7 @@ model Review {
   images  ReviewImage[]
   votes   ReviewVote[]
 
-  @@index([productId])
+  @@index([productId, isVisible])
   @@unique([productId, userId])
 }
 

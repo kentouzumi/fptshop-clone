@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 export async function getProductReviews(productId: string, currentUserId?: string) {
   const reviews = await prisma.review.findMany({
@@ -85,20 +86,57 @@ export interface CreateReviewInput {
   imageUrls?: string[];
 }
 
+/**
+ * Ghi lại điểm trung bình + số đánh giá vào CHÍNH bản ghi Product.
+ *
+ * Trang danh sách lấy 12 sản phẩm một lúc. Nếu mỗi card tự trung bình từ
+ * bảng Review thì phải kéo toàn bộ lịch sử đánh giá của cả 12 sản phẩm về
+ * Node chỉ để ra 12 con số — một sản phẩm 50.000 đánh giá là 50.000 dòng cho
+ * đúng 1 card. Nên con số được tính một lần tại đây, mỗi khi review đổi.
+ *
+ * Nhận `client` để gọi được bên trong transaction (xem createReview): tính
+ * lại NGOÀI transaction thì một lỗi ở giữa sẽ để lại review đã lưu nhưng con
+ * số trên Product sai vĩnh viễn, vì không có job nào quét lại.
+ */
+export async function recalcProductRating(
+  productId: string,
+  client: Prisma.TransactionClient = prisma
+) {
+  const agg = await client.review.aggregate({
+    where: { productId, isVisible: true },
+    _avg: { rating: true },
+    _count: { _all: true },
+  });
+
+  await client.product.update({
+    where: { id: productId },
+    data: {
+      // _avg trả null khi không còn đánh giá nào hiển thị.
+      avgRating: agg._avg.rating ?? 0,
+      reviewCount: agg._count._all,
+    },
+  });
+}
+
 export async function createReview(input: CreateReviewInput) {
   const isVerified = await hasUserPurchasedProduct(input.userId, input.productId);
   const imageUrls = (input.imageUrls ?? []).slice(0, MAX_REVIEW_IMAGES);
 
-  return prisma.review.create({
-    data: {
-      productId: input.productId,
-      userId: input.userId,
-      rating: input.rating,
-      title: input.title || null,
-      content: input.content,
-      isVerified,
-      images: imageUrls.length > 0 ? { create: imageUrls.map((url) => ({ url })) } : undefined,
-    },
-    include: { images: true },
+  return prisma.$transaction(async (tx) => {
+    const review = await tx.review.create({
+      data: {
+        productId: input.productId,
+        userId: input.userId,
+        rating: input.rating,
+        title: input.title || null,
+        content: input.content,
+        isVerified,
+        images: imageUrls.length > 0 ? { create: imageUrls.map((url) => ({ url })) } : undefined,
+      },
+      include: { images: true },
+    });
+
+    await recalcProductRating(input.productId, tx);
+    return review;
   });
 }

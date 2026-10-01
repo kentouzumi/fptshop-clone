@@ -5640,6 +5640,133 @@
       lọc file trong bucket không xuất hiện ở ProductImage/Banner/Brand.logoUrl/
       Category.imageUrl.
 
+- [x] Giai đoạn 1 của việc chịu tải (user hỏi "1 triệu bản ghi hoặc nhiều
+      người dùng cùng lúc thì có lag không"). Đã rà toàn bộ truy vấn nặng +
+      chạy EXPLAIN trên DB thật trước khi sửa. KẾT LUẬN quan trọng nhất:
+      **đông người dùng làm vỡ TRƯỚC, ở mức thấp hơn nhiều so với 1 triệu bản
+      ghi** — hai vấn đề khác nhau, và cái quyết định là connection pool chứ
+      không phải kích thước dữ liệu. Giai đoạn 1 làm 4 việc rẻ nhất/lợi nhất:
+
+      **1. Giới hạn connection pool** (src/lib/prisma.ts): `globalForPrisma`
+      chỉ cache instance khi `NODE_ENV !== "production"` nên trên Vercel MỖI
+      serverless instance tự mở một pool riêng, mặc định node-postgres là 10
+      kết nối/pool → 20 instance song song = 200 kết nối tới Supabase, đúng
+      cách đã đụng EMAXCONNSESSION hồi deploy. Đã truyền `max` tường minh
+      (mặc định 5, đổi được qua `DB_POOL_MAX`) + `idleTimeoutMillis`/
+      `connectionTimeoutMillis` 10s. Chọn 5 chứ không phải 1: nhiều trang gọi
+      query song song trong 1 request (`/admin` có 13 query trong 1
+      Promise.all), `max: 1` sẽ ép chúng xếp hàng. Đã xác minh
+      `PrismaPg(poolOrConfig: pg.Pool | pg.PoolConfig | string, ...)` nhận
+      PoolConfig của node-postgres bằng cách đọc file .d.ts của adapter,
+      không đoán.
+      LƯU Ý CHƯA LÀM: `getCurrentUser()` vẫn query bảng Session trên MỌI
+      request (Header nằm trong layout; `cache()` của React chỉ dedupe trong
+      cùng 1 lượt render, không dedupe giữa các request) — tức mỗi lượt xem
+      trang vẫn tốn tối thiểu 1 query DB dù mọi thứ khác đã cache. Đây là
+      query bị gọi nhiều nhất toàn site, thuộc Giai đoạn 3 (đổi sang cookie
+      có chữ ký để bỏ hẳn query).
+
+      **2. Denormalize điểm đánh giá lên Product** (`avgRating` + `reviewCount`,
+      cột mới `@default(0)` nên `prisma db push` chạy thẳng, không mất dữ
+      liệu). Đây là quả bom hẹn giờ NGHIÊM TRỌNG NHẤT về dữ liệu lớn:
+      `mapProductToListItem()` trước đó tính trung bình bằng JS từ
+      `reviews: { select: { rating: true } }`. Hiện `Review` có 0 dòng nên
+      hoàn toàn miễn phí, nhưng một sản phẩm 50.000 đánh giá thì mỗi lần tải
+      trang danh mục kéo 12 sản phẩm × toàn bộ lịch sử đánh giá của chúng về
+      Node — hàng trăm nghìn dòng để ra 12 con số. Mà `Review` đúng là bảng
+      dễ đạt 1 triệu bản ghi nhất trong schema này.
+      Thêm `recalcProductRating(productId, client?)` (lib/reviews.ts) dùng
+      `aggregate` ở tầng SQL, nhận `client` để gọi được TRONG transaction —
+      `createReview()` giờ bọc `$transaction`: tính lại ngoài transaction thì
+      một lỗi ở giữa sẽ để lại review đã lưu nhưng con số trên Product sai
+      VĨNH VIỄN vì không có job nào quét lại. Đã bỏ include `reviews` ở đủ
+      CẢ 5 call site nuôi `mapProductToListItem` (getProducts +
+      getProductsForCompare ở products.ts, 2 chỗ ở productRelations.ts,
+      getWishlistProducts ở wishlist.ts) — sửa thiếu 1 chỗ là tsc báo lỗi
+      ngay nhờ `ProductRowForMapping` là type dùng chung, nhưng vẫn phải tự
+      smoke-test cả 5 vì type đúng không có nghĩa trang render đúng.
+      KHÔNG thêm `revalidateTag(PRODUCTS_TAG)` vào createReview — giữ đúng
+      quyết định cũ (chấp nhận trễ tối đa 60s cho riêng số liệu rating, xem
+      mục "Thêm tầng cache"), hành vi không đổi so với trước.
+      `getProductReviews()` vẫn tự tính count/average từ danh sách nó đã
+      load (trang chi tiết cần cả danh sách để hiển thị) — không sửa.
+
+      **3. Bộ index khớp ĐÚNG hình dạng truy vấn.** Kiểm `pg_indexes` thật:
+      `Product` trước đó chỉ có index trên `id`/`slug`/`categoryId`/`brandId`
+      — KHÔNG có `status` dù **mọi** truy vấn sản phẩm đều lọc
+      `status='ACTIVE'`, và không có `createdAt`/`basePrice` nên cả 3 kiểu
+      sắp xếp đều phải Sort toàn bộ tập đã lọc. EXPLAIN xác nhận `Seq Scan`.
+      Đã thêm: `Product(status, categoryId, createdAt)` (hình dạng phổ biến
+      nhất), `(status, createdAt)` (trang chủ "Sản phẩm mới" — index 3 cột ở
+      trên KHÔNG phục vụ được vì không thể bỏ qua cột giữa để lấy thứ tự),
+      `(status, basePrice)`, `(status, isFeatured, createdAt)`;
+      `ProductAttribute(attrName, attrValue, productId)` — thứ tự cột này
+      cho `getAttributeFacets()` chạy **Index Only Scan** (đã xác minh trong
+      EXPLAIN) vì nó select đúng 3 cột đó, đồng thời phục vụ luôn điều kiện
+      `attributes.some` khi lọc; `Review(productId, isVisible)`;
+      `Order(userId, createdAt)`, `(status, createdAt)`, `(createdAt)`.
+      Riêng `Order.createdAt` phải để ĐỨNG ĐẦU cho dashboard vì điều kiện
+      status ở đó là `NOT IN` (phủ định, không dùng được làm equality trên
+      index).
+      BỎ 3 index dư: `Order_status_idx` và `Order_userId_idx` (leading column
+      của 2 composite mới đã phủ), `Review_productId_idx` (đã bị
+      `@@unique([productId, userId])` phủ sẵn từ đầu — index này dư ngay từ
+      lúc viết schema).
+      Prisma không khai được partial index (`WHERE status='ACTIVE'`) nên dùng
+      composite dẫn đầu bằng `status`; chấp nhận được vì status luôn là điều
+      kiện equality.
+
+      **4. GIN + pg_trgm cho tìm kiếm.** `contains` + `mode: "insensitive"`
+      dịch thành `ILIKE '%...%'` — btree vô dụng, EXPLAIN xác nhận Seq Scan.
+      Với 1 triệu sản phẩm mỗi lần tìm là quét toàn bảng, mà
+      `searchSuggestions()` được gọi từ autocomplete debounce 250ms mỗi lần
+      gõ → đây là đường dễ nhất để vài người làm sập DB.
+      QUAN TRỌNG — khai index này TRONG SCHEMA chứ không phải raw SQL:
+      `prisma db push` XÓA index nào không có trong schema, nên index tạo
+      bằng raw SQL sẽ biến mất ở lần đồng bộ sau (comment cũ trong
+      schema.prisma từng gợi ý làm bằng raw SQL migration — đã thay). Prisma
+      7 hỗ trợ được: `previewFeatures = ["postgresqlExtensions"]` +
+      `extensions = [pg_trgm]` + `@@index([name(ops: raw("gin_trgm_ops"))],
+      type: Gin)` — đã thử `prisma validate` để xác nhận trước khi dùng.
+      TRƯỚC KHI PUSH đã chạy `prisma migrate diff --from-config-datasource
+      --to-schema ... --script` để xem CHÍNH XÁC SQL sẽ chạy, cụ thể là để
+      chắc Prisma KHÔNG drop các extension Supabase đang dùng
+      (pgcrypto/uuid-ossp/supabase_vault/pg_stat_statements) — xác nhận nó
+      chỉ `CREATE EXTENSION IF NOT EXISTS pg_trgm`, không có DROP EXTENSION
+      nào. Lệnh này trong Prisma 7 đã đổi cờ: `--from-schema-datasource` bị
+      bỏ, phải dùng `--from-config-datasource` cùng prisma config file.
+
+      Đã test bằng DB THẬT (28/29 assertion, tạo user/session/review test rồi
+      dọn sạch — kiểm kê lại DB: 8 user thật, 0 user test, 19 sản phẩm, 0
+      review, 3 đơn thật, 0 dòng rating lệch): đủ 10 index mới có mặt và 3
+      index dư đã mất; `Product_name_idx` đúng là GIN + gin_trgm_ops;
+      pg_trgm đã bật. Vì bảng chỉ có 19 sản phẩm nên Postgres luôn chọn Seq
+      Scan (rẻ hơn thật), nên kiểm thứ THỰC SỰ cần biết bằng
+      `SET enable_seqscan=off`: index có KHỚP hình dạng truy vấn hay không
+      (không khớp thì planner vẫn Seq Scan dù đã tắt) — 6/7 truy vấn dùng
+      đúng index mong đợi, facet đạt Index Only Scan. Luồng review thật qua
+      `POST /api/reviews` (session thật, không mock): 201 → DB ghi đúng
+      `reviewCount: 1`/`avgRating: 4`, dọn xong về đúng 0. Smoke-test cả 5
+      call site đã sửa: trang chủ, `/products` (kèm search + spec filter),
+      `/thuong-hieu/apple`, `/compare` + API compare, `/wishlist` và trang
+      chi tiết có sản phẩm liên quan (2 cái cuối cần session thật). `tsc
+      --noEmit`/`eslint src`/`npm run build` sạch.
+
+      ASSERTION SAI CỦA TÔI, không phải lỗi app (ghi lại vì dễ kết luận
+      nhầm): test "ILIKE dùng Product_name_idx" báo FAIL. Truy xong thì
+      planner chọn index `status` rồi filter `name` — với 19 dòng điều đó
+      đúng và rẻ hơn. Kiểm riêng `WHERE name ILIKE '%iphone%'` (bỏ predicate
+      status) thì ra đúng `Bitmap Index Scan on "Product_name_idx"` với
+      `Index Cond: (name ~~* '%iphone%')`, tức index DÙNG ĐƯỢC cho ILIKE.
+      Ở quy mô 1 triệu dòng planner sẽ tự chọn nó vì trgm trả về vài dòng
+      còn index status trả về cả triệu. BÀI HỌC: trên bảng nhỏ, EXPLAIN
+      KHÔNG chứng minh được index có được dùng ở quy mô lớn — chỉ chứng minh
+      được index có khớp hình dạng truy vấn, và phải cô lập đúng predicate
+      cần kiểm mới thấy.
+
+      CÒN LẠI (Giai đoạn 2-3, chưa làm — xem mục "Khoảng cách chịu tải" bên
+      dưới để biết chi tiết và lý do xếp thứ tự).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -5761,7 +5888,88 @@
       là khóa unique và đang có ảnh gắn theo biến thể nên KHÔNG đổi tên SKU
       (sẽ tạo biến thể mới + bỏ rơi ảnh cũ); muốn sạch thì sửa trong DB.
 
+### Khoảng cách chịu tải (rà soát có hệ thống + EXPLAIN trên DB thật, 2026-10-01)
+Giai đoạn 1 đã xong (xem mục cuối phần Tiến độ). Phần còn lại, xếp theo thứ tự
+nên làm — lý do xếp vậy: cái vỡ sớm nhất không phải cái tốn công nhất.
+
+**Giai đoạn 2 (vừa sức, nên làm khi bắt đầu có traffic thật):**
+- [ ] `getBrandsByCategory()` (src/lib/products.ts) `findMany` trên TOÀN BỘ sản
+      phẩm active, không `take`, chỉ để dựng danh sách hãng — và nó nằm trong
+      Header nên chạy ở mọi trang. 1 triệu sản phẩm = 1 triệu dòng vào RAM
+      Node mỗi lần cache miss. Viết lại thành `groupBy`/`distinct` ở tầng SQL.
+- [ ] `getAllOutOfStockProductIds()` (src/lib/inventory.ts) load MỌI biến thể
+      active kèm toàn bộ dòng Inventory, cộng dồn bằng JS, và KHÔNG cache.
+      Nhưng chỗ thật sự vỡ là bước sau: filterParams.ts đưa kết quả vào
+      `excludeProductIds` → products.ts biến thành `id: { notIn: [...] }`. Hai
+      hệ quả cùng lúc — câu SQL mang theo hàng trăm nghìn id dạng literal, VÀ
+      `unstable_cache` nhét cả danh sách đó vào cache key. Bộ lọc "Chỉ hiện
+      hàng còn" sẽ không chỉ chậm mà lỗi hẳn. Cách sửa đảo ngược hướng: dùng
+      `EXISTS (inventory có quantity > 0)` làm điều kiện trong chính
+      where-clause — mất cả danh sách id lẫn cache key khổng lồ.
+- [ ] OFFSET pagination (`skip: (page-1)*limit`) ở 4 chỗ: products.ts,
+      orders.ts, users.ts, audit.ts. Postgres phải đi qua rồi bỏ mọi dòng bị
+      skip. Trang phân trang đã noindex sẵn nên **giới hạn độ sâu trang** là
+      cách sửa gần như miễn phí; keyset/cursor chỉ cần cho chỗ nào thật sự
+      phải đi sâu.
+- [ ] `getProductReviews()` load TOÀN BỘ review của 1 sản phẩm kèm `votes` rồi
+      đếm vote bằng JS — một sản phẩm nhiều đánh giá là một trang rất nặng.
+      Cần phân trang + đếm vote bằng `_count` (đã nằm trong mục "CHƯA LÀM" của
+      phần Hỏi đáp/đánh giá).
+- [ ] Cache key cardinality: `getProducts` cache theo cả object params (danh
+      mục × hãng × 4-6 bộ lọc thông số chọn-nhiều × khoảng giá × sắp xếp ×
+      trang) → số tổ hợp là tổ hợp nhân, hàng triệu key khả dĩ. Data Cache
+      đầy entry dùng đúng một lần, hit rate tụt về gần 0, mà Data Cache của
+      Vercel lại SỐNG QUA DEPLOY (xem mục "Lưu ý quan trọng") nên rác tích
+      lại. Nghĩa là tầng cache đang gánh cho phần nặng sẽ ngừng gánh ĐÚNG lúc
+      traffic tăng. Hướng: chỉ cache các hình dạng phổ biến (danh mục trần,
+      trang 1), để tổ hợp filter hiếm đi thẳng DB.
+
+**Giai đoạn 3 (chỉ làm khi có traffic thật, cần hạ tầng thêm):**
+- [ ] `getCurrentUser()` query Session trên MỌI request (Header ở layout) —
+      query bị gọi nhiều nhất toàn site. Đổi sang cookie có chữ ký (JWT) để bỏ
+      hẳn query, hoặc cache ngắn hạn qua Redis.
+- [ ] `src/lib/rateLimit.ts` lưu trong RAM tiến trình nên trên nhiều instance
+      không giới hạn được thật (file tự ghi rõ hạn chế này). Thêm một điểm
+      nữa: vòng dọn Map chạy qua TOÀN BỘ Map mỗi lần gọi, tức O(n) mỗi
+      request. Cần Redis/Upstash.
+- [ ] Tìm kiếm: pg_trgm đủ cho vài trăm nghìn sản phẩm; quá mức đó cần
+      full-text `tsvector` hoặc search engine riêng (Meilisearch/Typesense),
+      kèm xếp hạng/gõ sai chính tả mà trgm không làm được.
+- [ ] `AuditLog` không có hạn lưu — chỉ phình, và trang xem dùng OFFSET. Cần
+      retention + cân nhắc partition theo tháng.
+- [ ] `/admin` gọi 13 query trong 1 Promise.all và CỐ Ý không cache. Một admin
+      bấm refresh liên tục có thể ảnh hưởng cả site vì dùng chung pool. Cần
+      read replica, hoặc cache ngắn (30-60s) cho các con số tổng hợp.
+- [ ] CHƯA đo được: **ngưỡng cụ thể** bao nhiêu người đồng thời thì bắt đầu
+      lag. Cái đó cần load test thật trên production (k6/Artillery bắn vào
+      Vercel) vì nó phụ thuộc hành vi autoscale của Vercel và gói Supabase
+      đang dùng — đừng ước lượng bằng cảm giác.
+
 ## Lưu ý quan trọng
+- `prisma db push` XÓA index nào không có trong schema.prisma. Vì vậy index
+  đặc biệt (GIN, pg_trgm...) phải khai TRONG SCHEMA chứ không tạo bằng raw
+  SQL, nếu không nó sẽ biến mất ở lần `db push` sau mà không ai biết. Prisma 7
+  khai được qua `previewFeatures = ["postgresqlExtensions"]` +
+  `extensions = [pg_trgm]` trong datasource +
+  `@@index([name(ops: raw("gin_trgm_ops"))], type: Gin)`.
+  TRƯỚC MỖI `db push` có đổi index/extension, chạy
+  `npx prisma migrate diff --from-config-datasource --to-schema
+  prisma/schema.prisma --script --config prisma7.config.ts` để xem CHÍNH XÁC
+  SQL sẽ chạy — đặc biệt để chắc nó không drop extension Supabase đang dùng
+  (pgcrypto/uuid-ossp/supabase_vault/pg_stat_statements). Prisma 7 đã bỏ cờ
+  `--from-schema-datasource`, phải dùng `--from-config-datasource`.
+- EXPLAIN trên bảng nhỏ KHÔNG chứng minh được index sẽ được dùng ở quy mô
+  lớn — với vài chục dòng Postgres luôn chọn Seq Scan vì nó rẻ hơn thật. Muốn
+  kiểm index có KHỚP hình dạng truy vấn thì `SET enable_seqscan = off` rồi
+  EXPLAIN (không khớp thì planner vẫn Seq Scan dù đã tắt), và phải cô lập
+  đúng predicate cần kiểm — để lẫn predicate khác có index rẻ hơn thì planner
+  chọn cái đó và kết luận sẽ sai (đã mắc đúng lỗi này khi kiểm index trgm).
+- Điểm đánh giá sản phẩm đọc từ `Product.avgRating`/`reviewCount` (denormalize
+  sẵn), KHÔNG tính lại từ bảng Review lúc hiển thị. Mọi chỗ thêm/sửa/ẩn review
+  PHẢI gọi `recalcProductRating()` (lib/reviews.ts), tốt nhất là trong cùng
+  transaction — bỏ sót thì con số trên card sai vĩnh viễn vì không có job nào
+  quét lại. Hiện chỉ `createReview()` ghi vào Review; nếu sau này thêm UI ẩn/
+  xóa review cho admin thì nhớ hook thêm.
 - Trên máy Windows này, `pkill -f "next dev"` (Git Bash) KHÔNG kill được tiến
   trình `next dev` thật — process vẫn chạy ngầm giữ nguyên biến môi trường cũ
   trong bộ nhớ dù terminal tưởng đã tắt (đã gặp thật lúc test override
