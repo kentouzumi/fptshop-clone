@@ -5887,6 +5887,81 @@
       trước khi viết SQL thay vì suy theo trực giác (đúng bài học đã ghi ở mục
       vận đơn).
 
+- [x] Script đo ngưỡng chịu tải thật (`scripts/loadtest.mjs`, chạy bằng
+      `npm run loadtest`) — đóng mục "CHƯA đo được ngưỡng cụ thể" ở phần
+      Khoảng cách chịu tải. Đây là CÔNG CỤ GIỮ LẠI, không phải script
+      `_*.mjs` dùng một lần rồi xóa như các lần test trước.
+
+      KHÔNG dùng k6/autocannon dù đó là công cụ chuẩn — ngoài việc đỡ thêm
+      dependency (k6 là binary phải cài riêng), lý do chính là cần tự kiểm
+      soát 2 thứ mà bản dựng sẵn hay che đi, cả hai đều đủ sức làm số liệu
+      sai hẳn:
+
+      **1. MÔ HÌNH MỞ thay vì "N worker lặp gửi rồi chờ".** Cách worker có
+      sai số gọi là coordinated omission: server chậm đi thì worker tự động
+      gửi ít hơn, nên độ trễ đo được THẤP HƠN thực tế và cổ chai bị che mất.
+      Người dùng thật không như vậy — họ cứ vào trang theo nhịp của họ bất kể
+      server có nghẽn. Script phát request theo ĐỒNG HỒ, không chờ request
+      trước xong, và lấy số request tồn đọng (inflight) làm dấu hiệu nghẽn.
+
+      **2. TRẦN SOCKET của chính máy chạy test.** `http.globalAgent` giới hạn
+      số kết nối đồng thời mỗi host; để nguyên thì khi server chậm lại, request
+      mới nằm chờ SOCKET chứ không chờ server — con số đo được là hiệu năng của
+      cái laptop đang chạy test. Đã đặt Agent riêng `maxSockets: 512` và in
+      cảnh báo "ĐỤNG TRẦN SOCKET" nếu vẫn chạm.
+
+      LỖI PHƯƠNG PHÁP TỰ PHÁT HIỆN khi chạy thử lần đầu (quan trọng nhất của
+      cả việc này): kết quả ra NGƯỢC — chặng 2 req/s có p95 **2002ms** còn
+      chặng 4 req/s chỉ **549ms**, tải tăng mà lại nhanh hơn, và phần KẾT LUẬN
+      báo sai "ngưỡng là 2 req/s". Nguyên nhân: chặng đầu hứng toàn bộ COLD
+      START của Vercel (serverless instance khởi tạo, mở pool tới Supabase, nạp
+      Prisma Client). Đã thêm chặng WARMUP bị loại khỏi mọi số liệu — chạy lại
+      đúng tham số cũ thì p95 chặng đầu từ 2002ms về 289ms và số liệu tăng đơn
+      điệu đúng theo tải (283 → 388ms). Thêm cờ "nghi cold start" cho từng
+      chặng khi `max > 5 × p50`, vì Vercel bật thêm instance mỗi lần tải tăng
+      nên cold start không chỉ xuất hiện ở chặng đầu; và phần dò ngưỡng bỏ qua
+      chặng có dấu hiệu đó TRỪ KHI trung vị cũng đã đi lên hoặc đã có lỗi thật.
+
+      TÁCH SỐ LIỆU THEO NHÓM bám đúng `isCacheableShape()` (src/lib/products.ts):
+      `cached` (danh mục trần/trang thương hiệu) / `uncached` (bộ lọc thông số,
+      tìm kiếm pg_trgm, lọc tồn kho EXISTS) / `detail` (trang chi tiết, nặng
+      nhất). Đo trung bình toàn site thì 2 đường này trộn vào nhau và con số
+      không nói được gì — thứ đáng theo dõi là KHOẢNG CÁCH giữa 2 nhóm có giãn
+      ra khi tăng tải hay không (giãn ra = DB thành cổ chai, không phải cache).
+
+      AN TOÀN — những thứ CỐ Ý không bắn vào:
+      + `/tin-tuc/<slug>`: gọi `incrementPostView()` nên MỖI LẦN XEM LÀ 1 LƯỢT
+        GHI. Bắn vài nghìn request vào đó là bơm lượt xem giả vào dữ liệu thật.
+      + Mọi trang cần đăng nhập và mọi endpoint POST — không bao giờ tạo đơn/
+        đánh giá trong lúc đo tải.
+      + `/api/orders/lookup` + webhook MoMo: có rate limit, bắn vào chỉ nhận 429.
+      Thêm: đích mặc định là localhost, trỏ ra ngoài thì script HỎI LẠI (gõ
+      "yes") kèm cảnh báo tiêu hạn mức Vercel/Supabase, trừ khi có `--confirm`;
+      và có trần inflight (`rate × 10`) để một phép đo không biến thành đợt tấn
+      công khi server nghẽn.
+
+      Đường dẫn sản phẩm LẤY TỪ sitemap.xml lúc chạy chứ không ghi cứng: ghi
+      cứng slug thì mỗi lần catalog đổi là script bắn vào URL 404 mà vẫn báo
+      "nhanh" — 404 không chạy query nào nên con số đẹp một cách vô nghĩa. Lấy
+      sản phẩm ở GIỮA danh sách (sitemap sắp theo ngày cập nhật, phần tử đầu dễ
+      là sản phẩm vừa sửa, tức dữ liệu nóng nhất trong cache).
+
+      Có `--check` chạy 1 request/URL để soát đường dẫn trước khi tạo tải.
+
+      Đã chạy thật trên production (68 request, chỉ GET, không ghi gì):
+      preflight 8/8 URL trả 200, sitemap tự nhận 18 sản phẩm, và `x-vercel-cache`
+      = MISS ở cả 8 URL — xác nhận mọi trang đều render per-request, không bị
+      CDN che nên phép đo chạm thật tới server + DB. Ở 4 req/s thì cả 3 nhóm
+      đều ~280-390ms, chưa tìm thấy ngưỡng. `node --check` sạch, `eslint`
+      (cả repo) sạch; script là `.mjs` nên nằm ngoài `tsconfig` (include chỉ
+      có ts/tsx/mts) → không ảnh hưởng `tsc`/`npm run build`.
+
+      GHI NHẬN: ở quy mô dữ liệu hiện tại (18 sản phẩm) nhóm `cached` và
+      `uncached` nhanh gần như y hệt — ĐÚNG như mong đợi, vì query nào trên 18
+      dòng cũng rẻ. Khác biệt giữa 2 nhóm chỉ lộ ra khi dữ liệu lớn, nên script
+      này đo được "site chịu bao nhiêu người", CHƯA đo được "1 triệu bản ghi thì
+      sao" — muốn cái sau phải có dataset lớn thật (xem phần còn thiếu).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -6039,10 +6114,17 @@ không ai bấm tới trang thứ 1.000, nhưng vẫn nên chặn nếu bảng p
 - [ ] `/admin` gọi 13 query trong 1 Promise.all và CỐ Ý không cache. Một admin
       bấm refresh liên tục có thể ảnh hưởng cả site vì dùng chung pool. Cần
       read replica, hoặc cache ngắn (30-60s) cho các con số tổng hợp.
-- [ ] CHƯA đo được: **ngưỡng cụ thể** bao nhiêu người đồng thời thì bắt đầu
-      lag. Cái đó cần load test thật trên production (k6/Artillery bắn vào
-      Vercel) vì nó phụ thuộc hành vi autoscale của Vercel và gói Supabase
-      đang dùng — đừng ước lượng bằng cảm giác.
+- [x] Ngưỡng chịu tải: ĐÃ CÓ CÔNG CỤ ĐO (`npm run loadtest`, xem mục cuối
+      phần Tiến độ) thay vì ước lượng bằng cảm giác. Chạy thử tới 4 req/s chưa
+      thấy ngưỡng — cần chạy chặng cao hơn
+      (`npm run loadtest -- --target=prod --stages=10,25,50,100`) để biết số
+      thật. CHƯA làm: đo ở quy mô 1 TRIỆU BẢN GHI. Script đo được "chịu bao
+      nhiêu người" nhưng với 18 sản phẩm thì nhóm cached và uncached nhanh y
+      hệt nhau, nên nó KHÔNG trả lời được câu về dữ liệu lớn. Muốn trả lời cần
+      sinh dataset lớn thật — và KHÔNG sinh vào DB production đang dùng (sẽ
+      lẫn vào 18 sản phẩm thật + đụng hạn mức dung lượng Supabase free), phải
+      dựng 1 Postgres riêng (Docker local hoặc project Supabase thứ 2) rồi trỏ
+      `DATABASE_URL` sang đó.
 
 ## Lưu ý quan trọng
 - `prisma db push` XÓA index nào không có trong schema.prisma. Vì vậy index
