@@ -5962,6 +5962,109 @@
       này đo được "site chịu bao nhiêu người", CHƯA đo được "1 triệu bản ghi thì
       sao" — muốn cái sau phải có dataset lớn thật (xem phần còn thiếu).
 
+- [x] Đo ngưỡng chịu tải THẬT trên production + vá lỗ hổng tìm được. Kết quả
+      quan trọng hơn cả con số ngưỡng: site KHÔNG xuống cấp dần, nó VỠ HẲN, và
+      vỡ ra một trang 500 trắng trơn body rỗng.
+
+      **SỐ THẬT (chế độ HTML — đúng thứ người dùng nhận):** sạch tới
+      **100 req/s** (p95 527ms, lỗi 0.0%, tồn đọng tối đa 39) ≈ 500 người lướt
+      cùng lúc. Trung vị còn GIẢM khi tải tăng (269→231ms) vì tải cao hơn thì
+      Vercel bật thêm instance nên tỉ lệ gặp máy đã khởi động sẵn cao hơn.
+      Khoảng cách nhóm cached vs uncached gần như không giãn (356/333ms ở
+      10 req/s → 487/574ms ở 100 req/s), tức DB chưa phải cổ chai ở mức này.
+
+      **TRẦN BĂNG THÔNG CỦA MÁY TEST — bẫy làm sai hẳn kết luận.** Chặng
+      150/200 req/s báo p95 6855ms rồi 14794ms, nhìn như đã tìm ra ngưỡng. SAI.
+      Đo thẳng đường mạng của máy phát triển: trần **74 Mbps**. Trang nặng
+      ~79-93KB nên 100 req/s đã cần ~63 Mbps, 150 req/s cần ~95 Mbps — vượt
+      trần, và từ đó trở đi con số đo được là tốc độ Internet của người chạy
+      test. 3 DẤU HIỆU phân biệt với server nghẽn thật: (1) lỗi vẫn 0% dù p95
+      lên 14 giây (quá tải thật thường kèm 5xx/ECONNRESET); (2) cả 8 URL xuống
+      cấp cùng một tỉ lệ; (3) nhóm cached và uncached xuống cấp y hệt nhau
+      (6910 vs 6719ms) — server nghẽn thì nhóm đụng DB phải tệ hơn hẳn. Đây là
+      cùng lớp bẫy mà MAX_SOCKETS phòng cho socket, nhưng băng thông là trần
+      RIÊNG mà script không tự thấy được.
+
+      Đã thêm cờ **`--api`** vào scripts/loadtest.mjs để vượt trần đó:
+      `/api/products` chạy ĐÚNG cùng `getProducts()` với trang danh mục (cùng
+      truy vấn, cùng pool, cùng Prisma) nhưng trả ~2,5KB thay vì ~93KB, nhỏ
+      hơn ~35 lần. ĐÁNH ĐỔI phải nhớ khi đọc kết quả: cách này KHÔNG đo phần
+      render/stream HTML nên số ra LẠC QUAN HƠN trang thật — nó trả lời "tầng
+      dữ liệu chịu bao nhiêu", không phải "người dùng thật thấy bao nhiêu".
+      `spec_*`/`instock` CỐ Ý không có trong bộ API vì route /api/products
+      không hỗ trợ 2 tham số đó (bỏ qua âm thầm, sẽ tưởng đang đo đường facet
+      trong khi chỉ đang đo lọc danh mục thường).
+
+      **LỖ HỔNG THẬT tìm được nhờ chế độ API:** ở 100-500 req/s, độ trễ của
+      request THÀNH CÔNG đứng yên ~150ms trong khi **1/3 request trả HTTP 500**
+      (37.5% / 34.6% / 31.9%). Đó không phải cạn tài nguyên (cạn thì chậm dần
+      đều) mà là BỊ TỪ CHỐI KẾT NỐI. Truy từng endpoint thì tách bạch hoàn
+      toàn: 3 endpoint thuần cache không lỗi lần nào, 3 endpoint đụng DB lỗi
+      25-60%. Header của response 500 mang đủ CSP của app + `x-matched-path` và
+      KHÔNG có `x-vercel-error` → lỗi do chính app throw, không phải platform
+      Vercel chết. Nguyên nhân đúng như comment trong src/lib/prisma.ts đã tự
+      dự đoán: `max: 5` mỗi instance × số instance Vercel bật ra, vượt trần
+      pooler Supabase. CHƯA xác nhận được chuỗi lỗi chính xác vì không đọc
+      được Vercel Runtime Logs từ môi trường này — muốn chốt thì xem Vercel
+      Runtime Logs / Supabase Logs.
+
+      Phép đo CÓ làm production 500 thật trong lúc chạy (đỉnh ~70% request lỗi,
+      kể cả trang danh mục). Hết tải là hồi phục hoàn toàn: kiểm lại bằng
+      request đơn lẻ cách nhau 2 giây, 48/48 trả 200, độ trễ về đúng 260-430ms.
+      Tổng đã tiêu ~32.000 request hạn mức Vercel.
+
+      **ĐÃ VÁ — thêm 3 file lưới an toàn (trước đó dự án KHÔNG có file nào):**
+      + `src/app/global-error.tsx` — lưới NGOÀI CÙNG, chỉ nó bắt được lỗi xảy
+        ra trong CHÍNH root layout. Đây mới là file cho ca hỏng nặng nhất, KHÔNG
+        phải error.tsx: `Header` nằm trong root layout và gọi `getCurrentUser()`
+        nên khi DB không với tới được thì root layout throw, và error.tsx (nằm
+        BÊN TRONG layout đó) không bao giờ được render. Vì nó THAY THẾ root
+        layout, file này tự khai `<html>/<body>`, không import component nào
+        đụng DB, và đặt thẳng font hệ thống qua `style` (biến --font-sans-src
+        do layout bơm vào <html>, mà layout thì vừa chết).
+      + `src/app/error.tsx` — lỗi tầng trang, layout còn sống nên Header/Footer
+        vẫn render quanh nó, `reset()` chỉ render lại nhánh lỗi.
+      + `src/app/not-found.tsx` — 404 theo theme (trước đó dùng trang 404 mặc
+        định của Next, chữ đen nền trắng, lạc hẳn khỏi theme tối). CỐ Ý KHÔNG
+        query DB ở đây: trang 404 phải là trang KHÔNG THỂ tự lỗi, nếu nó cũng
+        đụng DB thì lúc DB sập một URL sai sẽ rơi tiếp vào 500.
+
+      BẢO MẬT trong 2 trang lỗi: CHỈ hiện `error.digest`, TUYỆT ĐỐI không hiện
+      `error.message` — lỗi tầng DB của Prisma có thể chứa connection string/
+      tên host trong thông báo. `digest` là mã băm Next.js tự sinh, cũng xuất
+      hiện trong Vercel Runtime Logs, nên là thứ duy nhất vừa an toàn để lộ ra
+      vừa tra được đúng lỗi trong log.
+
+      `src/lib/apiError.ts` (mới) + `dbUnavailable()` áp cho 3 route GET CÔNG
+      KHAI có đụng DB: `/api/products`, `/api/products/suggest`,
+      `/api/products/compare`. Trả **503** (+ `Retry-After: 5`,
+      `Cache-Control: no-store`) chứ không phải 500 — đây là lỗi TẠM THỜI chứ
+      không phải request sai, 503 nói đúng điều đó cho CDN/monitoring/client.
+      Phần quan trọng nhất của hàm là `console.error`: nó đưa lỗi thật vào
+      Vercel Runtime Logs, không có nó thì lỗi biến mất không dấu vết (đúng
+      tình trạng lúc chẩn đoán). `/api/address/wards` KHÔNG cần sửa vì nó đọc
+      JSON trong repo, không đụng DB.
+
+      **GIỚI HẠN CÒN LẠI của bản vá (đã đo, không phải suy đoán):** error
+      boundary là Client Component nên hiệu quả KHÔNG đều giữa 2 loại khách.
+      Khách ẩn danh (và mọi bot) không có cookie `session_token` nên
+      `getCurrentUser()` return sớm KHÔNG query DB → layout sống → `error.tsx`
+      render PHÍA SERVER, trang lỗi đầy đủ ngay trong HTML. Khách ĐÃ ĐĂNG NHẬP
+      thì có cookie → buộc query Session → layout throw → chỉ còn
+      `global-error` render PHÍA CLIENT, nên HTML trả về vẫn body rỗng cho tới
+      khi JS chạy. Đã xác nhận cả 2 ca bằng Chrome headless `--dump-dom` (xem
+      cách test ở mục Lưu ý quan trọng). Muốn xoá hẳn bất đối xứng này thì phải
+      làm đúng mục Giai đoạn 3 về `getCurrentUser()` — bỏ query Session khỏi
+      mọi request, lúc đó layout không bao giờ throw và MỌI khách đều nhận
+      trang lỗi render sẵn từ server.
+
+      CHƯA LÀM (cần thao tác ngoài code): thêm `DB_POOL_MAX=2` vào Environment
+      Variables trên Vercel. Không đổi một dòng code, gấp hơn đôi số instance
+      chịu được dưới cùng trần pooler Supabase. KHÔNG nên để 1 vì `/admin` gọi
+      13 query trong một `Promise.all`, sẽ bị xếp hàng. Và 20+ route API khác
+      vẫn chưa có try/catch ở tầng ngoài (phần lớn là route admin/POST, chỉ
+      người đăng nhập gọi tới nên rủi ro thấp hơn hẳn nhóm GET công khai).
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả
@@ -6101,7 +6204,13 @@ không ai bấm tới trang thứ 1.000, nhưng vẫn nên chặn nếu bảng p
 **Giai đoạn 3 (chỉ làm khi có traffic thật, cần hạ tầng thêm):**
 - [ ] `getCurrentUser()` query Session trên MỌI request (Header ở layout) —
       query bị gọi nhiều nhất toàn site. Đổi sang cookie có chữ ký (JWT) để bỏ
-      hẳn query, hoặc cache ngắn hạn qua Redis.
+      hẳn query, hoặc cache ngắn hạn qua Redis. KHÔNG CHỈ LÀ HIỆU NĂNG: phép đo
+      tải đã chứng minh chính query này làm MỌI trang phụ thuộc DB, nên khi DB
+      gián đoạn thì (a) trang danh mục đã cache đầy đủ vẫn vỡ, và (b) với khách
+      đã đăng nhập thì root layout throw nên chỉ còn global-error render phía
+      client, HTML trả về body rỗng. Bỏ query này đi là trang có cache còn sống
+      sót qua một đợt DB gián đoạn, và mọi khách đều nhận trang lỗi render sẵn
+      từ server.
 - [ ] `src/lib/rateLimit.ts` lưu trong RAM tiến trình nên trên nhiều instance
       không giới hạn được thật (file tự ghi rõ hạn chế này). Thêm một điểm
       nữa: vòng dọn Map chạy qua TOÀN BỘ Map mỗi lần gọi, tức O(n) mỗi
@@ -6114,11 +6223,12 @@ không ai bấm tới trang thứ 1.000, nhưng vẫn nên chặn nếu bảng p
 - [ ] `/admin` gọi 13 query trong 1 Promise.all và CỐ Ý không cache. Một admin
       bấm refresh liên tục có thể ảnh hưởng cả site vì dùng chung pool. Cần
       read replica, hoặc cache ngắn (30-60s) cho các con số tổng hợp.
-- [x] Ngưỡng chịu tải: ĐÃ CÓ CÔNG CỤ ĐO (`npm run loadtest`, xem mục cuối
-      phần Tiến độ) thay vì ước lượng bằng cảm giác. Chạy thử tới 4 req/s chưa
-      thấy ngưỡng — cần chạy chặng cao hơn
-      (`npm run loadtest -- --target=prod --stages=10,25,50,100`) để biết số
-      thật. CHƯA làm: đo ở quy mô 1 TRIỆU BẢN GHI. Script đo được "chịu bao
+- [x] Ngưỡng chịu tải: ĐÃ ĐO THẬT trên production (xem mục cuối phần Tiến
+      độ) — sạch tới **100 req/s** ≈ 500 người lướt cùng lúc, lỗi 0%. Trên mức
+      đó KHÔNG đo được từ máy phát triển vì trần băng thông 74 Mbps chặn trước
+      (dùng `--api` để vượt). Và phát hiện ra lỗ hổng quan trọng hơn: khi Vercel
+      bật quá nhiều instance thì tổng kết nối vượt trần pooler Supabase, site
+      vỡ hẳn thành 500 chứ không chậm dần. CHƯA làm: đo ở quy mô 1 TRIỆU BẢN GHI. Script đo được "chịu bao
       nhiêu người" nhưng với 18 sản phẩm thì nhóm cached và uncached nhanh y
       hệt nhau, nên nó KHÔNG trả lời được câu về dữ liệu lớn. Muốn trả lời cần
       sinh dataset lớn thật — và KHÔNG sinh vào DB production đang dùng (sẽ
@@ -6127,6 +6237,39 @@ không ai bấm tới trang thứ 1.000, nhưng vẫn nên chặn nếu bảng p
       `DATABASE_URL` sang đó.
 
 ## Lưu ý quan trọng
+- Dự án CÓ error boundary từ đợt đo tải: `src/app/error.tsx` (lỗi tầng trang),
+  `src/app/global-error.tsx` (lỗi trong CHÍNH root layout — bắt được cả ca
+  Header/getCurrentUser throw khi DB sập), `src/app/not-found.tsx` (404). Khi
+  thêm trang lỗi mới hoặc sửa 2 file này: CHỈ hiện `error.digest`, KHÔNG BAO
+  GIỜ hiện `error.message` (lỗi Prisma có thể chứa connection string). Và
+  global-error.tsx không được import bất cứ thứ gì đụng DB hay dùng next/font —
+  nó THAY THẾ root layout nên layout đã chết trước khi nó render.
+- Load test: trần BĂNG THÔNG của máy chạy test là một trần RIÊNG, script không
+  tự thấy được. Trang site nặng ~79-93KB nên ~100 req/s đã ăn ~63 Mbps; vượt
+  trần đường mạng thì mọi URL cùng chậm đi một tỉ lệ y hệt nhau, lỗi vẫn 0%, và
+  con số đo được là tốc độ Internet chứ không phải sức chịu tải. Dấu hiệu nhận
+  biết: nhóm cached và uncached xuống cấp bằng nhau (server nghẽn thật thì nhóm
+  đụng DB phải tệ hơn hẳn). Dùng `npm run loadtest -- --api` (response ~2,5KB)
+  để đo tầng dữ liệu mà không chạm trần đó.
+- Test ca "DB sập" ở local có 3 cái bẫy, đã mắc đủ cả 3:
+  (1) phải chạy `npm run build` + `next start`, KHÔNG dùng `npm run dev` — dev
+  mode hiện error overlay của Next chứ không render error boundary;
+  (2) `.next/cache` (Data Cache) còn trên đĩa nên trang có `unstable_cache` vẫn
+  render bình thường dù DB đã sập — phải bắn vào đường chắc chắn không cache
+  (`/products?search=...`) mới thấy lỗi thật;
+  (3) error boundary là Client Component nên `curl` thấy body RỖNG trong khi
+  trình duyệt thật render ra trang lỗi đầy đủ — xem bằng
+  `chrome --headless --dump-dom <url>` (Chrome/Edge có sẵn trên máy này), đừng
+  kết luận "boundary không chạy" chỉ vì curl không thấy gì.
+  Cách mô phỏng: ghi `.env.local` với
+  `DATABASE_URL=postgresql://u:p@127.0.0.1:1/none` (ECONNREFUSED tức thì, không
+  phải chờ timeout 10s), nhớ bọc `trap cleanup EXIT` để luôn xoá `.env.local`
+  kể cả khi script lỗi giữa chừng.
+- Trên Windows, `$!` trong Bash trả PID của wrapper `npx` chứ KHÔNG phải PID
+  của node server thật — `taskkill` theo PID đó sẽ im lặng không tắt được gì và
+  server vẫn chạy ngầm giữ nguyên biến môi trường cũ (vd DATABASE_URL hỏng) gây
+  kết luận sai ở lần test sau. Lấy PID thật qua
+  `netstat -ano | grep ":<port>" | grep LISTENING | awk '{print $5}'`.
 - `prisma db push` XÓA index nào không có trong schema.prisma. Vì vậy index
   đặc biệt (GIN, pg_trgm...) phải khai TRONG SCHEMA chứ không tạo bằng raw
   SQL, nếu không nó sẽ biến mất ở lần `db push` sau mà không ai biết. Prisma 7

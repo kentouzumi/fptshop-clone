@@ -20,6 +20,8 @@
  *   --stages=2,5,10,20,40              số request/giây của từng chặng
  *   --duration=20                      số giây mỗi chặng
  *   --only=cached,uncached,detail      chỉ bắn các nhóm này
+ *   --api                              bắn API JSON thay vì trang HTML
+ *                                      (xem GHI CHÚ TRẦN BĂNG THÔNG dưới)
  *   --weighted                         bắn theo tỉ lệ traffic thật thay vì chia đều
  *   --confirm                          bắt buộc khi --target trỏ ra ngoài localhost
  *
@@ -60,6 +62,7 @@ const COOLDOWN_SECONDS = 5;
 const WARMUP_SECONDS = Number(argv.get("warmup") ?? 10);
 const CHECK_ONLY = argv.get("check") === "true";
 const WEIGHTED = argv.get("weighted") === "true";
+const API_MODE = argv.get("api") === "true";
 
 /**
  * Trần số request đang bay cùng lúc. Đây là CƠ CHẾ AN TOÀN, không phải tối ưu:
@@ -135,6 +138,81 @@ const ENDPOINTS = [
     group: "uncached",
     path: "/products?category=tivi&instock=1",
     weight: 2,
+  },
+];
+
+/**
+ * GHI CHÚ TRẦN BĂNG THÔNG — lý do tồn tại của `--api`.
+ *
+ * Mỗi trang HTML của site nặng ~79-93KB (phần lớn là RSC payload). Nghĩa là
+ * 100 req/s đã cần ~63 Mbps tải xuống LIÊN TỤC ở máy đang chạy test. Đo thực
+ * tế trên máy phát triển: trần ~74 Mbps, tức chỉ bắn được tới ~112 req/s là
+ * ĐƯỜNG MẠNG bão hoà trước. Vượt mức đó thì mọi URL cùng chậm đi theo một tỉ
+ * lệ y hệt nhau — kể cả URL có cache lẫn không cache — và con số đo được là
+ * tốc độ Internet của người chạy test, KHÔNG phải sức chịu tải của site. Đây
+ * đúng là cái bẫy mà MAX_SOCKETS ở dưới phòng cho socket, nhưng băng thông là
+ * một trần RIÊNG mà script không tự thấy được.
+ *
+ * DẤU HIỆU đã chạm trần băng thông (phân biệt với server nghẽn thật):
+ *   - mọi URL xuống cấp cùng tỉ lệ, nhóm cached và uncached chênh nhau không
+ *     đáng kể (server nghẽn thì nhóm đụng DB phải tệ hơn hẳn);
+ *   - lỗi vẫn 0% dù p95 lên hàng giây (quá tải thật thường kèm 5xx/ECONNRESET).
+ *
+ * `--api` bắn /api/products thay vì trang HTML: ~2,5KB/response (nhỏ hơn ~35
+ * lần) nhưng CHẠY ĐÚNG getProducts() của trang danh mục — cùng truy vấn, cùng
+ * connection pool, cùng Prisma. Nhờ vậy tách được "DB/pool có theo nổi không"
+ * khỏi "máy mình có tải nổi HTML về không", và đẩy được lên hàng nghìn req/s
+ * trong cùng đường mạng đó.
+ *
+ * ĐÁNH ĐỔI phải biết khi đọc kết quả: cách này KHÔNG đo phần render/stream
+ * HTML (CPU của serverless function), nên số ra sẽ LẠC QUAN HƠN trang thật.
+ * Nó trả lời "tầng dữ liệu chịu bao nhiêu", không phải "người dùng thật thấy
+ * bao nhiêu". Muốn số của người dùng thật thì phải chạy chế độ HTML mặc định
+ * từ một máy có đường mạng đủ rộng.
+ *
+ * `spec_*` và `instock` CỐ Ý không có ở đây: route /api/products không hỗ trợ
+ * 2 tham số đó (xem quyết định phạm vi trong CLAUDE.md), gửi vào sẽ bị bỏ qua
+ * âm thầm và ta tưởng đang đo đường facet trong khi thực ra chỉ đo lọc danh
+ * mục thường. Đường EXISTS/facet chỉ đo được qua chế độ HTML.
+ */
+const API_ENDPOINTS = [
+  {
+    name: "api danh mục (có cache)",
+    group: "cached",
+    path: "/api/products?category=dien-thoai",
+    weight: 30,
+  },
+  {
+    name: "api danh mục 2 (có cache)",
+    group: "cached",
+    path: "/api/products?category=laptop",
+    weight: 20,
+  },
+  {
+    name: "api sắp xếp giá (có cache)",
+    group: "cached",
+    path: "/api/products?category=tivi&sort=price_asc",
+    weight: 10,
+  },
+  {
+    name: "api tìm kiếm (KHÔNG cache, pg_trgm)",
+    group: "uncached",
+    path: "/api/products?search=iphone",
+    weight: 15,
+    note: "đường ILIKE '%...%' — dễ sập nhất ở quy mô lớn",
+  },
+  {
+    name: "api khoảng giá (KHÔNG cache)",
+    group: "uncached",
+    path: "/api/products?minPrice=5000000&maxPrice=30000000",
+    weight: 15,
+  },
+  {
+    name: "api gợi ý (KHÔNG cache)",
+    group: "uncached",
+    path: "/api/products/suggest?q=iph",
+    weight: 10,
+    note: "autocomplete: gọi mỗi 250ms khi khách đang gõ",
   },
 ];
 
@@ -387,12 +465,17 @@ async function confirmRemote(totalRequests) {
 async function main() {
   console.log(`\n┌─ Load test: ${BASE}`);
 
-  const dyn = await resolveDynamicPaths();
+  // Chế độ --api không có URL nào phải lấy từ sitemap, nên bỏ luôn 1 request.
+  const dyn = API_MODE ? {} : await resolveDynamicPaths();
+  const endpointSet = API_MODE ? API_ENDPOINTS : ENDPOINTS;
   const onlyGroups = argv.get("only")?.split(",").map((s) => s.trim());
-  const paths = ENDPOINTS.filter((e) => !onlyGroups || onlyGroups.includes(e.group)).map((e) => ({
-    ...e,
-    path: e.path ?? dyn.product,
-  }));
+  const paths = endpointSet
+    .filter((e) => !onlyGroups || onlyGroups.includes(e.group))
+    .map((e) => ({ ...e, path: e.path ?? dyn.product }));
+
+  if (API_MODE) {
+    console.log("│  chế độ API JSON: đo tầng dữ liệu, KHÔNG đo render HTML");
+  }
 
   if (dyn.productCount) {
     console.log(`│  sitemap: ${dyn.productCount} sản phẩm · chọn ${dyn.product}`);
