@@ -493,6 +493,31 @@ async function main() {
     return;
   }
 
+  /**
+   * DƯ ÂM GIỮA CÁC LẦN CHẠY — cảnh báo này in KHÔNG ĐIỀU KIỆN (kể cả khi có
+   * --confirm) vì chính nó là cái bẫy đã làm sai kết luận 2 lần liền.
+   *
+   * Sau một đợt tải, Vercel còn giữ RẤT NHIỀU instance ở trạng thái nóng thêm
+   * vài phút, và mỗi instance vẫn nắm tới DB_POOL_MAX kết nối tới Supabase.
+   * Chạy đợt test thứ hai ngay sau đó là bắn vào một hệ thống đã cạn gần hết
+   * hạn mức kết nối — tỉ lệ lỗi vọt lên hàng chục phần trăm và rất dễ quy oan
+   * cho thứ vừa sửa.
+   *
+   * Đã mắc đúng bẫy này theo cả hai chiều: lần đầu chạy HTML trước (0% lỗi)
+   * rồi API sau (37% lỗi), lần sau chạy API trước (0% lỗi) rồi HTML sau (57%
+   * lỗi) — luôn là đợt THỨ HAI vỡ, bất kể chế độ nào. Đợi ~2-3 phút và xác
+   * nhận site đã 200 ổn định trước khi chạy đợt tiếp theo thì cả hai chế độ
+   * đều 0% lỗi ở 100 req/s.
+   */
+  if (IS_REMOTE) {
+    console.log(
+      `\n⚠ Nếu bạn VỪA chạy một đợt test trong ~3 phút qua: hãy đợi thêm.\n` +
+        `  Instance Vercel còn nóng vẫn đang giữ kết nối tới Supabase, nên đợt\n` +
+        `  thứ hai sẽ báo tỉ lệ lỗi cao một cách giả tạo. Kiểm tra site trả 200\n` +
+        `  ổn định trước đã.`
+    );
+  }
+
   console.log(
     `\nChặng: ${STAGES.join(" → ")} request/giây, mỗi chặng ${STAGE_SECONDS}s ` +
       `(tổng ~${totalRequests} request + ${Math.round(STAGES[0] * WARMUP_SECONDS)} warmup)\n`

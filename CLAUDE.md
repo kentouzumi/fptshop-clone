@@ -6058,12 +6058,83 @@
       mọi request, lúc đó layout không bao giờ throw và MỌI khách đều nhận
       trang lỗi render sẵn từ server.
 
-      CHƯA LÀM (cần thao tác ngoài code): thêm `DB_POOL_MAX=2` vào Environment
-      Variables trên Vercel. Không đổi một dòng code, gấp hơn đôi số instance
-      chịu được dưới cùng trần pooler Supabase. KHÔNG nên để 1 vì `/admin` gọi
-      13 query trong một `Promise.all`, sẽ bị xếp hàng. Và 20+ route API khác
-      vẫn chưa có try/catch ở tầng ngoài (phần lớn là route admin/POST, chỉ
-      người đăng nhập gọi tới nên rủi ro thấp hơn hẳn nhóm GET công khai).
+      ĐÃ LÀM TIẾP: user đã thêm `DB_POOL_MAX=2` trên Vercel và redeploy — kết
+      quả đo lại ở mục ngay dưới. CÒN LẠI: 20+ route API khác vẫn chưa có
+      try/catch ở tầng ngoài (phần lớn là route admin/POST, chỉ người đăng
+      nhập gọi tới nên rủi ro thấp hơn hẳn nhóm GET công khai).
+
+- [x] Xác nhận bản vá chịu tải bằng số đo lại (sau khi user đặt `DB_POOL_MAX=2`
+      trên Vercel + redeploy). Cả hai nửa của bản vá đều ăn:
+
+      **Chế độ API, đúng y nguyên tham số lần trước để so được trực tiếp**
+      (`--api --stages=100,250,500 --duration=10 --warmup=10`):
+
+      | req/s | trước (pool 5) | sau (pool 2) |
+      |-------|----------------|--------------|
+      | 100   | lỗi **37.5%**  | lỗi **0.0%** |
+      | 250   | lỗi **34.6%**  | lỗi **0.0%** |
+      | 500   | lỗi **31.9%**  | lỗi **3.0%** |
+
+      Và phần lỗi còn lại ở 500 req/s là **`503×152`, KHÔNG còn `500`** — tức
+      `dbUnavailable()` đã chạy thật trên production: lỗi giờ trả 503 + JSON +
+      `Retry-After` và CÓ ghi vào Vercel Runtime Logs thay vì 500 body rỗng
+      không dấu vết. Mã 503 cũng gián tiếp xác nhận chẩn đoán ban đầu đúng: lỗi
+      bị `try/catch` quanh `getProducts()` bắt được nên nó thật sự là lỗi tầng
+      DB, không phải platform Vercel chết.
+
+      **Chế độ HTML (đường người dùng thật), cùng tham số baseline** — kiểm
+      đúng thứ `max: 2` có thể làm xấu đi, vì trang chủ gọi 6 query và `/admin`
+      gọi 13 query trong một `Promise.all` nên giờ phải xếp hàng theo cặp:
+
+      | req/s | p95 trước (pool 5) | p95 sau (pool 2) | lỗi |
+      |-------|--------------------|------------------|-----|
+      | 10    | 344ms              | **317ms**        | 0.0% |
+      | 25    | 465ms              | **382ms**        | 0.0% |
+      | 50    | 463ms              | **364ms**        | 0.0% |
+      | 100   | 527ms              | **485ms**        | 0.0% |
+
+      Không hồi quy — thậm chí tốt hơn ở mọi chặng (chênh lệch nằm trong mức
+      nhiễu, điểm đáng tin là lỗi vẫn 0.0%). Ở mức per-URL thì trang chủ nhích
+      lên (450→515ms ở 100 req/s) đúng chiều dự đoán của việc xếp hàng kết nối,
+      nhưng vẫn trong nhiễu và các trang khác đi xuống.
+
+      **BẪY PHƯƠNG PHÁP đã làm tôi kết luận sai 2 LẦN LIỀN — dư âm giữa các
+      lần chạy.** Lần đo HTML đầu tiên sau khi đặt pool=2 cho ra lỗi
+      57%/35%/82%, nhìn như `DB_POOL_MAX=2` vừa phá site. SAI. Quy luật thật:
+      luôn là đợt test THỨ HAI trong phiên bị vỡ, bất kể chế độ nào — lần đầu
+      HTML trước (0%) rồi API sau (37%), lần sau API trước (0%) rồi HTML sau
+      (57%). Nguyên nhân: sau một đợt tải, Vercel còn giữ rất nhiều instance
+      nóng thêm vài phút và mỗi instance vẫn nắm tới DB_POOL_MAX kết nối tới
+      Supabase, nên đợt sau bắn vào một hệ thống đã cạn gần hết hạn mức kết
+      nối. Đợi ~2-3 phút rồi chạy lại từ trạng thái sạch thì cả hai chế độ đều
+      0.0% lỗi ở 100 req/s. Đã thêm cảnh báo in KHÔNG ĐIỀU KIỆN (kể cả khi có
+      `--confirm`) vào scripts/loadtest.mjs.
+
+      CHỨNG MINH `max: 2` KHÔNG phải nguyên nhân, bằng thực nghiệm có đối
+      chứng chứ không suy luận: chạy `next start` ở local với `DB_POOL_MAX=2`
+      và DB THẬT, bắn 15 request ĐỒNG THỜI vào đúng trang đang vỡ trên
+      production (`/products?search=iphone`) — **15/15 trả 200**, log server
+      không một lỗi. Local chỉ có 1 tiến trình = 1 pool 2 kết nối, vẫn phục vụ
+      15 request đồng thời bình thường (chúng chỉ xếp hàng một nhịp). Suy ra
+      vấn đề nằm ở TỔNG kết nối = số instance × pool, không phải ở giá trị pool
+      của từng instance.
+
+      Mốc chẩn đoán hữu ích nhất trong lúc truy: `/api/products?search=iphone`
+      thành công 20/20 trong khi `/products?search=iphone` (HTML, CÙNG truy vấn
+      `getProducts`) lỗi 20/20. Chênh lệch đó loại ngay `getProducts` khỏi danh
+      sách nghi vấn và chỉ đúng vào chỗ trang HTML cần NHIỀU kết nối cùng lúc
+      (thêm `getOutOfStockProductIds` + các query cached khác). Khi hai đường
+      dùng chung một truy vấn mà chỉ một đường vỡ, khác biệt nằm ở phần CÒN
+      LẠI của đường đó.
+
+      Thời gian hồi phục sau một đợt tải: ~2 phút, tự động, không cần làm gì
+      (đo bằng request đơn lẻ cách nhau 15s cho tới khi 3 lần liên tiếp sạch).
+
+      CHƯA LÀM: chưa biết trần kết nối THẬT của Supabase (Dashboard → Database
+      → Connection pooling). Biết số đó thì tính được headroom bằng số học
+      (`trần / DB_POOL_MAX` = số instance chịu được) thay vì phải dò bằng cách
+      làm production vỡ. Cũng chưa dò ngưỡng mới ở chế độ API (ở 500 req/s mới
+      3% lỗi nên ngưỡng còn cao hơn) — mỗi lần thử phải cách nhau 2-3 phút.
 
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
@@ -6228,7 +6299,10 @@ không ai bấm tới trang thứ 1.000, nhưng vẫn nên chặn nếu bảng p
       đó KHÔNG đo được từ máy phát triển vì trần băng thông 74 Mbps chặn trước
       (dùng `--api` để vượt). Và phát hiện ra lỗ hổng quan trọng hơn: khi Vercel
       bật quá nhiều instance thì tổng kết nối vượt trần pooler Supabase, site
-      vỡ hẳn thành 500 chứ không chậm dần. CHƯA làm: đo ở quy mô 1 TRIỆU BẢN GHI. Script đo được "chịu bao
+      vỡ hẳn thành 500 chứ không chậm dần — đã vá (error boundary + 503 có log)
+      và đã xác nhận lại bằng số sau khi đặt `DB_POOL_MAX=2`: API từ 37.5% lỗi
+      về 0.0% ở 100 req/s, HTML giữ 0.0% lỗi tới 100 req/s và p95 còn tốt hơn
+      baseline. CHƯA làm: đo ở quy mô 1 TRIỆU BẢN GHI. Script đo được "chịu bao
       nhiêu người" nhưng với 18 sản phẩm thì nhóm cached và uncached nhanh y
       hệt nhau, nên nó KHÔNG trả lời được câu về dữ liệu lớn. Muốn trả lời cần
       sinh dataset lớn thật — và KHÔNG sinh vào DB production đang dùng (sẽ
@@ -6237,6 +6311,19 @@ không ai bấm tới trang thứ 1.000, nhưng vẫn nên chặn nếu bảng p
       `DATABASE_URL` sang đó.
 
 ## Lưu ý quan trọng
+- Load test: PHẢI đợi ~2-3 phút giữa hai đợt chạy, và xác nhận site trả 200 ổn
+  định trước khi chạy đợt sau. Sau một đợt tải, Vercel còn giữ rất nhiều
+  instance nóng thêm vài phút và mỗi instance vẫn nắm tới DB_POOL_MAX kết nối
+  tới Supabase, nên đợt thứ hai bắn vào một hệ thống đã cạn gần hết hạn mức
+  kết nối và báo tỉ lệ lỗi cao GIẢ TẠO. Bẫy này đã làm kết luận sai 2 lần liền
+  (xem mục tiến độ) — luôn là đợt THỨ HAI vỡ, bất kể chế độ test nào. Script có
+  in cảnh báo nhưng nó không tự chặn được.
+- Khi hai đường cùng gọi một truy vấn mà chỉ MỘT đường lỗi, khác biệt nằm ở
+  phần còn lại của đường đó, không phải ở truy vấn chung. Mốc chẩn đoán đã dùng:
+  `/api/products?search=iphone` 20/20 thành công trong khi `/products?search=iphone`
+  (cùng `getProducts`) 20/20 lỗi → loại ngay getProducts, chỉ đúng vào việc
+  trang HTML cần nhiều kết nối cùng lúc. Trước khi sửa, hãy tìm một cặp URL
+  như vậy để khoanh vùng.
 - Dự án CÓ error boundary từ đợt đo tải: `src/app/error.tsx` (lỗi tầng trang),
   `src/app/global-error.tsx` (lỗi trong CHÍNH root layout — bắt được cả ca
   Header/getCurrentUser throw khi DB sập), `src/app/not-found.tsx` (404). Khi
