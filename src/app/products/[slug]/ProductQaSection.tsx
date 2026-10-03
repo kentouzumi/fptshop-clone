@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MAX_QUESTION_LENGTH, MIN_QUESTION_LENGTH } from "@/lib/qaLimits";
+import { formatVnDate } from "@/lib/dateValue";
 
 export interface QaAnswerProp {
   id: string;
@@ -20,9 +21,7 @@ export interface QaQuestionProp {
   answers: QaAnswerProp[];
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("vi-VN");
-}
+// Ngày đi qua formatVnDate: chuỗi rỗng/không hợp lệ ra "" thay vì "Invalid Date".
 
 /**
  * Hỏi đáp dưới sản phẩm. Khác phần "Đánh giá" ở chỗ KHÔNG giới hạn 1 lần/người
@@ -151,7 +150,7 @@ export default function ProductQaSection({
             <li key={q.id} className="card p-4">
               <p className="text-sm text-zinc-900">{q.content}</p>
               <p className="mt-1 text-xs text-zinc-400">
-                {q.authorName} · {formatDate(q.createdAt)}
+                {q.authorName} · {formatVnDate(q.createdAt)}
               </p>
 
               {q.answers.length > 0 && (
@@ -167,7 +166,7 @@ export default function ProductQaSection({
                         >
                           {a.authorName}
                         </span>
-                        <span className="text-zinc-400"> · {formatDate(a.createdAt)}</span>
+                        <span className="text-zinc-400"> · {formatVnDate(a.createdAt)}</span>
                       </p>
                     </li>
                   ))}

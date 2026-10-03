@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { getPublishedPostBySlug, getRelatedPosts, incrementPostView } from "@/lib/posts";
 import { absoluteUrl } from "@/lib/siteUrl";
 import JsonLd from "@/components/JsonLd";
+import { formatVnDate, toIsoString } from "@/lib/dateValue";
 
 // Dùng chung giữa generateMetadata và component — không bọc cache() thì mỗi
 // lần render trang là 2 truy vấn y hệt nhau (cùng cách đã làm với
@@ -34,7 +35,7 @@ export async function generateMetadata({
       title,
       description,
       url,
-      publishedTime: post.publishedAt?.toISOString(),
+      publishedTime: toIsoString(post.publishedAt),
       images: post.coverUrl ? [post.coverUrl] : undefined,
     },
     twitter: {
@@ -70,8 +71,8 @@ export default async function PostDetailPage({
           headline: post.title,
           description: post.metaDesc ?? post.excerpt ?? undefined,
           image: post.coverUrl ?? undefined,
-          datePublished: post.publishedAt?.toISOString(),
-          dateModified: post.updatedAt.toISOString(),
+          datePublished: toIsoString(post.publishedAt),
+          dateModified: toIsoString(post.updatedAt),
           author: post.author?.fullName
             ? { "@type": "Person", name: post.author.fullName }
             : undefined,
@@ -91,7 +92,7 @@ export default async function PostDetailPage({
 
       <h1 className="mb-2 text-3xl font-bold tracking-tight">{post.title}</h1>
       <p className="mb-6 text-sm text-zinc-500">
-        {post.publishedAt?.toLocaleDateString("vi-VN")}
+        {formatVnDate(post.publishedAt)}
         {post.author?.fullName && <> · {post.author.fullName}</>}
       </p>
 
@@ -138,7 +139,7 @@ export default async function PostDetailPage({
                   {r.title}
                 </Link>
                 <span className="ml-2 text-xs text-zinc-400">
-                  {r.publishedAt?.toLocaleDateString("vi-VN")}
+                  {formatVnDate(r.publishedAt)}
                 </span>
               </li>
             ))}

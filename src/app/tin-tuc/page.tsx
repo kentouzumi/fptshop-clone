@@ -3,6 +3,7 @@ import Image from "next/image";
 import type { Metadata } from "next";
 import { getPublishedPosts } from "@/lib/posts";
 import { absoluteUrl } from "@/lib/siteUrl";
+import { formatVnDate } from "@/lib/dateValue";
 
 export const metadata: Metadata = {
   title: "Tin tức công nghệ",
@@ -10,10 +11,6 @@ export const metadata: Metadata = {
     "Tin tức, đánh giá và thủ thuật về điện thoại, laptop, tivi — cập nhật từ FPT Shop Clone.",
   alternates: { canonical: absoluteUrl("/tin-tuc") },
 };
-
-function formatDate(value: Date | null) {
-  return value ? value.toLocaleDateString("vi-VN") : "";
-}
 
 export default async function NewsPage({
   searchParams,
@@ -57,7 +54,7 @@ export default async function NewsPage({
                 )}
               </div>
               <div className="p-4">
-                <p className="mb-1 text-xs text-zinc-400">{formatDate(post.publishedAt)}</p>
+                <p className="mb-1 text-xs text-zinc-400">{formatVnDate(post.publishedAt)}</p>
                 <h2 className="line-clamp-2 font-semibold text-zinc-900 group-hover:underline">
                   {post.title}
                 </h2>

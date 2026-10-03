@@ -23,6 +23,7 @@ import ProductCard from "@/components/ProductCard";
 import StarRating from "@/components/StarRating";
 import CompareToggle from "@/components/CompareToggle";
 import { getOutOfStockProductIds } from "@/lib/inventory";
+import { toIsoString } from "@/lib/dateValue";
 
 // Bọc `cache()` của React: generateMetadata và chính component cùng cần đủ dữ
 // liệu sản phẩm, gọi riêng lẻ sẽ thành 2 lượt query y hệt nhau cho MỖI lần
@@ -380,13 +381,13 @@ export default async function ProductDetailPage({
             id: q.id,
             content: q.content,
             authorName: q.authorName,
-            createdAt: q.createdAt.toISOString(),
+            createdAt: toIsoString(q.createdAt) ?? "",
             answers: q.answers.map((a) => ({
               id: a.id,
               content: a.content,
               isStaff: a.isStaff,
               authorName: a.authorName,
-              createdAt: a.createdAt.toISOString(),
+              createdAt: toIsoString(a.createdAt) ?? "",
             })),
           }))}
         />
