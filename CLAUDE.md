@@ -6130,11 +6130,81 @@
       Thời gian hồi phục sau một đợt tải: ~2 phút, tự động, không cần làm gì
       (đo bằng request đơn lẻ cách nhau 15s cho tới khi 3 lần liên tiếp sạch).
 
-      CHƯA LÀM: chưa biết trần kết nối THẬT của Supabase (Dashboard → Database
-      → Connection pooling). Biết số đó thì tính được headroom bằng số học
-      (`trần / DB_POOL_MAX` = số instance chịu được) thay vì phải dò bằng cách
-      làm production vỡ. Cũng chưa dò ngưỡng mới ở chế độ API (ở 500 req/s mới
-      3% lỗi nên ngưỡng còn cao hơn) — mỗi lần thử phải cách nhau 2-3 phút.
+      ĐÃ BIẾT TRẦN KẾT NỐI (user gửi ảnh Supabase Dashboard → Database →
+      Connection pooling): **Max client connections = 200**, cố định theo
+      compute size Nano và KHÔNG đổi được. Nhờ vậy headroom giờ tính được bằng
+      số học thay vì phải dò bằng cách làm production vỡ:
+      `200 / DB_POOL_MAX` = số instance Vercel chịu được.
+      · `DB_POOL_MAX = 2` (đang dùng) → **100 instance**
+      · `DB_POOL_MAX = 5` (trước đây) → **40 instance**
+      Khớp chính xác số đo được: ở 100 req/s Vercel bật quá 40 instance nên hồi
+      pool=5 có 37.5% request bị từ chối, còn pool=2 thì 0%.
+      LƯU Ý đừng nhầm 2 chặng: "Connection pool size = 15" trong cùng màn hình
+      đó là chặng POOLER → POSTGRES, không phải trần mình đụng. Trần mình đụng
+      là 200 ở chặng APP → POOLER.
+      CHƯA LÀM: chưa dò ngưỡng mới ở chế độ API (ở 500 req/s mới 3% lỗi nên
+      ngưỡng còn cao hơn) — mỗi lần thử phải cách nhau 2-3 phút.
+
+- [x] Kiểm tra tổng thể production (user yêu cầu "test lại xem hệ thống có chạy
+      trơn tru không", bỏ hướng đo 1 triệu bản ghi). Chạy 38 phép kiểm chỉ-GET,
+      tuần tự từng request, không tạo tải — và TÌM RA 1 LỖI THẬT đang sống trên
+      production.
+
+      **LỖI: toàn bộ trang Tin tức trả 500.** `/tin-tuc` và `/tin-tuc/[slug]`
+      đều 500 với một request đơn (195ms, không phải timeout). Response KHÔNG có
+      `x-vercel-error` nhưng CÓ đủ CSP của app → chính app throw, không phải
+      platform Vercel chết.
+
+      NGUYÊN NHÂN — bẫy đáng nhớ nhất của `unstable_cache`: **nó SERIALIZE giá
+      trị trả về ra JSON**. Cache MISS thì hàm trả về giá trị vừa tính nên
+      `publishedAt` là `Date` thật và `.toLocaleDateString()` chạy bình thường;
+      cache HIT thì giá trị đọc lại từ store đã JSON hoá nên `Date` thành
+      **CHUỖI**, gọi method của Date trên nó ném
+      `TypeError: x.toLocaleDateString is not a function` và cả trang thành 500.
+
+      2 lý do lỗi này lọt được tới production và sống lâu mà không ai thấy:
+      + **TypeScript KHÔNG bắt được.** Kiểu trả về vẫn khai là `Date` nên `tsc`
+        hoàn toàn sạch — kiểu khai báo NÓI DỐI so với giá trị runtime.
+      + **Lúc mới viết tính năng thì cache còn lạnh** (luôn MISS) nên toàn bộ
+        test lúc đó pass thật. Lỗi chỉ lộ ra sau khi cache ấm lên.
+      Toán tử `?.` cũng không cứu được: chuỗi không phải null nên nó đi tiếp
+      rồi mới chết.
+
+      Dấu hiệu chẩn đoán hữu ích: ở LOCAL trang danh sách 500 nhưng trang chi
+      tiết 200, trong khi production vỡ cả hai — chính sự KHÔNG NHẤT QUÁN đó là
+      manh mối, vì nó phản ánh trạng thái hit/miss khác nhau của từng khoá cache
+      chứ không phải code khác nhau.
+
+      ĐÃ VÁ bằng `src/lib/dateValue.ts` (mới): `toDate` / `formatVnDate` /
+      `formatVnDateTime` / `toIsoString`, đều nhận `Date | string | null`. Áp
+      cho 3 nơi:
+      + `/tin-tuc` + `/tin-tuc/[slug]` — đang 500 thật (cả phần hiển thị lẫn
+        `toISOString()` trong metadata/JSON-LD, vì `toISOString` cũng là method
+        của Date nên cũng chết).
+      + **Hỏi đáp ở trang sản phẩm** — `getProductQa` cũng bọc `unstable_cache`
+        và trang gọi `q.createdAt.toISOString()`, tức CÙNG LỖI nhưng đang NẰM
+        IM: DB hiện có 0 câu hỏi nên `map` không chạy lần nào. Câu hỏi đầu tiên
+        của khách sẽ làm 500 trang sản phẩm đó ngay khi cache hit. Đây là lý do
+        phải rà cả codebase chứ không chỉ vá đúng trang đang báo lỗi.
+      + `ProductQaSection`: ngày không hợp lệ giờ ra chuỗi rỗng thay vì hiện
+        "Invalid Date".
+
+      CÁCH TEST ĐÚNG (quan trọng — test sai sẽ pass vì lý do sai): PHẢI giữ
+      nguyên `.next/cache` để cache còn ẤM rồi mới gọi, và gọi MỖI URL NHIỀU
+      LẦN. Xoá cache đi thì mọi lần gọi đều là MISS và trang luôn 200 kể cả khi
+      chưa sửa gì. Đã verify: giữ cache ấm, gọi 4 URL × 3 lần — tất cả 200, ngày
+      đăng hiển thị đúng (29/9/2026), 0 TypeError trong log server.
+
+      **KẾT QUẢ SAU KHI VÁ: 38/38 đạt, 0 lỗi, không trang nào quá 2 giây.**
+      Phạm vi đã kiểm: trang chủ; 3 danh mục (đếm ĐÚNG 6 sản phẩm mỗi danh mục,
+      không chỉ xem có 200); danh mục con; tìm kiếm; lọc thông số (xác nhận có
+      THU HẸP kết quả chứ không phải trả về tất cả); lọc chỉ-hàng-còn; chi tiết
+      sản phẩm; danh sách + chi tiết thương hiệu; tin tức; FAQ; cửa hàng; so
+      sánh; tra cứu đơn; đăng nhập; trang 404 theo theme; sitemap (48 URL);
+      robots.txt; 4 API công khai (gồm cả ca tỉnh không hợp lệ phải trả 400);
+      7 guard đăng nhập đều redirect 307 (`redirect: "manual"` mới thấy được —
+      `fetch` mặc định đi theo redirect rồi trả 200 của trang /login); và 6
+      header bảo mật, trong đó có kiểm CSP production KHÔNG chứa `unsafe-eval`.
 
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
@@ -6311,6 +6381,21 @@ không ai bấm tới trang thứ 1.000, nhưng vẫn nên chặn nếu bảng p
       `DATABASE_URL` sang đó.
 
 ## Lưu ý quan trọng
+- `unstable_cache` SERIALIZE giá trị trả về ra JSON, nên **mọi `Date` trả về từ
+  hàm có cache sẽ thành CHUỖI khi cache HIT** (cache MISS thì vẫn là Date thật).
+  Gọi `.toLocaleDateString()`/`.toISOString()`/`.getTime()` thẳng trên nó ném
+  TypeError và làm cả trang 500. `tsc` KHÔNG bắt được vì kiểu trả về vẫn khai là
+  `Date`, và test lúc mới viết tính năng cũng pass vì cache còn lạnh — lỗi chỉ
+  lộ ra sau khi cache ấm (đã làm 500 toàn bộ trang Tin tức trên production).
+  `?.` không cứu được vì chuỗi không phải null.
+  QUY TẮC: dữ liệu từ BẤT KỲ hàm nào bọc `unstable_cache` phải đi qua
+  `src/lib/dateValue.ts` (`formatVnDate`/`formatVnDateTime`/`toIsoString`/
+  `toDate`) trước khi đụng tới method của Date. Cùng rủi ro đó áp cho các kiểu
+  khác JSON không giữ được: `Decimal` của Prisma, `BigInt`, `Map`/`Set`,
+  `undefined` (biến mất khỏi object sau khi serialize).
+  Và khi TEST ca này: phải GIỮ `.next/cache` cho cache ấm rồi gọi mỗi URL NHIỀU
+  LẦN — xoá cache đi thì mọi lần gọi đều MISS và trang luôn 200 kể cả khi code
+  vẫn sai.
 - Load test: PHẢI đợi ~2-3 phút giữa hai đợt chạy, và xác nhận site trả 200 ổn
   định trước khi chạy đợt sau. Sau một đợt tải, Vercel còn giữ rất nhiều
   instance nóng thêm vài phút và mỗi instance vẫn nắm tới DB_POOL_MAX kết nối
