@@ -15,6 +15,42 @@ const prisma = new PrismaClient({ adapter });
 // ý nghĩa (xem CATEGORY_FILTER_SPECS trong src/lib/products.ts: thông số dùng
 // làm bộ lọc được khai báo riêng cho từng danh mục, và MỌI sản phẩm trong
 // danh mục đó phải có đủ các thông số này thì bộ lọc mới lọc đúng).
+/**
+ * Sinh ĐỦ ma trận biến thể màu × dung lượng cho một sản phẩm.
+ *
+ * VÌ SAO LÀ HÀM CHỨ KHÔNG VIẾT TAY TỪNG DÒNG: trước đây mỗi máy chỉ khai đúng
+ * 2 biến thể nằm CHÉO nhau (vd "Đen/128GB" và "Xanh Dương/256GB", không có
+ * "Đen/256GB"), nên trên trang sản phẩm chọn màu Đen thì nút "256GB" bị mờ +
+ * gạch ngang không bấm được — không giống trang bán hàng thật, nơi mỗi màu đều
+ * mua được mọi dung lượng. Khai bằng ma trận thì không thể lặp lại kiểu khai
+ * thiếu đó nữa, và thêm 1 màu hay 1 dung lượng là tự sinh đủ tổ hợp còn lại.
+ *
+ * GIÁ LẤY THEO DUNG LƯỢNG, KHÔNG THEO MÀU — đúng quy ước của dự án (đổi màu
+ * không làm đổi giá), và ép ngay ở tầng dữ liệu thay vì trông vào kỷ luật lúc
+ * gõ tay từng dòng.
+ *
+ * SKU giữ đúng công thức cũ `<base>-<mã dung lượng>-<mã màu>` để các biến thể
+ * ĐÃ TỒN TẠI vẫn trùng SKU cũ: SKU là khoá upsert, lệch một ký tự là tạo biến
+ * thể MỚI và bỏ rơi ảnh + tồn kho đang gắn với biến thể cũ.
+ */
+function variantMatrix(
+  skuBase: string,
+  colors: { code: string; name: string }[],
+  storages: { code: string; label: string; price: number; compareAtPrice: number | null }[],
+) {
+  // storages trước, colors sau: biến thể đầu tiên (được chọn sẵn khi mở trang)
+  // là dung lượng rẻ nhất — khớp với quy ước basePrice = giá thấp nhất.
+  return storages.flatMap((s) =>
+    colors.map((c) => ({
+      sku: `${skuBase}-${s.code}-${c.code}`,
+      color: c.name,
+      storage: s.label,
+      price: s.price,
+      compareAtPrice: s.compareAtPrice,
+    })),
+  );
+}
+
 async function main() {
   // Danh mục "Tivi" kế thừa chính bản ghi "Điện máy" cũ (đổi slug/tên, giữ
   // nguyên id) để không phải di chuyển sản phẩm sang category mới.
@@ -244,10 +280,17 @@ async function main() {
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
-      variants: [
-        { sku: "IP15PM-256-TN", color: "Titan Tự Nhiên", storage: "256GB", price: 29990000, compareAtPrice: 34990000 },
-        { sku: "IP15PM-512-TX", color: "Titan Xanh", storage: "512GB", price: 32990000, compareAtPrice: 40990000 },
-      ],
+      variants: variantMatrix(
+        "IP15PM",
+        [
+          { code: "TN", name: "Titan Tự Nhiên" },
+          { code: "TX", name: "Titan Xanh" },
+        ],
+        [
+          { code: "256", label: "256GB", price: 29990000, compareAtPrice: 34990000 },
+          { code: "512", label: "512GB", price: 32990000, compareAtPrice: 40990000 },
+        ],
+      ),
     },
     {
       name: "Samsung Galaxy S24 Ultra",
@@ -265,14 +308,21 @@ async function main() {
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "12GB" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
-      variants: [
-        // SKU noi 256 nhung storage tung la 512GB, va ca 2 ban cung gia du khac
-        // dung luong - sai ca 2 dang. Da sua storage cho khop SKU va tach gia
-        // theo dung luong (KHONG doi ten SKU: SKU la khoa unique va dang co anh
-        // gan theo bien the, doi ten se tao bien the moi va bo roi anh cu).
-        { sku: "S24U-256-BLK", color: "Đen", storage: "256GB", price: 26990000, compareAtPrice: 33990000 },
-        { sku: "S24U-512-GRY", color: "Xám", storage: "512GB", price: 29990000, compareAtPrice: 36990000 },
-      ],
+      // SKU noi 256 nhung storage tung la 512GB, va ca 2 ban cung gia du khac
+      // dung luong - sai ca 2 dang. Da sua storage cho khop SKU va tach gia
+      // theo dung luong (KHONG doi ten SKU: SKU la khoa unique va dang co anh
+      // gan theo bien the, doi ten se tao bien the moi va bo roi anh cu).
+      variants: variantMatrix(
+        "S24U",
+        [
+          { code: "BLK", name: "Đen" },
+          { code: "GRY", name: "Xám" },
+        ],
+        [
+          { code: "256", label: "256GB", price: 26990000, compareAtPrice: 33990000 },
+          { code: "512", label: "512GB", price: 29990000, compareAtPrice: 36990000 },
+        ],
+      ),
     },
     {
       name: "Xiaomi Redmi Note 13",
@@ -290,10 +340,17 @@ async function main() {
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "120Hz" },
       ],
-      variants: [
-        { sku: "RN13-128-BLK", color: "Đen", storage: "128GB", price: 4990000, compareAtPrice: 5490000 },
-        { sku: "RN13-256-BLU", color: "Xanh Dương", storage: "256GB", price: 5990000, compareAtPrice: 6490000 },
-      ],
+      variants: variantMatrix(
+        "RN13",
+        [
+          { code: "BLK", name: "Đen" },
+          { code: "BLU", name: "Xanh Dương" },
+        ],
+        [
+          { code: "128", label: "128GB", price: 4990000, compareAtPrice: 5490000 },
+          { code: "256", label: "256GB", price: 5990000, compareAtPrice: 6490000 },
+        ],
+      ),
     },
     {
       name: "OPPO Reno11 5G",
@@ -335,10 +392,17 @@ async function main() {
         // số quét" của Điện thoại mới có hơn 1 giá trị để chọn.
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "60Hz" },
       ],
-      variants: [
-        { sku: "IP15-128-BLK", color: "Đen", storage: "128GB", price: 19990000, compareAtPrice: 22990000 },
-        { sku: "IP15-256-BLU", color: "Xanh", storage: "256GB", price: 22990000, compareAtPrice: 25990000 },
-      ],
+      variants: variantMatrix(
+        "IP15",
+        [
+          { code: "BLK", name: "Đen" },
+          { code: "BLU", name: "Xanh" },
+        ],
+        [
+          { code: "128", label: "128GB", price: 19990000, compareAtPrice: 22990000 },
+          { code: "256", label: "256GB", price: 22990000, compareAtPrice: 25990000 },
+        ],
+      ),
     },
     {
       name: "Xiaomi Redmi 13C",
@@ -360,10 +424,17 @@ async function main() {
         { groupName: "Cấu hình", attrName: "RAM", attrValue: "8GB" },
         { groupName: "Màn hình", attrName: "Tần số quét", attrValue: "90Hz" },
       ],
-      variants: [
-        { sku: "RM13C-128-BLK", color: "Đen", storage: "128GB", price: 2990000, compareAtPrice: 3490000 },
-        { sku: "RM13C-256-GRN", color: "Xanh Lá", storage: "256GB", price: 3690000, compareAtPrice: 4190000 },
-      ],
+      variants: variantMatrix(
+        "RM13C",
+        [
+          { code: "BLK", name: "Đen" },
+          { code: "GRN", name: "Xanh Lá" },
+        ],
+        [
+          { code: "128", label: "128GB", price: 2990000, compareAtPrice: 3490000 },
+          { code: "256", label: "256GB", price: 3690000, compareAtPrice: 4190000 },
+        ],
+      ),
     },
 
     // ===================== LAPTOP =====================

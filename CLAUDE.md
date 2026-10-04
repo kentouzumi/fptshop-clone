@@ -6206,6 +6206,84 @@
       `fetch` mặc định đi theo redirect rồi trả 200 của trang /login); và 6
       header bảo mật, trong đó có kiểm CSP production KHÔNG chứa `unsafe-eval`.
 
+- [x] Mỗi MÀU đều mua được MỌI DUNG LƯỢNG + bộ chọn màu/dung lượng dựng lại cho
+      giống trang bán hàng thật (user yêu cầu). Trước đó mỗi điện thoại chỉ có
+      đúng 2 biến thể nằm CHÉO nhau (vd "Đen/128GB" và "Xanh Dương/256GB",
+      KHÔNG có "Đen/256GB") nên chọn màu Đen là nút "256GB" bị mờ + gạch ngang
+      không bấm được — đúng theo code nhưng không giống thực tế, nơi mỗi màu đều
+      bán mọi dung lượng.
+
+      DỮ LIỆU — thêm `variantMatrix()` vào prisma/seed.ts thay cho việc viết tay
+      từng dòng variant, sinh ĐỦ tổ hợp màu × dung lượng cho 5 máy có nhiều
+      màu/dung lượng (iPhone 15 Pro Max, S24 Ultra, Redmi Note 13, iPhone 15,
+      Redmi 13C): mỗi máy từ 2 lên 4 biến thể, tổng 24 → 34 biến thể. Hàm này
+      ÉP LUÔN quy ước "giá chỉ đổi theo dung lượng, không đổi theo màu" ở tầng
+      dữ liệu (giá lấy từ mảng `storages`, màu không mang giá) thay vì trông vào
+      kỷ luật lúc gõ — và khai bằng ma trận thì không thể lặp lại kiểu khai
+      thiếu chéo nhau nữa.
+
+      SKU giữ ĐÚNG công thức cũ `<base>-<mã dung lượng>-<mã màu>` (IP15PM-256-TN,
+      S24U-512-GRY...) nên 10 biến thể đã tồn tại vẫn trùng SKU cũ — SKU là khoá
+      upsert, lệch 1 ký tự là tạo biến thể MỚI và bỏ rơi ảnh + tồn kho đang gắn
+      với biến thể cũ. Đã xác minh cả 10 SKU cũ không bị tạo lại (ảnh/tồn kho/
+      đơn hàng còn nguyên).
+
+      KHÔNG phải nhân bản ảnh cho biến thể mới: ProductGalleryAndBuy lọc ảnh
+      theo MÀU (mọi variant cùng màu), không theo đúng 1 variantId — nên
+      "Titan Tự Nhiên/512GB" (biến thể mới, chưa có ảnh riêng) tự dùng ảnh của
+      "Titan Tự Nhiên/256GB". Tồn kho cũng tự có: vòng seed Inventory vốn đã
+      tạo dòng còn thiếu cho mọi biến thể × cửa hàng đang hoạt động (20/cửa
+      hàng).
+
+      KHÔNG đụng 13 sản phẩm còn lại: laptop/tivi mỗi máy 1 biến thể 1 màu và
+      OPPO Reno11 chỉ có 1 màu 1 dung lượng — không có nút nào bị khoá nên
+      không có gì để sửa. Cũng KHÔNG thêm màu mới (fptshop thật có 4-5 màu mỗi
+      máy) vì không có ảnh render chính hãng cho màu đó, thêm vào sẽ hiện ảnh
+      sai màu.
+
+      GIAO DIỆN (src/app/products/[slug]/ProductGalleryAndBuy.tsx):
+      + ĐẢO THỨ TỰ: "Dung lượng" lên TRƯỚC "Màu sắc" — đúng thứ tự trang bán
+        hàng thật, vì dung lượng là thứ quyết định giá nên người mua chốt nó
+        trước rồi mới chọn màu.
+      + Mỗi nút dung lượng in KÈM GIÁ của chính dung lượng đó (so sánh được
+        ngay, không phải bấm thử từng nút rồi nhìn lên chỗ giá).
+      + Mỗi nút màu có THUMBNAIL ảnh của màu đó + tên màu đang chọn hiện cạnh
+        nhãn "Màu sắc", dùng đúng ảnh-theo-variant đã gắn sẵn trong DB. Ảnh để
+        `alt=""` CỐ Ý: tên màu đã nằm ngay cạnh dưới dạng chữ, đặt alt trùng tên
+        là bắt trình đọc màn hình đọc hai lần.
+      + Trạng thái "đã chọn" đổi từ `bg-zinc-900 text-white` sang
+        `border-accent bg-accent/10` cho khớp cách CheckoutForm đánh dấu lựa
+        chọn đang chọn.
+      + Logic giờ ĐỐI XỨNG 2 CHIỀU: thêm `isColorAvailable()` (màu nào không có
+        ở dung lượng đang chọn thì khoá, đối xứng với `isStorageAvailable()` đã
+        có), và `handleSelectStorage()` giờ cũng TỰ CHUYỂN màu khi màu đang chọn
+        không có ở dung lượng mới (trước đó chỉ `handleSelectColor()` làm việc
+        đó, còn chiều kia chặn bằng early-return). Chặn cứng cả 2 chiều thì
+        người dùng kẹt, không đổi được sang tổ hợp nào khác.
+      + GIỮ NGUYÊN cơ chế khoá nút (mờ + gạch ngang + tooltip) làm LƯỚI AN TOÀN
+        — với 5 máy trên thì ma trận đã đủ nên không nút nào bị khoá, nhưng sản
+        phẩm admin tự tạo (hoặc biến thể bị tắt `isActive`) vẫn có thể thiếu tổ
+        hợp, lúc đó không được cho chọn 1 SKU không tồn tại.
+
+      Đã test qua `npm run build` + `next start` bằng DB THẬT (55/55 + 15/15
+      assertion, tạo user/session test rồi dọn sạch): cả 5 máy đều hiện đủ 2
+      dung lượng × 2 màu, "Dung lượng" đứng trước "Màu sắc", KHÔNG còn nút nào
+      bị khoá/gạch ngang, mỗi nút dung lượng có giá và giá 2 dung lượng KHÁC
+      nhau, mỗi màu có thumbnail; sản phẩm 1 biến thể (Dell XPS 13) và sản phẩm
+      không có dung lượng (tivi LG) vẫn render đúng (tivi KHÔNG hiện mục "Dung
+      lượng" thừa); thêm ĐÚNG 3 biến thể MỚI vào giỏ qua `/api/cart/items` với
+      session thật đều 200 và giỏ có đúng 3 dòng (xác nhận biến thể mới có tồn
+      kho thật, không bị chặn); giá trên card ở trang danh mục vẫn là giá dung
+      lượng rẻ nhất (không nhảy theo biến thể mới). `tsc --noEmit`/`eslint src`
+      sạch.
+
+      LƯU Ý khi test lưới an toàn (assertion đầu tiên của tôi sai, không phải
+      lỗi app): tắt 1 biến thể rồi đọc HTML để tìm nút bị khoá thì phải tắt
+      biến thể ở dung lượng RẺ NHẤT — biến thể được chọn sẵn khi mở trang là
+      bản rẻ nhất, nên tắt bản 256GB chỉ làm nút bị khoá SAU KHI người dùng bấm
+      đổi màu, không lộ ra trong HTML server trả về.
+
+
 ## Việc còn thiếu / cần làm tiếp
 - [x] Tạo OAuth Client trên Google Cloud Console + điền 3 biến GOOGLE_* trong
       .env local — ĐÃ XONG, đăng nhập Google thật đã hoạt động (xem kết quả

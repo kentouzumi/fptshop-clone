@@ -78,6 +78,33 @@ export default function ProductGalleryAndBuy({
     return variants.some((v) => v.color === selectedColor && v.storage === storage);
   }
 
+  // Đối xứng với isStorageAvailable: chọn dung lượng trước (thứ tự của trang
+  // bán hàng thật) thì chính các MÀU mới là thứ cần biết còn mua được hay
+  // không với dung lượng đang chọn.
+  function isColorAvailable(color: string) {
+    return variants.some((v) => v.color === color && v.storage === selectedStorage);
+  }
+
+  /**
+   * Giá để in ngay trên nút dung lượng. Ưu tiên biến thể đúng màu đang chọn,
+   * rơi về biến thể bất kỳ cùng dung lượng — giá chỉ đổi theo dung lượng chứ
+   * không theo màu (quy ước dữ liệu của dự án, xem variantMatrix trong
+   * prisma/seed.ts) nên 2 đường này ra cùng một số, nhánh dự phòng chỉ để nút
+   * vẫn có giá khi tổ hợp (màu đang chọn, dung lượng đó) không tồn tại.
+   */
+  function storagePrice(storage: string) {
+    const match =
+      variants.find((v) => v.storage === storage && v.color === selectedColor) ??
+      variants.find((v) => v.storage === storage);
+    return match?.price ?? null;
+  }
+
+  /** Ảnh đại diện của một màu, để nút chọn màu có thumbnail như trang thật. */
+  function colorThumb(color: string) {
+    const ids = new Set(variants.filter((v) => v.color === color).map((v) => v.id));
+    return images.find((img) => img.variantId && ids.has(img.variantId))?.url ?? null;
+  }
+
   function handleSelectColor(color: string) {
     setSelectedColor(color);
     setActiveImageIndex(0);
@@ -93,8 +120,15 @@ export default function ProductGalleryAndBuy({
   }
 
   function handleSelectStorage(storage: string) {
-    if (!isStorageAvailable(storage)) return;
     setSelectedStorage(storage);
+    // Đối xứng với handleSelectColor: màu đang chọn có thể không có ở dung
+    // lượng mới, lúc đó tự chuyển sang màu hợp lệ đầu tiên của dung lượng đó.
+    const stillValid = variants.some((v) => v.storage === storage && v.color === selectedColor);
+    if (!stillValid) {
+      const firstValidColor = variants.find((v) => v.storage === storage)?.color ?? null;
+      setSelectedColor(firstValidColor);
+      setActiveImageIndex(0);
+    }
   }
 
   // Tìm variant khớp cả màu lẫn dung lượng đang chọn; rơi về variant đầu
@@ -270,34 +304,18 @@ export default function ProductGalleryAndBuy({
           </div>
         )}
 
-        {colors.length > 0 && (
-          <div className="mb-5">
-            <p className="mb-2 text-sm font-medium text-zinc-700">Màu sắc</p>
-            <div className="flex flex-wrap gap-2">
-              {colors.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => handleSelectColor(c)}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                    c === selectedColor
-                      ? "border-zinc-900 bg-zinc-900 text-white"
-                      : "border-zinc-300 text-zinc-700 hover:border-zinc-900"
-                  }`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
+        {/* DUNG LƯỢNG ĐẶT TRƯỚC MÀU — đúng thứ tự của trang bán hàng thật:
+            dung lượng là thứ quyết định giá nên người mua chốt nó trước, rồi
+            mới chọn màu trong số màu có ở dung lượng đó. Mỗi nút in kèm giá
+            của chính dung lượng đó để so sánh được ngay mà không phải bấm thử
+            từng nút rồi nhìn lên chỗ giá. */}
         {storages.length > 0 && (
-          <div className="mb-6">
+          <div className="mb-5">
             <p className="mb-2 text-sm font-medium text-zinc-700">Dung lượng</p>
             <div className="flex flex-wrap gap-2">
               {storages.map((s) => {
                 const available = isStorageAvailable(s);
+                const sPrice = storagePrice(s);
                 return (
                   <button
                     key={s}
@@ -305,15 +323,63 @@ export default function ProductGalleryAndBuy({
                     onClick={() => handleSelectStorage(s)}
                     disabled={!available}
                     title={available ? undefined : `Không có màu ${selectedColor ?? ""} cho dung lượng này`}
-                    className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                    className={`min-w-[7rem] rounded-xl border px-4 py-2 text-left transition ${
                       !available
                         ? "cursor-not-allowed border-zinc-200 text-zinc-300 line-through"
                         : s === selectedStorage
-                          ? "border-zinc-900 bg-zinc-900 text-white"
+                          ? "border-accent bg-accent/10 text-zinc-900"
                           : "border-zinc-300 text-zinc-700 hover:border-zinc-900"
                     }`}
                   >
-                    {s}
+                    <span className="block text-sm font-semibold">{s}</span>
+                    {available && sPrice !== null && (
+                      <span className="block text-xs text-zinc-500">{formatPrice(sPrice)}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {colors.length > 0 && (
+          <div className="mb-6">
+            <p className="mb-2 text-sm font-medium text-zinc-700">
+              Màu sắc{selectedColor && <span className="text-zinc-500">: {selectedColor}</span>}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {colors.map((c) => {
+                const available = isColorAvailable(c);
+                const thumb = colorThumb(c);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => handleSelectColor(c)}
+                    disabled={!available}
+                    title={
+                      available
+                        ? undefined
+                        : `Không có bản ${selectedStorage ?? ""} cho màu này`
+                    }
+                    className={`flex items-center gap-2 rounded-xl border py-1.5 pl-1.5 pr-3 text-sm font-medium transition ${
+                      !available
+                        ? "cursor-not-allowed border-zinc-200 text-zinc-300 line-through"
+                        : c === selectedColor
+                          ? "border-accent bg-accent/10 text-zinc-900"
+                          : "border-zinc-300 text-zinc-700 hover:border-zinc-900"
+                    }`}
+                  >
+                    {/* Ảnh chỉ để nhận ra màu nên alt rỗng: tên màu đã nằm ngay
+                        cạnh dưới dạng chữ, đặt alt trùng tên là bắt trình đọc
+                        màn hình đọc hai lần. Màu nào chưa gắn ảnh riêng thì bỏ
+                        hẳn ô thumbnail thay vì để một khung trống. */}
+                    {thumb && (
+                      <span className="relative block h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-zinc-100">
+                        <Image src={thumb} alt="" fill sizes="36px" className="object-contain" />
+                      </span>
+                    )}
+                    {c}
                   </button>
                 );
               })}
